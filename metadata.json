@@ -1,0 +1,8 @@
+{
+  "name": "Bhumi Survey BD",
+  "description": "Bangladesh Land Services, Ultra-HD Mouza Map PDF Plot Selector, Real Map Land Measurement & Survey Toolkit",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

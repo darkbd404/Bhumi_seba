@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Bhumi Survey BD</string>
+    <string name="app_subtitle">Smart Mouza Map &amp; Bangladesh Land Survey Suite</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_mouza">Mouza PDF</string>
+    <string name="nav_map">Real Map</string>
+    <string name="nav_services">Services</string>
+    <string name="nav_tools">Tools</string>
+    <string name="exit_dialog_title">অ্যাপ থেকে বের হতে চান?</string>
+    <string name="exit_dialog_message">আপনার মৌজা বা ম্যাপ পরিমাপ সেভ করা না থাকলে হারিয়ে যেতে পারে। আপনি কি নিশ্চিতভাবে বের হতে চান?</string>
+    <string name="exit_confirm">হ্যাঁ, বের হোন</string>
+    <string name="exit_cancel">থাকুন</string>
+    <string name="ai_assistant_title">AI ভূমি ও ম্যাপ সহায়ক</string>
+    <string name="about_title">ডেভেলপার পরিচিতি</string>
+    <string name="pick_pdf">ফোন থেকে মৌজা PDF নিন</string>
+    <string name="save_selected_png">সিলেক্টেড অংশ PNG সেভ</string>
+</resources>
