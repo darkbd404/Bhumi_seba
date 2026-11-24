@@ -20,17 +20,17 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK Licenses & Install SDK 36
+      - name: Accept Android SDK Licenses
         run: |
-          SDK_MANAGER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDK_MANAGER" ]; then
-            SDK_MANAGER="$(command -v sdkmanager)"
+          SDK_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_HOME" >> "$GITHUB_ENV"
+          SDK_MGR="$SDK_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDK_MGR" ]; then
+            SDK_MGR="$(command -v sdkmanager)"
           fi
-          yes | "$SDK_MANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDK_MANAGER" "platform-tools" "build-tools;36.0.0" "platforms;android-36.1" || "$SDK_MANAGER" "platform-tools" "build-tools;36.0.0" "platforms;android-36"
+          yes | "$SDK_MGR" --licenses > /dev/null 2>&1 || true
+          "$SDK_MGR" "platform-tools" || true
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
