@@ -2,9 +2,9 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ '**' ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ '**' ]
   workflow_dispatch:
 
 jobs:
@@ -14,14 +14,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses & Install SDK 36
+        run: |
+          SDK_MANAGER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDK_MANAGER" ]; then
+            SDK_MANAGER="$(command -v sdkmanager)"
+          fi
+          yes | "$SDK_MANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDK_MANAGER" "platform-tools" "build-tools;36.0.0" "platforms;android-36.1" || "$SDK_MANAGER" "platform-tools" "build-tools;36.0.0" "platforms;android-36"
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
@@ -44,10 +53,10 @@ jobs:
           fi
 
       - name: Run Unit Tests
-        run: gradle :app:testDebugUnitTest --tests "com.example.ExampleUnitTest"
+        run: gradle :app:testDebugUnitTest --tests "com.example.ExampleUnitTest" --no-daemon --stacktrace
 
       - name: Build Debug APK
-        run: gradle assembleDebug
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
