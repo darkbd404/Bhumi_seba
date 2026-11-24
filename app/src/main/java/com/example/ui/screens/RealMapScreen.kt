@@ -9,6 +9,7 @@ import android.graphics.RectF
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -214,12 +215,13 @@ fun RealMapScreen(
         }
     }
 
-    // Push layer and category updates to Leaflet JS
-    LaunchedEffect(state.selectedLayer, mapReady) {
+    // Push layer, road/area labels, and category updates to Leaflet JS
+    LaunchedEffect(state.selectedLayer, state.showLabelsOverlay, mapReady) {
         if (mapReady) {
             val l = state.selectedLayer
+            val overlay = l.supportsLabelOverlay && state.showLabelsOverlay
             webViewRef?.evaluateJavascript(
-                "window.bhumiMap && window.bhumiMap.setTileLayer('${l.tileUrl}', '${l.attribution}', ${l.maxZoom});",
+                "window.bhumiMap && window.bhumiMap.setTileLayer('${l.tileUrl}', '${l.attribution}', ${l.maxZoom}, $overlay);",
                 null
             )
         }
@@ -392,10 +394,16 @@ fun RealMapScreen(
                             settings.domStorageEnabled = true
                             settings.useWideViewPort = true
                             settings.loadWithOverviewMode = true
+                            settings.loadsImagesAutomatically = true
+                            settings.allowContentAccess = true
+                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            settings.cacheMode = WebSettings.LOAD_DEFAULT
+                            settings.userAgentString = "BhumiSurveyBD/1.0 (Linux; Android)"
                             webChromeClient = WebChromeClient()
                             webViewClient = object : WebViewClient() {
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     mapReady = true
+                                    view?.evaluateJavascript("window.map && window.map.invalidateSize();", null)
                                 }
                             }
                             addJavascriptInterface(
@@ -408,8 +416,8 @@ fun RealMapScreen(
                                 "AndroidMapBridge"
                             )
                             loadDataWithBaseURL(
-                                "https://bhumisurvey.local/",
-                                buildLeafletHtml(state.selectedLayer),
+                                "https://bhumisurvey.app/",
+                                buildLeafletHtml(state.selectedLayer, state.showLabelsOverlay),
                                 "text/html",
                                 "UTF-8",
                                 null
@@ -420,21 +428,45 @@ fun RealMapScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Active Layer Pill Badge
-                Box(
+                // Active Layer Pill Badge + Road/Area Labels Toggle
+                Row(
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .padding(10.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xCC16222B))
-                        .clickable { showLayerMenu = true }
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "লেয়ার: ${state.selectedLayer.titleBn}",
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xCC16222B))
+                            .clickable { showLayerMenu = true }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = "লেয়ার: ${state.selectedLayer.titleEn}",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+
+                    if (state.selectedLayer.supportsLabelOverlay) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (state.showLabelsOverlay) Color(0xDD0F6B54) else Color(0xCC37474F)
+                                )
+                                .clickable { viewModel.toggleLabelsOverlay() }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = if (state.showLabelsOverlay) "✓ রাস্তা ও এলাকার নাম" else "রাস্তা/এলাকার নাম: বন্ধ",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
                 }
 
                 // My GPS Location FAB & GPS Walk Drop Pin button
@@ -668,14 +700,15 @@ private fun parseCropRect(rawJsResult: String?): RectF? {
     }.getOrNull()
 }
 
-private fun buildLeafletHtml(initialLayer: MapLayerOption): String {
+private fun buildLeafletHtml(initialLayer: MapLayerOption, showLabels: Boolean): String {
+    val initialOverlay = initialLayer.supportsLabelOverlay && showLabels
     return """
         <!DOCTYPE html>
         <html>
         <head>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-          <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-          <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+          <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+          <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
           <style>
             html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #14221d; }
             .edge-label {
@@ -704,9 +737,26 @@ private fun buildLeafletHtml(initialLayer: MapLayerOption): String {
             var map = L.map('map', { zoomControl: false, attributionControl: true }).setView([23.8103, 90.4125], 16);
             var currentTile = L.tileLayer('${initialLayer.tileUrl}', {
               maxZoom: ${initialLayer.maxZoom},
-              attribution: '${initialLayer.attribution}',
-              crossOrigin: 'anonymous'
+              attribution: '${initialLayer.attribution}'
             }).addTo(map);
+
+            var roadsOverlay = null;
+            var placesOverlay = null;
+
+            function syncLabelOverlays(enableOverlay) {
+              if (roadsOverlay) { map.removeLayer(roadsOverlay); roadsOverlay = null; }
+              if (placesOverlay) { map.removeLayer(placesOverlay); placesOverlay = null; }
+              if (enableOverlay) {
+                roadsOverlay = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+                  maxZoom: 19, opacity: 0.9
+                }).addTo(map);
+                placesOverlay = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+                  maxZoom: 19, opacity: 0.95
+                }).addTo(map);
+              }
+            }
+            syncLabelOverlays($initialOverlay);
+            setTimeout(function() { map.invalidateSize(); }, 250);
 
             var mode = 'area';
             var points = [];
@@ -836,9 +886,11 @@ private fun buildLeafletHtml(initialLayer: MapLayerOption): String {
             });
 
             window.bhumiMap = {
-              setTileLayer: function(url, attr, maxZ) {
+              setTileLayer: function(url, attr, maxZ, enableOverlay) {
                 if (currentTile) map.removeLayer(currentTile);
-                currentTile = L.tileLayer(url, { maxZoom: maxZ, attribution: attr, crossOrigin: 'anonymous' }).addTo(map);
+                currentTile = L.tileLayer(url, { maxZoom: maxZ, attribution: attr }).addTo(map);
+                syncLabelOverlays(!!enableOverlay);
+                if (currentTile.bringToBack) currentTile.bringToBack();
               },
               setMode: function(newMode) {
                 mode = newMode;

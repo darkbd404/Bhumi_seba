@@ -79,31 +79,53 @@ enum class MapLayerOption(
     val titleEn: String,
     val tileUrl: String,
     val attribution: String,
-    val maxZoom: Int = 19
+    val maxZoom: Int = 20,
+    val supportsLabelOverlay: Boolean = false
 ) {
+    GOOGLE_HYBRID(
+        id = "google_hybrid",
+        titleBn = "Google হাইব্রিড (স্যাটেলাইট + নাম)",
+        titleEn = "Google Hybrid",
+        tileUrl = "https://mt1.google.com/vt/lyrs=y&hl=bn&x={x}&y={y}&z={z}",
+        attribution = "Map data © Google",
+        maxZoom = 21,
+        supportsLabelOverlay = false
+    ),
+    GOOGLE_STREETS(
+        id = "google_streets",
+        titleBn = "Google রাস্তা ও এলাকা",
+        titleEn = "Google Streets",
+        tileUrl = "https://mt1.google.com/vt/lyrs=m&hl=bn&x={x}&y={y}&z={z}",
+        attribution = "Map data © Google",
+        maxZoom = 21,
+        supportsLabelOverlay = false
+    ),
     ESRI_SATELLITE(
         id = "esri_satellite",
-        titleBn = "Esri স্যাটেলাইট",
+        titleBn = "Esri স্যাটেলাইট (+ রাস্তা/এলাকা)",
         titleEn = "Esri Satellite",
         tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attribution = "Tiles © Esri — World Imagery",
-        maxZoom = 19
+        maxZoom = 19,
+        supportsLabelOverlay = true
     ),
     OPEN_STREET_MAP(
         id = "osm",
-        titleBn = "OpenStreetMap",
+        titleBn = "OpenStreetMap (রাস্তা ও এলাকা)",
         titleEn = "OpenStreetMap",
         tileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         attribution = "© OpenStreetMap contributors",
-        maxZoom = 19
+        maxZoom = 19,
+        supportsLabelOverlay = false
     ),
     ESRI_STREET(
         id = "esri_street",
-        titleBn = "Esri স্ট্রিট",
+        titleBn = "Esri স্ট্রিট ম্যাপ",
         titleEn = "Esri Street",
         tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
         attribution = "Tiles © Esri — World Street Map",
-        maxZoom = 19
+        maxZoom = 19,
+        supportsLabelOverlay = false
     ),
     ESRI_TOPO(
         id = "esri_topo",
@@ -111,7 +133,8 @@ enum class MapLayerOption(
         titleEn = "Esri Topo",
         tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
         attribution = "Tiles © Esri — World Topo Map",
-        maxZoom = 19
+        maxZoom = 19,
+        supportsLabelOverlay = false
     ),
     OPEN_TOPO_MAP(
         id = "open_topo",
@@ -119,7 +142,8 @@ enum class MapLayerOption(
         titleEn = "OpenTopoMap",
         tileUrl = "https://tile.opentopomap.org/{z}/{x}/{y}.png",
         attribution = "© OpenTopoMap (CC-BY-SA)",
-        maxZoom = 17
+        maxZoom = 17,
+        supportsLabelOverlay = false
     )
 }
 

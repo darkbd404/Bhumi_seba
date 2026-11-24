@@ -31,7 +31,8 @@ data class MapSearchSuggestion(
 )
 
 data class RealMapUiState(
-    val selectedLayer: MapLayerOption = MapLayerOption.ESRI_SATELLITE,
+    val selectedLayer: MapLayerOption = MapLayerOption.GOOGLE_HYBRID,
+    val showLabelsOverlay: Boolean = true,
     val selectedCategory: MapMeasureCategory = MapMeasureCategory.AREA,
     val pointCount: Int = 0,
     val areaSqMeters: Double = 0.0,
@@ -55,6 +56,10 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectLayer(layer: MapLayerOption) {
         _uiState.update { it.copy(selectedLayer = layer) }
+    }
+
+    fun toggleLabelsOverlay() {
+        _uiState.update { it.copy(showLabelsOverlay = !it.showLabelsOverlay) }
     }
 
     fun selectCategory(category: MapMeasureCategory) {
