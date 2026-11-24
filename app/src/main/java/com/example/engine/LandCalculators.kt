@@ -1,8 +1,22 @@
 package com.example.engine
 
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
+
+enum class LengthUnit(val labelBn: String, val feetFactor: Double) {
+    FEET("ফুট (Feet)", 1.0),
+    INCH("ইঞ্চি (Inch)", 1.0 / 12.0),
+    HAT("হাত (১৮ ইঞ্চি)", 1.5),
+    YARD("গজ (Yard)", 3.0),
+    METER("মিটার (Meter)", 3.280839895),
+    LINK("লিংক / কড়ি (Link)", 0.66),
+    CHAIN("গান্টার চেইন (Chain)", 66.0),
+    KILOMETER("কিলোমিটার (Km)", 3280.839895),
+    MILE("মাইল (Mile)", 5280.0)
+}
 
 data class LandAreaResult(
     val sqFeet: Double,
@@ -26,6 +40,22 @@ object LandCalculators {
     const val SQ_FT_PER_HECTARE = 107639.104167
     const val SQ_FT_PER_SQ_HAT = 2.25 // 18 inch = 1.5 ft -> 1.5*1.5 = 2.25 sq ft
     const val SQ_FT_PER_GUNTER_LINK_SQ = 0.4356 // 1 link = 0.66 ft
+
+    fun convertLength(value: Double, from: LengthUnit): Map<LengthUnit, Double> {
+        val safeFeet = value.coerceAtLeast(0.0) * from.feetFactor
+        return LengthUnit.entries.associateWith { unit -> safeFeet / unit.feetFactor }
+    }
+
+    fun formatFeetInches(feet: Double): String {
+        val totalInches = (feet.coerceAtLeast(0.0) * 12.0).roundToInt()
+        val ft = totalInches / 12
+        val inches = totalInches % 12
+        return "$ft'$inches\""
+    }
+
+    fun formatCompactFeet(feet: Double): String {
+        return String.format(Locale.US, "%.1f'", feet.coerceAtLeast(0.0))
+    }
 
     fun fromSqFeet(sqFeet: Double): LandAreaResult {
         val safe = sqFeet.coerceAtLeast(0.0)

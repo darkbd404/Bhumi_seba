@@ -91,4 +91,40 @@ class ExampleUnitTest {
         // 40x40 square in 100x100 grid (~1600 px)
         assertTrue(plot.pixelCount in 1500..1700)
     }
+
+    @Test
+    fun lengthConverter_chainLinkFeetMatchesSurveyStandard() {
+        val oneChain = LandCalculators.convertLength(1.0, com.example.engine.LengthUnit.CHAIN)
+        assertEquals(66.0, oneChain[com.example.engine.LengthUnit.FEET] ?: 0.0, 0.001)
+        assertEquals(100.0, oneChain[com.example.engine.LengthUnit.LINK] ?: 0.0, 0.001)
+        assertEquals(22.0, oneChain[com.example.engine.LengthUnit.YARD] ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun mouzaPolygonAreaAndDistance_matchExactGeometry() {
+        // 720 pts = 10 inches; at SCALE_16 (330 ft/inch) => 3300 x 3300 ft
+        val square = listOf(
+            0.0f to 0.0f,
+            0.1f to 0.0f,
+            0.1f to 0.1f,
+            0.0f to 0.1f
+        )
+        val areaSqFt = MouzaPdfEngine.computePolygonAreaSqFeet(
+            polygonNorm = square,
+            pageWidthPts = 720,
+            pageHeightPts = 720,
+            scale = com.example.model.MouzaScale.SCALE_16
+        )
+        // Side is 1 inch = 330 ft => area = 330 * 330 = 108,900 sq ft
+        assertEquals(108900.0, areaSqFt, 1.0)
+
+        val sideFt = MouzaPdfEngine.computeDistanceFeet(
+            p1Norm = 0.0f to 0.0f,
+            p2Norm = 0.1f to 0.0f,
+            pageWidthPts = 720,
+            pageHeightPts = 720,
+            scale = com.example.model.MouzaScale.SCALE_16
+        )
+        assertEquals(330.0, sideFt, 0.1)
+    }
 }

@@ -145,7 +145,7 @@ private fun BhumiSurveyApp(
             TopLevelDest(MouzaPdfRoute, R.string.nav_mouza, Icons.Filled.PictureAsPdf, Icons.Outlined.PictureAsPdf, "nav_mouza"),
             TopLevelDest(RealMapRoute, R.string.nav_map, Icons.Filled.Map, Icons.Outlined.Map, "nav_map"),
             TopLevelDest(ServicesRoute, R.string.nav_services, Icons.Filled.Language, Icons.Outlined.Language, "nav_services"),
-            TopLevelDest(ToolsRoute, R.string.nav_tools, Icons.Filled.Build, Icons.Outlined.Build, "nav_tools")
+            TopLevelDest(ToolsRoute(), R.string.nav_tools, Icons.Filled.Build, Icons.Outlined.Build, "nav_tools")
         )
     }
 
@@ -280,7 +280,7 @@ private fun BhumiSurveyApp(
                             onOpenMouzaPdf = { navigateTopLevel(MouzaPdfRoute) },
                             onOpenRealMap = { navigateTopLevel(RealMapRoute) },
                             onOpenServices = { navigateTopLevel(ServicesRoute) },
-                            onOpenTools = { navigateTopLevel(ToolsRoute) },
+                            onOpenTools = { tab -> navController.navigate(ToolsRoute(initialTab = tab)) },
                             onOpenAiAssistant = { navController.navigate(AiAssistantRoute) },
                             onOpenAbout = { navController.navigate(AboutRoute) },
                             onOpenUrlInApp = { url, title ->
@@ -311,8 +311,10 @@ private fun BhumiSurveyApp(
                         )
                     }
 
-                    composable<ToolsRoute> {
+                    composable<ToolsRoute> { entry ->
+                        val args = entry.toRoute<ToolsRoute>()
                         ToolsScreen(
+                            initialTabKey = args.initialTab,
                             onNavigateBack = { navController.popBackStack() }
                         )
                     }

@@ -22,27 +22,49 @@ fun configureAppCheck(context: Context, intent: Intent?) {
             FirebaseApp.initializeApp(context)
         }
 
+        val persistenceKey = FirebaseApp.getInstance().persistenceKey
+        val debugPrefs = context.getSharedPreferences(
+            "$DEBUG_STORE_PREFIX$persistenceKey",
+            Context.MODE_PRIVATE
+        )
+
         if (BuildConfig.DEBUG) {
             val debugToken = intent?.getStringExtra(DEBUG_TOKEN_EXTRA)
             if (!debugToken.isNullOrEmpty()) {
-                val persistenceKey = FirebaseApp.getInstance().persistenceKey
-                val prefs = context.getSharedPreferences(
-                    "$DEBUG_STORE_PREFIX$persistenceKey",
-                    Context.MODE_PRIVATE
-                )
                 // Synchronous commit ensures token is saved before DebugAppCheckProviderFactory initializes
-                prefs.edit()
+                debugPrefs.edit()
                     .putString(DEBUG_SECRET_KEY, debugToken)
                     .commit()
-                Log.d(TAG, "App Check debug secret configured successfully.")
+                FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+                    DebugAppCheckProviderFactory.getInstance()
+                )
+                Log.d(TAG, "DebugAppCheckProviderFactory installed with Intent token.")
+            } else if (!debugPrefs.getString(DEBUG_SECRET_KEY, null).isNullOrEmpty()) {
+                FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+                    DebugAppCheckProviderFactory.getInstance()
+                )
+                Log.d(TAG, "DebugAppCheckProviderFactory installed with stored token.")
             } else {
-                Log.w(TAG, "No debug token found in Intent extra.")
+                // Real-device debug APK (e.g. GitHub Actions build) with no debug token extra:
+                // prefer reCAPTCHA Enterprise when site key is bundled so physical devices attest cleanly.
+                val resId = context.resources.getIdentifier(
+                    RECAPTCHA_SITE_KEY_RES,
+                    "string",
+                    context.packageName
+                )
+                val siteKey = if (resId != 0) context.getString(resId) else ""
+                if (siteKey.isNotBlank()) {
+                    FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+                        RecaptchaAppCheckProviderFactory.getInstance(siteKey)
+                    )
+                    Log.d(TAG, "RecaptchaAppCheckProviderFactory installed for standalone APK.")
+                } else {
+                    FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+                        DebugAppCheckProviderFactory.getInstance()
+                    )
+                    Log.w(TAG, "Fallback DebugAppCheckProviderFactory installed (no token or site key).")
+                }
             }
-
-            FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
-                DebugAppCheckProviderFactory.getInstance()
-            )
-            Log.d(TAG, "DebugAppCheckProviderFactory installed.")
         } else {
             val resId = context.resources.getIdentifier(
                 RECAPTCHA_SITE_KEY_RES,

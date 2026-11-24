@@ -81,7 +81,7 @@ fun HomeScreen(
     onOpenMouzaPdf: () -> Unit,
     onOpenRealMap: () -> Unit,
     onOpenServices: () -> Unit,
-    onOpenTools: () -> Unit,
+    onOpenTools: (initialTab: String) -> Unit,
     onOpenAiAssistant: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenUrlInApp: (url: String, title: String) -> Unit,
@@ -203,7 +203,7 @@ fun HomeScreen(
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "Ultra-HD মৌজা ম্যাপ ও রিয়েল সার্ভে",
+                                text = "1000x Ultra-HD মৌজা ম্যাপ (PDF / ছবি) ও রিয়েল স্যাটেলাইট",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFFFFE082)
                             )
@@ -211,7 +211,7 @@ fun HomeScreen(
 
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(
-                                text = "ফোন থেকে মৌজা PDF ও স্যাটেলাইট ম্যাপে নিখুঁত জমি মাপুন",
+                                text = "ফোন থেকে মৌজা নকশা (PDF/ছবি) ও স্যাটেলাইট ম্যাপে নিখুঁত জমি মাপুন",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold
@@ -233,7 +233,7 @@ fun HomeScreen(
                                 ) {
                                     Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(6.dp))
-                                    Text("মৌজা PDF", maxLines = 1)
+                                    Text("মৌজা নকশা", maxLines = 1)
                                 }
                                 Button(
                                     onClick = onOpenRealMap,
@@ -287,6 +287,27 @@ fun HomeScreen(
                         onClick = { onOpenUrlInApp("https://eporcha.tech/", "E-Porcha Tech") }
                     )
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    PortalQuickPill(
+                        title = "সরকারি DLRMS",
+                        subtitle = "dlrms.land.gov.bd",
+                        accent = Color(0xFF1A73E8),
+                        testTag = "quick_dlrms_gov_button",
+                        modifier = Modifier.weight(1f),
+                        onClick = { onOpenUrlInApp("https://dlrms.land.gov.bd", "ই-পর্চা / খতিয়ান (DLRMS)") }
+                    )
+                    PortalQuickPill(
+                        title = "খতিয়ান অনুসন্ধান",
+                        subtitle = "settlement.gov.bd",
+                        accent = SurveyGold,
+                        testTag = "quick_settlement_button",
+                        modifier = Modifier.weight(1f),
+                        onClick = { onOpenUrlInApp("https://settlement.gov.bd/Khatian/", "খতিয়ান অনুসন্ধান") }
+                    )
+                }
             }
         }
 
@@ -304,21 +325,21 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     NeuFeatureCard(
-                        title = "মৌজা PDF মাপ",
-                        subtitle = "Ultra-HD জুম, অটো দাগ সিলেক্ট ও PNG সেভ",
+                        title = "মৌজা নকশা মাপ",
+                        subtitle = "1000x HD জুম, অটো-ফিল, ফিতা ও PNG সেভ",
                         icon = Icons.Rounded.PictureAsPdf,
                         accentColor = EmeraldPrimary,
-                        badge = "HD+",
+                        badge = "1000x HD",
                         testTag = "card_mouza_pdf",
                         modifier = Modifier.weight(1f),
                         onClick = onOpenMouzaPdf
                     )
                     NeuFeatureCard(
                         title = "রিয়েল স্যাটেলাইট",
-                        subtitle = "Esri, OSM, Topo ম্যাপে পিন ও GPS সার্ভে",
+                        subtitle = "Google, Esri, OSM, Topo ম্যাপে পিন ও GPS",
                         icon = Icons.Rounded.Public,
                         accentColor = TealSecondary,
-                        badge = "5 Layers",
+                        badge = "7 Layers",
                         testTag = "card_real_map",
                         modifier = Modifier.weight(1f),
                         onClick = onOpenRealMap
@@ -334,20 +355,20 @@ fun HomeScreen(
                         subtitle = "নামজারি, খাজনা, মৌজা ম্যাপ ও সরকারি পোর্টাল",
                         icon = Icons.Rounded.Language,
                         accentColor = Color(0xFF1A73E8),
-                        badge = "Free",
+                        badge = "22 Portals",
                         testTag = "card_services",
                         modifier = Modifier.weight(1f),
                         onClick = onOpenServices
                     )
                     NeuFeatureCard(
                         title = "জরিপ ক্যালকুলেটর",
-                        subtitle = "শতাংশ, কাঠা, আনা-গণ্ডা, ফারায়েজ ও আমিন স্কেল",
+                        subtitle = "শতাংশ, কাঠা, দৈর্ঘ্য, আকৃতি, ফারায়েজ ও স্কেল",
                         icon = Icons.Rounded.Calculate,
                         accentColor = SurveyGold,
-                        badge = "6 Tools",
+                        badge = "7 Tools",
                         testTag = "card_tools",
                         modifier = Modifier.weight(1f),
-                        onClick = onOpenTools
+                        onClick = { onOpenTools("unit") }
                     )
                 }
 
@@ -374,6 +395,59 @@ fun HomeScreen(
                         testTag = "card_about",
                         modifier = Modifier.weight(1f),
                         onClick = onOpenAbout
+                    )
+                }
+            }
+        }
+
+        // Quick Calculator Shortcuts (matching reference UI.html tools)
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "তাৎক্ষণিক পরিমাপ ক্যালকুলেটর",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    PortalQuickPill(
+                        title = "দৈর্ঘ্য কনভার্টার",
+                        subtitle = "ফুট, লিংক, চেইন, গজ",
+                        accent = EmeraldPrimary,
+                        testTag = "quick_tool_len",
+                        modifier = Modifier.weight(1f),
+                        onClick = { onOpenTools("len") }
+                    )
+                    PortalQuickPill(
+                        title = "আকৃতি মাপ",
+                        subtitle = "আয়ত, ত্রিভুজ ও ৪-বাহু",
+                        accent = TealSecondary,
+                        testTag = "quick_tool_shape",
+                        modifier = Modifier.weight(1f),
+                        onClick = { onOpenTools("shape") }
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    PortalQuickPill(
+                        title = "স্কেল ও চেইন",
+                        subtitle = "১৬\"/৩২\"/৬৪\" নকশা হিসাব",
+                        accent = Color(0xFF1A73E8),
+                        testTag = "quick_tool_scale",
+                        modifier = Modifier.weight(1f),
+                        onClick = { onOpenTools("scale") }
+                    )
+                    PortalQuickPill(
+                        title = "দলিল ও দাম",
+                        subtitle = "মূল্য, স্ট্যাম্প ও বণ্টন",
+                        accent = SurveyGold,
+                        testTag = "quick_tool_tax",
+                        modifier = Modifier.weight(1f),
+                        onClick = { onOpenTools("tax") }
                     )
                 }
             }

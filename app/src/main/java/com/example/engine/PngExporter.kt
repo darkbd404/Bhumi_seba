@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import com.example.model.MouzaPlot
+import com.example.model.MouzaScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -24,8 +25,11 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.atan2
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 object PngExporter {
 
@@ -37,208 +41,289 @@ object PngExporter {
     )
 
     /**
-     * Exports ONLY the selected plots from the Ultra-HD Mouza PDF bitmap into a crisp PNG,
-     * cropping tightly to the selected plots' bounding box and masking out unselected surroundings.
+     * Exports ONLY the selected plots (or the whole sheet when `selectedOnly == false`)
+     * directly from vector PDF / high-res image source into a crisp Ultra-HD PNG.
      */
     suspend fun exportSelectedMouzaPlotsPng(
         context: Context,
         sourceBitmap: Bitmap,
         plots: List<MouzaPlot>,
         sqFeetPerGridPixel: Double,
-        khatianTitle: String
+        khatianTitle: String,
+        docFile: File? = null,
+        isPdf: Boolean = true,
+        pageIndex: Int = 0,
+        pageWidthPts: Int = 1000,
+        pageHeightPts: Int = 1000,
+        scale: MouzaScale = MouzaScale.SCALE_16,
+        calibrationMultiplier: Double = 1.0,
+        selectedOnly: Boolean = true
     ): ExportResult = withContext(Dispatchers.Default) {
-        require(plots.isNotEmpty()) { "কোনো দাগ সিলেক্ট করা হয়নি।" }
+        if (selectedOnly) {
+            require(plots.isNotEmpty()) { "কোনো দাগ সিলেক্ট করা হয়নি।" }
+        }
 
-        val first = plots.first()
-        val gw = first.gridWidth
-        val gh = first.gridHeight
-        val scaleX = sourceBitmap.width.toFloat() / gw.toFloat()
-        val scaleY = sourceBitmap.height.toFloat() / gh.toFloat()
+        // Compute normalized bounding box [nLeft, nTop, nRight, nBottom] across selected plots
+        var nMinX = 1f
+        var nMinY = 1f
+        var nMaxX = 0f
+        var nMaxY = 0f
 
-        // Compute tight bounding box across all selected plots in sourceBitmap pixel coordinates
-        var bMinX = Int.MAX_VALUE
-        var bMinY = Int.MAX_VALUE
-        var bMaxX = 0
-        var bMaxY = 0
-
-        for (p in plots) {
-            if (p.manualPolygonNormalized != null && p.manualPolygonNormalized.isNotEmpty()) {
-                for ((nx, ny) in p.manualPolygonNormalized) {
-                    val px = (nx * sourceBitmap.width).toInt()
-                    val py = (ny * sourceBitmap.height).toInt()
-                    bMinX = min(bMinX, px)
-                    bMinY = min(bMinY, py)
-                    bMaxX = max(bMaxX, px)
-                    bMaxY = max(bMaxY, py)
+        if (!selectedOnly || plots.isEmpty()) {
+            nMinX = 0f; nMinY = 0f; nMaxX = 1f; nMaxY = 1f
+        } else {
+            for (p in plots) {
+                val poly = p.effectivePolygon()
+                if (!poly.isNullOrEmpty()) {
+                    for ((nx, ny) in poly) {
+                        nMinX = min(nMinX, nx)
+                        nMinY = min(nMinY, ny)
+                        nMaxX = max(nMaxX, nx)
+                        nMaxY = max(nMaxY, ny)
+                    }
+                } else {
+                    val gw = p.gridWidth.toFloat().coerceAtLeast(1f)
+                    val gh = p.gridHeight.toFloat().coerceAtLeast(1f)
+                    nMinX = min(nMinX, p.minX / gw)
+                    nMinY = min(nMinY, p.minY / gh)
+                    nMaxX = max(nMaxX, (p.maxX + 1) / gw)
+                    nMaxY = max(nMaxY, (p.maxY + 1) / gh)
                 }
-            } else {
-                bMinX = min(bMinX, (p.minX * scaleX).toInt())
-                bMinY = min(bMinY, (p.minY * scaleY).toInt())
-                bMaxX = max(bMaxX, ((p.maxX + 1) * scaleX).toInt())
-                bMaxY = max(bMaxY, ((p.maxY + 1) * scaleY).toInt())
             }
+            val span = max(nMaxX - nMinX, nMaxY - nMinY).coerceAtLeast(0.02f)
+            val pad = (span * 0.08f).coerceIn(0.01f, 0.06f)
+            nMinX = (nMinX - pad).coerceIn(0f, 0.98f)
+            nMinY = (nMinY - pad).coerceIn(0f, 0.98f)
+            nMaxX = (nMaxX + pad).coerceIn(nMinX + 0.02f, 1f)
+            nMaxY = (nMaxY + pad).coerceIn(nMinY + 0.02f, 1f)
         }
 
-        val pad = 48
-        val cropLeft = (bMinX - pad).coerceAtLeast(0)
-        val cropTop = (bMinY - pad).coerceAtLeast(0)
-        val cropRight = (bMaxX + pad).coerceAtMost(sourceBitmap.width)
-        val cropBottom = (bMaxY + pad).coerceAtMost(sourceBitmap.height)
+        val spanW = (nMaxX - nMinX).coerceAtLeast(0.01f)
+        val spanH = (nMaxY - nMinY).coerceAtLeast(0.01f)
+        val worldAspect = (spanH * pageHeightPts.coerceAtLeast(100)) /
+            (spanW * pageWidthPts.coerceAtLeast(100))
 
-        val cropW = (cropRight - cropLeft).coerceAtLeast(240)
-        val cropH = (cropBottom - cropTop).coerceAtLeast(200)
-
-        // Ensure minimum comfortable export resolution so details & footer remain ultra-sharp
-        val minExportWidth = 1080f
-        val maxExportWidth = 2800f
-        val zoomUp = when {
-            cropW < minExportWidth -> (minExportWidth / cropW).coerceAtMost(3.5f)
-            cropW > maxExportWidth -> maxExportWidth / cropW
-            else -> 1f
+        val targetMaxPx = 1800
+        val mapOutW: Int
+        val mapOutH: Int
+        if (worldAspect <= 1f) {
+            mapOutW = targetMaxPx
+            mapOutH = (targetMaxPx * worldAspect).roundToInt().coerceIn(420, 2200)
+        } else {
+            mapOutH = targetMaxPx
+            mapOutW = (targetMaxPx / worldAspect).roundToInt().coerceIn(420, 2200)
         }
 
-        val mapOutW = (cropW * zoomUp).toInt().coerceAtLeast(600)
-        val mapOutH = (cropH * zoomUp).toInt().coerceAtLeast(420)
-        val footerHeight = 170
-        val outBitmap = Bitmap.createBitmap(mapOutW, mapOutH + footerHeight, Bitmap.Config.ARGB_8888)
+        // Render high-res cropped region directly from PDF/image when available
+        val hdTile = if (docFile != null) {
+            MouzaPdfEngine.renderViewportTile(
+                docFile = docFile,
+                isPdf = isPdf,
+                pageIndex = pageIndex,
+                normLeft = nMinX,
+                normTop = nMinY,
+                normRight = nMaxX,
+                normBottom = nMaxY,
+                targetWidthPx = mapOutW,
+                targetHeightPx = mapOutH
+            )
+        } else null
+
+        val actualW = hdTile?.bitmap?.width ?: mapOutW
+        val actualH = hdTile?.bitmap?.height ?: mapOutH
+        val footerHeight = 175
+        val outBitmap = Bitmap.createBitmap(actualW, actualH + footerHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(outBitmap)
-
-        // Clean paper background
         canvas.drawColor(Color.WHITE)
 
-        // Build exact mask bitmap in crop space so ONLY selected plot areas are copied from Ultra-HD source
-        val maskBitmap = Bitmap.createBitmap(mapOutW, mapOutH, Bitmap.Config.ARGB_8888)
-        val maskCanvas = Canvas(maskBitmap)
-        val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.BLACK
-            style = Paint.Style.FILL
+        val layerBitmap = Bitmap.createBitmap(actualW, actualH, Bitmap.Config.ARGB_8888)
+        val layerCanvas = Canvas(layerBitmap)
+        if (hdTile != null) {
+            layerCanvas.drawBitmap(
+                hdTile.bitmap,
+                Rect(0, 0, hdTile.bitmap.width, hdTile.bitmap.height),
+                RectF(0f, 0f, actualW.toFloat(), actualH.toFloat()),
+                Paint(Paint.FILTER_BITMAP_FLAG)
+            )
+            hdTile.bitmap.recycle()
+        } else {
+            val srcRect = Rect(
+                (nMinX * sourceBitmap.width).toInt().coerceIn(0, sourceBitmap.width - 2),
+                (nMinY * sourceBitmap.height).toInt().coerceIn(0, sourceBitmap.height - 2),
+                (nMaxX * sourceBitmap.width).roundToInt().coerceIn(2, sourceBitmap.width),
+                (nMaxY * sourceBitmap.height).roundToInt().coerceIn(2, sourceBitmap.height)
+            )
+            layerCanvas.drawBitmap(
+                sourceBitmap,
+                srcRect,
+                RectF(0f, 0f, actualW.toFloat(), actualH.toFloat()),
+                Paint(Paint.FILTER_BITMAP_FLAG)
+            )
         }
+
+        // If selectedOnly, clip to selected plots so exterior clutter is masked cleanly
+        if (selectedOnly && plots.isNotEmpty()) {
+            val maskBitmap = Bitmap.createBitmap(actualW, actualH, Bitmap.Config.ARGB_8888)
+            val maskCanvas = Canvas(maskBitmap)
+            val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.BLACK
+                style = Paint.Style.FILL
+            }
+
+            for (plot in plots) {
+                val poly = plot.effectivePolygon()
+                if (poly != null && poly.size >= 3) {
+                    val path = Path()
+                    poly.forEachIndexed { idx, (nx, ny) ->
+                        val px = ((nx - nMinX) / spanW) * actualW
+                        val py = ((ny - nMinY) / spanH) * actualH
+                        if (idx == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                    }
+                    path.close()
+                    maskCanvas.drawPath(path, maskPaint)
+                } else {
+                    val gw = plot.gridWidth.toFloat().coerceAtLeast(1f)
+                    val gh = plot.gridHeight.toFloat().coerceAtLeast(1f)
+                    val cellW = (actualW / (gw * spanW)).coerceAtLeast(1f)
+                    val cellH = (actualH / (gh * spanH)).coerceAtLeast(1f)
+                    for (idx in plot.maskIndices) {
+                        val gx = idx % plot.gridWidth
+                        val gy = idx / plot.gridWidth
+                        val px = (((gx / gw) - nMinX) / spanW) * actualW
+                        val py = (((gy / gh) - nMinY) / spanH) * actualH
+                        maskCanvas.drawRect(px - 0.5f, py - 0.5f, px + cellW + 0.5f, py + cellH + 0.5f, maskPaint)
+                    }
+                }
+            }
+
+            val xferPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+            }
+            layerCanvas.drawBitmap(maskBitmap, 0f, 0f, xferPaint)
+            maskBitmap.recycle()
+        }
+
+        canvas.drawBitmap(layerBitmap, 0f, 0f, null)
+        layerBitmap.recycle()
 
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = 4.5f
+            strokeJoin = Paint.Join.ROUND
         }
-
-        val tintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
+        val tintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        val edgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 21f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
         }
-
-        // Draw each plot into the mask
-        val gridCellW = scaleX * zoomUp
-        val gridCellH = scaleY * zoomUp
-
-        for (plot in plots) {
-            if (plot.manualPolygonNormalized != null && plot.manualPolygonNormalized.size >= 3) {
-                val path = Path()
-                plot.manualPolygonNormalized.forEachIndexed { idx, (nx, ny) ->
-                    val px = (nx * sourceBitmap.width - cropLeft) * zoomUp
-                    val py = (ny * sourceBitmap.height - cropTop) * zoomUp
-                    if (idx == 0) path.moveTo(px, py) else path.lineTo(px, py)
-                }
-                path.close()
-                maskCanvas.drawPath(path, maskPaint)
-            } else {
-                // Draw high-density mask cells expanded slightly (1.35x) so edges align smoothly
-                val gwLocal = plot.gridWidth
-                val expand = 0.35f
-                for (idx in plot.maskIndices) {
-                    val gx = idx % gwLocal
-                    val gy = idx / gwLocal
-                    val left = (gx * scaleX - cropLeft) * zoomUp - expand
-                    val top = (gy * scaleY - cropTop) * zoomUp - expand
-                    maskCanvas.drawRect(
-                        left,
-                        top,
-                        left + gridCellW + expand * 2,
-                        top + gridCellH + expand * 2,
-                        maskPaint
-                    )
-                }
-            }
+        val edgeStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 6f
+            textSize = 21f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
         }
-
-        // Extract cropped Ultra-HD PDF region masked exclusively to selected plots
-        val layerBitmap = Bitmap.createBitmap(mapOutW, mapOutH, Bitmap.Config.ARGB_8888)
-        val layerCanvas = Canvas(layerBitmap)
-        val srcRect = Rect(cropLeft, cropTop, cropRight, cropBottom)
-        val dstRect = RectF(0f, 0f, mapOutW.toFloat(), mapOutH.toFloat())
-        layerCanvas.drawBitmap(sourceBitmap, srcRect, dstRect, Paint(Paint.FILTER_BITMAP_FLAG))
-
-        val xferPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-        }
-        layerCanvas.drawBitmap(maskBitmap, 0f, 0f, xferPaint)
-        maskBitmap.recycle()
-
-        // Draw soft tinted highlight and crisp plot border over the isolated selected region
-        canvas.drawBitmap(layerBitmap, 0f, 0f, null)
-        layerBitmap.recycle()
-
         val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             textSize = 26f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
-        val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-        }
+        val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
+        var totalSqFt = 0.0
         for (plot in plots) {
-            val argb = android.graphics.Color.argb(
+            val plotSqFt = plot.exactAreaSqFeet ?: (plot.pixelCount * sqFeetPerGridPixel)
+            totalSqFt += plotSqFt
+
+            val argb = Color.argb(
                 (plot.color.alpha * 255).toInt(),
                 (plot.color.red * 255).toInt(),
                 (plot.color.green * 255).toInt(),
                 (plot.color.blue * 255).toInt()
             )
-            tintPaint.color = android.graphics.Color.argb(44, Color.red(argb), Color.green(argb), Color.blue(argb))
+            tintPaint.color = Color.argb(46, Color.red(argb), Color.green(argb), Color.blue(argb))
             borderPaint.color = argb
+            edgeTextPaint.color = argb
 
             var centerX = 0f
             var centerY = 0f
 
-            if (plot.manualPolygonNormalized != null && plot.manualPolygonNormalized.size >= 3) {
+            val poly = plot.effectivePolygon()
+            if (poly != null && poly.size >= 3) {
                 val path = Path()
                 var sumX = 0f
                 var sumY = 0f
-                plot.manualPolygonNormalized.forEachIndexed { idx, (nx, ny) ->
-                    val px = (nx * sourceBitmap.width - cropLeft) * zoomUp
-                    val py = (ny * sourceBitmap.height - cropTop) * zoomUp
-                    sumX += px
-                    sumY += py
+                val screenPts = poly.map { (nx, ny) ->
+                    val px = ((nx - nMinX) / spanW) * actualW
+                    val py = ((ny - nMinY) / spanH) * actualH
+                    sumX += px; sumY += py
+                    px to py
+                }
+                screenPts.forEachIndexed { idx, (px, py) ->
                     if (idx == 0) path.moveTo(px, py) else path.lineTo(px, py)
                 }
                 path.close()
                 canvas.drawPath(path, tintPaint)
                 canvas.drawPath(path, borderPaint)
-                centerX = sumX / plot.manualPolygonNormalized.size
-                centerY = sumY / plot.manualPolygonNormalized.size
+
+                centerX = plot.centroidNormalized?.let { ((it.first - nMinX) / spanW) * actualW }
+                    ?: (sumX / screenPts.size)
+                centerY = plot.centroidNormalized?.let { ((it.second - nMinY) / spanH) * actualH }
+                    ?: (sumY / screenPts.size)
+
+                // Draw side edge lengths in feet along edges long enough to read cleanly
+                for (i in poly.indices) {
+                    val pA = poly[i]
+                    val pB = poly[(i + 1) % poly.size]
+                    val sA = screenPts[i]
+                    val sB = screenPts[(i + 1) % screenPts.size]
+                    val pxLen = hypot(sB.first - sA.first, sB.second - sA.second)
+                    if (pxLen >= 58f) {
+                        val ft = MouzaPdfEngine.computeDistanceFeet(
+                            pA, pB, pageWidthPts, pageHeightPts, scale, calibrationMultiplier
+                        )
+                        val label = LandCalculators.formatCompactFeet(ft)
+                        var ang = Math.toDegrees(atan2((sB.second - sA.second).toDouble(), (sB.first - sA.first).toDouble())).toFloat()
+                        if (ang > 90f) ang -= 180f
+                        if (ang < -90f) ang += 180f
+                        val mx = (sA.first + sB.first) / 2f
+                        val my = (sA.second + sB.second) / 2f
+                        canvas.save()
+                        canvas.translate(mx, my)
+                        canvas.rotate(ang)
+                        canvas.drawText(label, 0f, -6f, edgeStrokePaint)
+                        canvas.drawText(label, 0f, -6f, edgeTextPaint)
+                        canvas.restore()
+                    }
+                }
             } else {
-                centerX = (((plot.minX + plot.maxX) * 0.5f * scaleX) - cropLeft) * zoomUp
-                centerY = (((plot.minY + plot.maxY) * 0.5f * scaleY) - cropTop) * zoomUp
+                val gw = plot.gridWidth.toFloat().coerceAtLeast(1f)
+                val gh = plot.gridHeight.toFloat().coerceAtLeast(1f)
+                centerX = ((((plot.minX + plot.maxX) * 0.5f / gw) - nMinX) / spanW) * actualW
+                centerY = ((((plot.minY + plot.maxY) * 0.5f / gh) - nMinY) / spanH) * actualH
             }
 
-            // Plot summary tag near center
-            val area = LandCalculators.fromSqFeet(plot.pixelCount * sqFeetPerGridPixel)
+            val area = LandCalculators.fromSqFeet(plotSqFt)
             val tag = buildString {
                 if (plot.dagNumber.isNotBlank()) append("দাগ ${plot.dagNumber} • ")
                 else append("#${plot.plotIndex} • ")
                 append(String.format(Locale.US, "%.2f শতক", area.decimal))
             }
             val tw = labelPaint.measureText(tag)
-            pillPaint.color = Color.argb(215, Color.red(argb), Color.green(argb), Color.blue(argb))
+            pillPaint.color = Color.argb(220, Color.red(argb), Color.green(argb), Color.blue(argb))
             val pillRect = RectF(centerX - tw / 2f - 16f, centerY - 24f, centerX + tw / 2f + 16f, centerY + 14f)
             canvas.drawRoundRect(pillRect, 14f, 14f, pillPaint)
             canvas.drawText(tag, centerX, centerY + 3f, labelPaint)
         }
 
-        // Draw clean Survey Summary Footer
-        val totalSqFt = plots.sumOf { it.pixelCount * sqFeetPerGridPixel }
         val totalArea = LandCalculators.fromSqFeet(totalSqFt)
         drawFooterStamp(
             canvas = canvas,
-            width = mapOutW,
-            topY = mapOutH.toFloat(),
+            width = actualW,
+            topY = actualH.toFloat(),
             footerHeight = footerHeight.toFloat(),
             headerText = if (khatianTitle.isNotBlank()) "Bhumi Survey BD • $khatianTitle" else "Bhumi Survey BD • Selected Mouza Plots (${plots.size})",
             line1 = String.format(
@@ -253,18 +338,14 @@ object PngExporter {
             )
         )
 
-        val fileName = "Mouza_Selected_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.png"
+        val fileName = "Mouza_${if (selectedOnly) "Selected" else "Full"}_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.png"
         saveBitmapToPictures(context, outBitmap, fileName)
     }
 
-    /**
-     * Exports ONLY the selected measured region from the Real Map WebView canvas,
-     * cropped strictly around the measured polygon/line bounding box with crisp survey footer.
-     */
     suspend fun exportSelectedMapRegionPng(
         context: Context,
         fullMapBitmap: Bitmap,
-        cropRectNormalized: RectF?, // 0f..1f bounding box of selected polygon on screen
+        cropRectNormalized: RectF?,
         summaryHeader: String,
         summaryLine1: String,
         summaryLine2: String

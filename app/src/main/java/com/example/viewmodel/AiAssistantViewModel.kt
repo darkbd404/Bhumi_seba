@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
-import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.LatLng
 import com.google.firebase.ai.type.RetrievalConfig
 import com.google.firebase.ai.type.Tool
@@ -47,13 +46,26 @@ sealed interface AiUiState {
 class AiAssistantViewModel : ViewModel() {
 
     private val searchModel by lazy {
-        Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+        Firebase.ai.generativeModel(
             modelName = "gemini-3.8-flash",
             tools = listOf(Tool.googleSearch()),
             systemInstruction = content {
                 text(
                     "আপনি বাংলাদেশের ভূমি সেবা, মৌজা ম্যাপ (CS, SA, RS, BS), খতিয়ান, নামজারি (E-Mutation), " +
                         "ভূমি উন্নয়ন কর, ওয়ারিশ ও জমি পরিমাপ বিষয়ে দক্ষ সহায়ক। উত্তর সর্বদা পরিষ্কার, সঠিক এবং সহজ বাংলায় দিন।"
+                )
+            }
+        )
+    }
+
+    private val directModel by lazy {
+        Firebase.ai.generativeModel(
+            modelName = "gemini-3.8-flash",
+            systemInstruction = content {
+                text(
+                    "আপনি বাংলাদেশের ভূমি সেবা, মৌজা ম্যাপ (CS, SA, RS, BS), খতিয়ান, নামজারি (E-Mutation), " +
+                        "ভূমি উন্নয়ন কর, ওয়ারিশ, জমি পরিমাপ এবং উপজেলা ভূমি/সাব-রেজিস্ট্রি অফিস বিষয়ে দক্ষ সহায়ক। " +
+                        "উত্তর সর্বদা পরিষ্কার, সঠিক এবং সহজ বাংলায় দিন।"
                 )
             }
         )
@@ -82,27 +94,33 @@ class AiAssistantViewModel : ViewModel() {
             try {
                 val currentMode = _mode.value
                 val response = withTimeout(60_000L) {
-                    if (currentMode == AiGroundingMode.NEARBY_OFFICES) {
-                        val lat = userLat ?: 23.8103
-                        val lon = userLon ?: 90.4125
-                        val mapsModel = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
-                            modelName = "gemini-3.8-flash",
-                            toolConfig = ToolConfig(
-                                retrievalConfig = RetrievalConfig.builder()
-                                    .setLatLng(LatLng(latitude = lat, longitude = lon))
-                                    .setLanguageCode("bn")
-                                    .build()
-                            ),
-                            tools = listOf(Tool.googleMaps()),
-                            systemInstruction = content {
-                                text(
-                                    "আপনি বাংলাদেশের উপজেলা ভূমি অফিস, এসিল্যান্ড অফিস, সাব-রেজিস্ট্রি অফিস এবং সেটেলমেন্ট অফিস খুঁজে দেওয়ার সহায়ক।"
-                                )
-                            }
-                        )
-                        mapsModel.generateContent(trimmed)
-                    } else {
-                        searchModel.generateContent(trimmed)
+                    try {
+                        if (currentMode == AiGroundingMode.NEARBY_OFFICES) {
+                            val lat = userLat ?: 23.8103
+                            val lon = userLon ?: 90.4125
+                            val mapsModel = Firebase.ai.generativeModel(
+                                modelName = "gemini-3.8-flash",
+                                toolConfig = ToolConfig(
+                                    retrievalConfig = RetrievalConfig.builder()
+                                        .setLatLng(LatLng(latitude = lat, longitude = lon))
+                                        .setLanguageCode("bn")
+                                        .build()
+                                ),
+                                tools = listOf(Tool.googleMaps()),
+                                systemInstruction = content {
+                                    text(
+                                        "আপনি বাংলাদেশের উপজেলা ভূমি অফিস, এসিল্যান্ড অফিস, সাব-রেজিস্ট্রি অফিস এবং সেটেলমেন্ট অফিস খুঁজে দেওয়ার সহায়ক।"
+                                    )
+                                }
+                            )
+                            mapsModel.generateContent(trimmed)
+                        } else {
+                            searchModel.generateContent(trimmed)
+                        }
+                    } catch (toolError: Exception) {
+                        if (toolError is CancellationException) throw toolError
+                        Log.w(TAG, "Grounded tool call failed, retrying with direct Gemini model", toolError)
+                        directModel.generateContent(trimmed)
                     }
                 }
 
@@ -153,13 +171,14 @@ class AiAssistantViewModel : ViewModel() {
                 )
             } catch (e: TimeoutCancellationException) {
                 Log.e(TAG, "AI request timed out", e)
-                _uiState.value = AiUiState.Error("উত্তর আসতে সময় বেশি লেগেছে (Timeout)। আবার চেষ্টা করুন।")
+                _uiState.value = AiUiState.Error("উত্তর আসতে সময় বেশি লেগেছে (Timeout)। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Firebase AI generation failed", e)
+                val detail = e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
                 _uiState.value = AiUiState.Error(
-                    e.localizedMessage ?: "AI সংযোগে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।"
+                    "AI সংযোগ ব্যর্থ হয়েছে: $detail"
                 )
             }
         }

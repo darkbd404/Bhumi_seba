@@ -1,11 +1,17 @@
 package com.example.ui.screens
 
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.Typeface
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
@@ -30,7 +36,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Adjust
+import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -39,10 +50,11 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.FilterBAndW
+import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.PictureAsPdf
-import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material3.AlertDialog
@@ -51,14 +63,15 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,24 +87,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.engine.LandCalculators
+import com.example.engine.MouzaPdfEngine
+import com.example.model.MouzaFilterPreset
 import com.example.model.MouzaPlot
 import com.example.model.MouzaScale
 import com.example.model.MouzaSelectionTool
+import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.NeuPillChip
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
@@ -99,9 +113,13 @@ import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
 import com.example.viewmodel.MouzaPdfViewModel
 import java.util.Locale
+import kotlin.math.atan2
+import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MouzaPdfScreen(
     onNavigateBack: () -> Unit,
@@ -109,20 +127,11 @@ fun MouzaPdfScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
 
-    val pdfPickerLauncher = rememberLauncherForActivityResult(
+    val docPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let { viewModel.openPdfUri(it) }
-    }
-
-    LaunchedEffect(state.statusMessage) {
-        val msg = state.statusMessage
-        if (!msg.isNullOrBlank()) {
-            snackbarHostState.showSnackbar(msg)
-            viewModel.clearStatusMessage()
-        }
+        uri?.let { viewModel.openDocumentUri(it) }
     }
 
     var scale by remember(state.fileName, state.currentPage) { mutableFloatStateOf(1f) }
@@ -131,9 +140,14 @@ fun MouzaPdfScreen(
 
     var showScaleMenu by remember { mutableStateOf(false) }
     var showGapMenu by remember { mutableStateOf(false) }
-    var isSummaryExpanded by remember { mutableStateOf(false) }
+    var showReportSheet by remember { mutableStateOf(false) }
+    var showFilterSheet by remember { mutableStateOf(false) }
     var editingPlot by remember { mutableStateOf<MouzaPlot?>(null) }
     var showCalibrateDialog by remember { mutableStateOf<MouzaPlot?>(null) }
+
+    val colorMatrixFilter = remember(state.filterPreset, state.brightness, state.contrast) {
+        buildFilterColorMatrix(state.filterPreset, state.brightness, state.contrast)
+    }
 
     Box(
         modifier = modifier
@@ -161,33 +175,58 @@ fun MouzaPdfScreen(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = state.fileName.ifBlank { "মৌজা ম্যাপ PDF ভিউয়ার" },
+                        text = state.fileName.ifBlank { "মৌজা ম্যাপ (PDF / ছবি)" },
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = if (state.hdReady) "Ultra-HD Ready • ${state.selectedScale.ratioLabel}"
+                        text = if (state.hdReady) "Ultra-HD Ready • ${state.selectedScale.ratioLabel} • 1000x জুম"
                         else if (state.displayBitmap != null) "HD প্রস্তুত হচ্ছে..."
-                        else "ফোন স্টোরেজ থেকে মৌজা PDF নিন",
+                        else "স্টোরেজ থেকে PDF বা ছবি নিন",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
 
+                // Undo / Redo / Clear quick actions when document open
+                if (state.displayBitmap != null) {
+                    IconButton(
+                        onClick = { viewModel.undoLastPlot() },
+                        enabled = state.selectedPlots.isNotEmpty() || state.tapeDraft.isNotEmpty(),
+                        modifier = Modifier.size(38.dp).testTag("mouza_undo_button")
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
+                    }
+                    IconButton(
+                        onClick = { viewModel.redoLastPlot() },
+                        enabled = state.canRedo,
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
+                    }
+                    IconButton(
+                        onClick = { viewModel.clearAllPlots() },
+                        enabled = state.selectedPlots.isNotEmpty() || state.tapeDraft.isNotEmpty() || state.completedTapes.isNotEmpty(),
+                        modifier = Modifier.size(38.dp).testTag("mouza_clear_button")
+                    ) {
+                        Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+
                 Button(
-                    onClick = { pdfPickerLauncher.launch(arrayOf("application/pdf")) },
+                    onClick = { docPickerLauncher.launch(arrayOf("application/pdf", "image/*")) },
                     modifier = Modifier.testTag("pick_pdf_button"),
                     shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                 ) {
-                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (state.displayBitmap == null) "PDF নিন" else "বদলান")
+                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (state.displayBitmap == null) "ফাইল নিন" else "বদলান", maxLines = 1)
                 }
             }
 
-            if (state.isLoadingPdf || state.isRenderingHd || state.isIndexingPlots) {
+            if (state.isLoadingPdf || state.isRenderingHd || state.isAutoFilling) {
                 LinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -196,7 +235,7 @@ fun MouzaPdfScreen(
                 )
             }
 
-            // Tool & Scale Filter Strip
+            // Tool & Scale Strip (matches video & UI.html)
             if (state.displayBitmap != null) {
                 Row(
                     modifier = Modifier
@@ -207,11 +246,25 @@ fun MouzaPdfScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     NeuPillChip(
-                        text = "অটো দাগ সিলেক্ট",
+                        text = "অটো ফিল",
                         selected = state.activeTool == MouzaSelectionTool.AUTO_TAP,
-                        icon = Icons.Rounded.TouchApp,
+                        icon = Icons.Rounded.AutoFixHigh,
                         testTag = "tool_auto_tap",
                         onClick = { viewModel.setTool(MouzaSelectionTool.AUTO_TAP) }
+                    )
+                    NeuPillChip(
+                        text = "পয়েন্ট এডিট",
+                        selected = state.activeTool == MouzaSelectionTool.EDIT_CORNERS,
+                        icon = Icons.Rounded.Adjust,
+                        testTag = "tool_edit_corners",
+                        onClick = { viewModel.setTool(MouzaSelectionTool.EDIT_CORNERS) }
+                    )
+                    NeuPillChip(
+                        text = "ফিতা মাপ",
+                        selected = state.activeTool == MouzaSelectionTool.TAPE_MEASURE,
+                        icon = Icons.Rounded.Straighten,
+                        testTag = "tool_tape_measure",
+                        onClick = { viewModel.setTool(MouzaSelectionTool.TAPE_MEASURE) }
                     )
                     NeuPillChip(
                         text = "পলিগন",
@@ -219,6 +272,13 @@ fun MouzaPdfScreen(
                         icon = Icons.Rounded.Draw,
                         testTag = "tool_manual_polygon",
                         onClick = { viewModel.setTool(MouzaSelectionTool.POLYGON_DRAW) }
+                    )
+                    NeuPillChip(
+                        text = "প্যান/মুভ",
+                        selected = state.activeTool == MouzaSelectionTool.PAN_ONLY,
+                        icon = Icons.Rounded.PanTool,
+                        testTag = "tool_pan_only",
+                        onClick = { viewModel.setTool(MouzaSelectionTool.PAN_ONLY) }
                     )
 
                     Box {
@@ -262,7 +322,7 @@ fun MouzaPdfScreen(
                             onDismissRequest = { showGapMenu = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("সাধারণ (Exact — স্পষ্ট রেখা)") },
+                                text = { Text("সাধারণ (স্পষ্ট রেখার জন্য)") },
                                 onClick = { viewModel.setGapSealLevel(0); showGapMenu = false }
                             )
                             DropdownMenuItem(
@@ -270,7 +330,7 @@ fun MouzaPdfScreen(
                                 onClick = { viewModel.setGapSealLevel(1); showGapMenu = false }
                             )
                             DropdownMenuItem(
-                                text = { Text("শক্তিশালী (ভাঙা দাগ-সীমানার জন্য)") },
+                                text = { Text("শক্তিশালী (ভাঙা সীমানার জন্য)") },
                                 onClick = { viewModel.setGapSealLevel(2); showGapMenu = false }
                             )
                         }
@@ -306,7 +366,7 @@ fun MouzaPdfScreen(
                 }
             }
 
-            // Main Ultra-HD Zoom/Pan Canvas Area
+            // Main Live-Tile Ultra-HD 1000x Canvas Area
             BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
@@ -343,202 +403,472 @@ fun MouzaPdfScreen(
                         }
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            text = "মৌজা ম্যাপ PDF সিলেক্ট করুন",
+                            text = "মৌজা ম্যাপ PDF বা ছবি সিলেক্ট করুন",
                             style = MaterialTheme.typography.titleLarge,
                             color = Color(0xFF16222B),
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "১. Ultra-HD কোয়ালিটিতে ল্যাগ ছাড়াই ১৬x জুম করুন\n২. দাগের ভেতরে ট্যাপ করলেই দাগ নাম্বারসহ সম্পূর্ণ প্লট সিলেক্ট হবে\n৩. একাধিক দাগ সিলেক্ট করে শুধু সিলেক্টেড অংশ PNG সেভ করুন",
+                            text = "১. ১০০০x পর্যন্ত আসল Ultra-HD ভেক্টর জুম — লেখা বা দাগ কখনো ঝাপসা হবে না\n২. 'অটো ফিল'-এ ট্যাপ করলেই দাগ নাম্বারসহ সম্পূর্ণ প্লট সিলেক্ট হয়ে যাবে\n৩. সামান্য এদিক-সেদিক হলে 'পয়েন্ট এডিট'-এ জুম করে কোণা হাতে টেনে ঠিক করুন",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color(0xFF536574)
                         )
                         Spacer(Modifier.height(20.dp))
                         Button(
-                            onClick = { pdfPickerLauncher.launch(arrayOf("application/pdf")) },
+                            onClick = { docPickerLauncher.launch(arrayOf("application/pdf", "image/*")) },
                             modifier = Modifier.testTag("empty_pick_pdf_button"),
                             shape = RoundedCornerShape(16.dp),
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
                         ) {
                             Icon(Icons.Rounded.PictureAsPdf, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("ফোন স্টোরেজ থেকে PDF বাছুন")
+                            Text("ফোন স্টোরেজ থেকে PDF বা ছবি বাছুন")
                         }
                     }
                 } else {
-                    val boxW = constraints.maxWidth.toFloat()
-                    val boxH = constraints.maxHeight.toFloat()
+                    val boxW = constraints.maxWidth.toFloat().coerceAtLeast(100f)
+                    val boxH = constraints.maxHeight.toFloat().coerceAtLeast(100f)
                     val fitScale = min(boxW / bmp.width.toFloat(), boxH / bmp.height.toFloat())
                     val fitW = bmp.width * fitScale
                     val fitH = bmp.height * fitScale
                     val imgLeft = (boxW - fitW) / 2f
                     val imgTop = (boxH - fitH) / 2f
+                    val cx = boxW / 2f
+                    val cy = boxH / 2f
 
-                    val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
-                    val overlayBitmap = remember(state.overlayMaskBitmap) {
-                        state.overlayMaskBitmap?.asImageBitmap()
+                    fun toScreenX(nx: Float): Float = ((imgLeft + nx * fitW) - cx) * scale + cx + offsetX
+                    fun toScreenY(ny: Float): Float = ((imgTop + ny * fitH) - cy) * scale + cy + offsetY
+                    fun toNormX(sx: Float): Float = (((sx - cx - offsetX) / scale + cx) - imgLeft) / fitW
+                    fun toNormY(sy: Float): Float = (((sy - cy - offsetY) / scale + cy) - imgTop) / fitH
+
+                    // Focus on a plot requested from the Report sheet
+                    LaunchedEffect(state.focusPlotRequest) {
+                        val fp = state.focusPlotRequest ?: return@LaunchedEffect
+                        val poly = fp.effectivePolygon()
+                        if (!poly.isNullOrEmpty()) {
+                            val minNx = poly.minOf { it.first }
+                            val maxNx = poly.maxOf { it.first }
+                            val minNy = poly.minOf { it.second }
+                            val maxNy = poly.maxOf { it.second }
+                            val pw = ((maxNx - minNx) * fitW).coerceAtLeast(20f)
+                            val ph = ((maxNy - minNy) * fitH).coerceAtLeast(20f)
+                            val targetScale = min(boxW / (pw * 1.6f), boxH / (ph * 1.6f)).coerceIn(1.5f, 80f)
+                            val targetCenterNx = (minNx + maxNx) / 2f
+                            val targetCenterNy = (minNy + maxNy) / 2f
+                            scale = targetScale
+                            offsetX = -((imgLeft + targetCenterNx * fitW) - cx) * targetScale
+                            offsetY = -((imgTop + targetCenterNy * fitH) - cy) * targetScale
+                        }
+                        viewModel.consumeFocusPlot()
                     }
+
+                    // Live Viewport Ultra-HD Re-Render on pan/zoom stop (up to 1000x!)
+                    LaunchedEffect(scale, offsetX, offsetY, state.fileName, state.currentPage, boxW, boxH) {
+                        val nl = toNormX(0f).coerceIn(0f, 0.9999f)
+                        val nt = toNormY(0f).coerceIn(0f, 0.9999f)
+                        val nr = toNormX(boxW).coerceIn(nl + 0.0002f, 1f)
+                        val nb = toNormY(boxH).coerceIn(nt + 0.0002f, 1f)
+                        viewModel.requestViewportHdRender(
+                            zoomScale = scale,
+                            normLeft = nl,
+                            normTop = nt,
+                            normRight = nr,
+                            normBottom = nb,
+                            viewportWidthPx = boxW.roundToInt(),
+                            viewportHeightPx = boxH.roundToInt()
+                        )
+                    }
+
+                    var draggedVertex by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(bmp, state.activeTool) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    val newScale = (scale * zoom).coerceIn(1f, 16f)
-                                    val maxOffX = (boxW * (newScale - 1f)) * 0.65f + boxW * 0.25f
-                                    val maxOffY = (boxH * (newScale - 1f)) * 0.65f + boxH * 0.25f
-                                    scale = newScale
+                            // In EDIT_CORNERS mode, allow single-finger vertex dragging cleanly while still panning if away from handle
+                            .then(
+                                if (state.activeTool == MouzaSelectionTool.EDIT_CORNERS && state.selectedPlots.isNotEmpty()) {
+                                    Modifier.pointerInput(state.selectedPlots, scale, offsetX, offsetY, fitW, fitH) {
+                                        detectDragGestures(
+                                            onDragStart = { start ->
+                                                var best: Pair<Int, Int>? = null
+                                                var bestDist = 52f
+                                                state.selectedPlots.forEach { plot ->
+                                                    val poly = plot.effectivePolygon() ?: return@forEach
+                                                    poly.forEachIndexed { idx, (nx, ny) ->
+                                                        val sx = toScreenX(nx)
+                                                        val sy = toScreenY(ny)
+                                                        val d = hypot(sx - start.x, sy - start.y)
+                                                        if (d < bestDist) {
+                                                            bestDist = d
+                                                            best = plot.id to idx
+                                                        }
+                                                    }
+                                                }
+                                                draggedVertex = best
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                val target = draggedVertex
+                                                if (target != null) {
+                                                    val nx = toNormX(change.position.x)
+                                                    val ny = toNormY(change.position.y)
+                                                    viewModel.updatePlotVertex(target.first, target.second, nx, ny)
+                                                } else {
+                                                    offsetX += dragAmount.x
+                                                    offsetY += dragAmount.y
+                                                }
+                                            },
+                                            onDragEnd = { draggedVertex = null },
+                                            onDragCancel = { draggedVertex = null }
+                                        )
+                                    }
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .pointerInput(bmp, state.activeTool, fitW, fitH) {
+                                detectTransformGestures { centroid, pan, zoom, _ ->
+                                    val oldScale = scale
+                                    val newScale = (oldScale * zoom).coerceIn(1f, 1000f)
                                     if (newScale <= 1.01f) {
+                                        scale = 1f
                                         offsetX = 0f
                                         offsetY = 0f
                                     } else {
-                                        offsetX = (offsetX + pan.x).coerceIn(-maxOffX, maxOffX)
-                                        offsetY = (offsetY + pan.y).coerceIn(-maxOffY, maxOffY)
+                                        // Keep zoom centered accurately around the pinch centroid!
+                                        val ratio = newScale / oldScale
+                                        val nextOffX = (offsetX - (centroid.x - cx)) * ratio + (centroid.x - cx) + pan.x
+                                        val nextOffY = (offsetY - (centroid.y - cy)) * ratio + (centroid.y - cy) + pan.y
+                                        val maxOffX = max(boxW * newScale * 0.75f, boxW * 0.5f)
+                                        val maxOffY = max(boxH * newScale * 0.75f, boxH * 0.5f)
+                                        scale = newScale
+                                        offsetX = nextOffX.coerceIn(-maxOffX, maxOffX)
+                                        offsetY = nextOffY.coerceIn(-maxOffY, maxOffY)
                                     }
                                 }
                             }
                             .pointerInput(bmp, state.activeTool, fitW, fitH, imgLeft, imgTop) {
                                 detectTapGestures(
                                     onDoubleTap = { tap ->
-                                        if (scale > 2.2f) {
+                                        if (scale > 2.4f) {
                                             scale = 1f
                                             offsetX = 0f
                                             offsetY = 0f
                                         } else {
-                                            val targetScale = 3.5f
-                                            val cx = boxW / 2f
-                                            val cy = boxH / 2f
-                                            offsetX = (cx - tap.x) * (targetScale - 1f)
-                                            offsetY = (cy - tap.y) * (targetScale - 1f)
+                                            val targetScale = 4f
+                                            val ratio = targetScale / scale
+                                            offsetX = (offsetX - (tap.x - cx)) * ratio + (tap.x - cx)
+                                            offsetY = (offsetY - (tap.y - cy)) * ratio + (tap.y - cy)
                                             scale = targetScale
                                         }
                                     },
                                     onTap = { tap ->
-                                        val cx = boxW / 2f
-                                        val cy = boxH / 2f
-                                        val unscaledX = (tap.x - cx - offsetX) / scale + cx
-                                        val unscaledY = (tap.y - cy - offsetY) / scale + cy
-                                        val normX = (unscaledX - imgLeft) / fitW
-                                        val normY = (unscaledY - imgTop) / fitH
-                                        if (normX in 0f..1f && normY in 0f..1f) {
-                                            viewModel.onMapTap(normX, normY)
+                                        val nx = toNormX(tap.x)
+                                        val ny = toNormY(tap.y)
+                                        if (nx in 0f..1f && ny in 0f..1f) {
+                                            viewModel.onMapTap(nx, ny)
                                         }
                                     }
                                 )
                             }
                     ) {
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    translationX = offsetX
-                                    translationY = offsetY
-                                    scaleX = scale
-                                    scaleY = scale
-                                    transformOrigin = TransformOrigin.Center
+                        val edgeTextPaint = remember {
+                            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                textSize = 27f
+                                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                                textAlign = Paint.Align.CENTER
+                            }
+                        }
+                        val edgeStrokePaint = remember {
+                            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color = android.graphics.Color.WHITE
+                                style = Paint.Style.STROKE
+                                strokeWidth = 7f
+                                textSize = 27f
+                                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                                textAlign = Paint.Align.CENTER
+                            }
+                        }
+                        val centerLabelPaint = remember {
+                            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                textSize = 31f
+                                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                                textAlign = Paint.Align.CENTER
+                            }
+                        }
+                        val centerStrokePaint = remember {
+                            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color = android.graphics.Color.WHITE
+                                style = Paint.Style.STROKE
+                                strokeWidth = 8f
+                                textSize = 31f
+                                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                                textAlign = Paint.Align.CENTER
+                            }
+                        }
+
+                        // Unscaled Screen-Space Vector + Live HD Tile Canvas (zero rounding jitter up to 1000x!)
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val sheetL = toScreenX(0f)
+                            val sheetT = toScreenY(0f)
+                            val sheetR = toScreenX(1f)
+                            val sheetB = toScreenY(1f)
+
+                            drawIntoCanvas { canvas ->
+                                val native = canvas.nativeCanvas
+                                val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+                                    colorFilter = colorMatrixFilter
                                 }
-                        ) {
-                            val dstOffset = IntOffset(imgLeft.roundToInt(), imgTop.roundToInt())
-                            val dstSize = IntSize(fitW.roundToInt(), fitH.roundToInt())
 
-                            // Draw crisp Ultra-HD Mouza Sheet
-                            drawImage(
-                                image = imageBitmap,
-                                dstOffset = dstOffset,
-                                dstSize = dstSize
-                            )
+                                // 1. Draw base overview bitmap across visible screen (fast crop via srcRect so 1000x never explodes Canvas matrix)
+                                val visL = ((0f - sheetL) / (sheetR - sheetL)).coerceIn(0f, 1f)
+                                val visT = ((0f - sheetT) / (sheetB - sheetT)).coerceIn(0f, 1f)
+                                val visR = ((size.width - sheetL) / (sheetR - sheetL)).coerceIn(0f, 1f)
+                                val visB = ((size.height - sheetT) / (sheetB - sheetT)).coerceIn(0f, 1f)
+                                if (visR > visL && visB > visT) {
+                                    val srcR = Rect(
+                                        (visL * bmp.width).toInt().coerceIn(0, bmp.width - 1),
+                                        (visT * bmp.height).toInt().coerceIn(0, bmp.height - 1),
+                                        (visR * bmp.width).roundToInt().coerceIn(1, bmp.width),
+                                        (visB * bmp.height).roundToInt().coerceIn(1, bmp.height)
+                                    )
+                                    val dstR = RectF(
+                                        sheetL + visL * (sheetR - sheetL),
+                                        sheetT + visT * (sheetB - sheetT),
+                                        sheetL + visR * (sheetR - sheetL),
+                                        sheetT + visB * (sheetB - sheetT)
+                                    )
+                                    native.drawBitmap(bmp, srcR, dstR, bitmapPaint)
+                                }
 
-                            // Draw Flood-Filled Auto-Selected Plots Overlay
-                            if (overlayBitmap != null) {
-                                drawImage(
-                                    image = overlayBitmap,
-                                    dstOffset = dstOffset,
-                                    dstSize = dstSize
-                                )
+                                // 2. Overlay crisp native-resolution Viewport HD Tile when zoomed in!
+                                val hdTile = state.viewportTile
+                                if (hdTile != null && scale > 1.15f && !hdTile.bitmap.isRecycled) {
+                                    val tileDst = RectF(
+                                        toScreenX(hdTile.normLeft),
+                                        toScreenY(hdTile.normTop),
+                                        toScreenX(hdTile.normRight),
+                                        toScreenY(hdTile.normBottom)
+                                    )
+                                    native.drawBitmap(
+                                        hdTile.bitmap,
+                                        Rect(0, 0, hdTile.bitmap.width, hdTile.bitmap.height),
+                                        tileDst,
+                                        bitmapPaint
+                                    )
+                                }
                             }
 
-                            // Draw Manual Polygon Plots
+                            // 3. Draw Auto-Filled / Manual Polygons + Side Edge Feet Lengths + Vertex Handles
                             state.selectedPlots.forEach { plot ->
-                                val poly = plot.manualPolygonNormalized
+                                val poly = plot.effectivePolygon()
                                 if (poly != null && poly.size >= 3) {
-                                    val path = Path()
-                                    poly.forEachIndexed { idx, (nx, ny) ->
-                                        val px = imgLeft + nx * fitW
-                                        val py = imgTop + ny * fitH
-                                        if (idx == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                                    val screenPts = poly.map { (nx, ny) ->
+                                        Offset(toScreenX(nx), toScreenY(ny))
                                     }
-                                    path.close()
-                                    drawPath(path, color = plot.color.copy(alpha = 0.35f))
-                                    drawPath(path, color = plot.color, style = Stroke(width = 3f / scale))
+                                    val path = Path().apply {
+                                        screenPts.forEachIndexed { idx, pt ->
+                                            if (idx == 0) moveTo(pt.x, pt.y) else lineTo(pt.x, pt.y)
+                                        }
+                                        close()
+                                    }
+                                    drawPath(path, color = plot.color.copy(alpha = 0.30f))
+                                    drawPath(path, color = plot.color, style = Stroke(width = 4.5f))
+
+                                    val centroidPt = plot.centroidNormalized?.let {
+                                        Offset(toScreenX(it.first), toScreenY(it.second))
+                                    } ?: Offset(
+                                        screenPts.map { it.x }.average().toFloat(),
+                                        screenPts.map { it.y }.average().toFloat()
+                                    )
+
+                                    val plotColorInt = plot.color.toArgb()
+                                    edgeTextPaint.color = plotColorInt
+
+                                    // Edge foot measurements + corner dots
+                                    val isEditMode = state.activeTool == MouzaSelectionTool.EDIT_CORNERS
+                                    for (i in poly.indices) {
+                                        val sA = screenPts[i]
+                                        val sB = screenPts[(i + 1) % screenPts.size]
+                                        val pA = poly[i]
+                                        val pB = poly[(i + 1) % poly.size]
+
+                                        // Edge length label
+                                        val edgePx = hypot(sB.x - sA.x, sB.y - sA.y)
+                                        if (edgePx >= 56f) {
+                                            val feet = MouzaPdfEngine.computeDistanceFeet(
+                                                pA, pB,
+                                                state.pdfPageWidthPts,
+                                                state.pdfPageHeightPts,
+                                                state.selectedScale,
+                                                state.calibrationMultiplier
+                                            )
+                                            val text = LandCalculators.formatCompactFeet(feet)
+                                            var ang = Math.toDegrees(
+                                                atan2((sB.y - sA.y).toDouble(), (sB.x - sA.x).toDouble())
+                                            ).toFloat()
+                                            if (ang > 90f) ang -= 180f
+                                            if (ang < -90f) ang += 180f
+
+                                            val mx = (sA.x + sB.x) / 2f
+                                            val my = (sA.y + sB.y) / 2f
+                                            drawIntoCanvas { canvas ->
+                                                val nc = canvas.nativeCanvas
+                                                nc.save()
+                                                nc.translate(mx, my)
+                                                nc.rotate(ang)
+                                                nc.drawText(text, 0f, -10f, edgeStrokePaint)
+                                                nc.drawText(text, 0f, -10f, edgeTextPaint)
+                                                nc.restore()
+                                            }
+                                        }
+
+                                        // Midpoint split indicator in Edit Corners mode
+                                        if (isEditMode && edgePx >= 48f) {
+                                            val mx = (sA.x + sB.x) / 2f
+                                            val my = (sA.y + sB.y) / 2f
+                                            drawCircle(Color.White, radius = 6f, center = Offset(mx, my))
+                                            drawCircle(plot.color, radius = 4f, center = Offset(mx, my))
+                                        }
+
+                                        // Vertex corner handle
+                                        val handleRadius = if (isEditMode) 13f else 6f
+                                        drawCircle(Color.White, radius = handleRadius + 2.5f, center = sA)
+                                        drawCircle(
+                                            color = if (isEditMode) Color(0xFFFFB300) else plot.color,
+                                            radius = handleRadius,
+                                            center = sA
+                                        )
+                                    }
+
+                                    // Plot label inside polygon when big enough
+                                    val minX = screenPts.minOf { it.x }
+                                    val maxX = screenPts.maxOf { it.x }
+                                    val minY = screenPts.minOf { it.y }
+                                    val maxY = screenPts.maxOf { it.y }
+                                    if (maxX - minX > 72f && maxY - minY > 44f) {
+                                        val plotArea = LandCalculators.fromSqFeet(viewModel.plotAreaSqFeet(plot))
+                                        val titleText = if (plot.dagNumber.isNotBlank()) "দাগ ${plot.dagNumber}" else "দাগ #${plot.plotIndex}"
+                                        val subText = String.format(Locale.US, "%.2f শতক", plotArea.decimal)
+                                        drawIntoCanvas { canvas ->
+                                            val nc = canvas.nativeCanvas
+                                            centerLabelPaint.color = plotColorInt
+                                            nc.drawText(titleText, centroidPt.x, centroidPt.y - 6f, centerStrokePaint)
+                                            nc.drawText(titleText, centroidPt.x, centroidPt.y - 6f, centerLabelPaint)
+                                            nc.drawText(subText, centroidPt.x, centroidPt.y + 30f, centerStrokePaint)
+                                            nc.drawText(subText, centroidPt.x, centroidPt.y + 30f, centerLabelPaint)
+                                        }
+                                    }
                                 }
                             }
 
-                            // Draw Active Draft Polygon
+                            // 4. Draw Completed & Active Tape Measure Lines + Edge Distances
+                            fun drawTapePath(pts: List<Pair<Float, Float>>, isDraft: Boolean) {
+                                if (pts.isEmpty()) return
+                                val screenPts = pts.map { Offset(toScreenX(it.first), toScreenY(it.second)) }
+                                val path = Path().apply {
+                                    screenPts.forEachIndexed { idx, pt ->
+                                        if (idx == 0) moveTo(pt.x, pt.y) else lineTo(pt.x, pt.y)
+                                    }
+                                }
+                                if (screenPts.size >= 2) {
+                                    drawPath(path, color = Color(0xFFE08A00), style = Stroke(width = 5f))
+                                }
+                                screenPts.forEachIndexed { i, pt ->
+                                    if (i > 0) {
+                                        val prev = screenPts[i - 1]
+                                        val feet = MouzaPdfEngine.computeDistanceFeet(
+                                            pts[i - 1], pts[i],
+                                            state.pdfPageWidthPts,
+                                            state.pdfPageHeightPts,
+                                            state.selectedScale,
+                                            state.calibrationMultiplier
+                                        )
+                                        val lbl = LandCalculators.formatFeetInches(feet)
+                                        val mx = (prev.x + pt.x) / 2f
+                                        val my = (prev.y + pt.y) / 2f
+                                        drawIntoCanvas { canvas ->
+                                            val nc = canvas.nativeCanvas
+                                            edgeTextPaint.color = android.graphics.Color.parseColor("#B36B00")
+                                            nc.drawText(lbl, mx, my - 10f, edgeStrokePaint)
+                                            nc.drawText(lbl, mx, my - 10f, edgeTextPaint)
+                                        }
+                                    }
+                                    drawCircle(Color.White, radius = if (isDraft) 11f else 8f, center = pt)
+                                    drawCircle(Color(0xFFFFC107), radius = if (isDraft) 8f else 5.5f, center = pt)
+                                }
+                            }
+                            state.completedTapes.forEach { drawTapePath(it, isDraft = false) }
+                            drawTapePath(state.tapeDraft, isDraft = true)
+
+                            // 5. Draw Active Manual Polygon Draft
                             val draft = state.manualPolygonDraft
                             if (draft.isNotEmpty()) {
                                 val path = Path()
                                 draft.forEachIndexed { idx, (nx, ny) ->
-                                    val px = imgLeft + nx * fitW
-                                    val py = imgTop + ny * fitH
-                                    if (idx == 0) path.moveTo(px, py) else path.lineTo(px, py)
-                                    drawCircle(
-                                        color = EmeraldPrimary,
-                                        radius = 8f / scale,
-                                        center = Offset(px, py)
-                                    )
+                                    val pt = Offset(toScreenX(nx), toScreenY(ny))
+                                    if (idx == 0) path.moveTo(pt.x, pt.y) else path.lineTo(pt.x, pt.y)
+                                    drawCircle(Color.White, radius = 11f, center = pt)
+                                    drawCircle(EmeraldPrimary, radius = 8f, center = pt)
                                 }
                                 if (draft.size >= 2) {
-                                    drawPath(
-                                        path = path,
-                                        color = EmeraldPrimary,
-                                        style = Stroke(width = 3f / scale)
-                                    )
+                                    drawPath(path, color = EmeraldPrimary, style = Stroke(width = 4.5f))
                                 }
                             }
                         }
 
-                        // Floating Zoom & Reset Badge
-                        Row(
+                        // Zoom Percentage Indicator Badge (Top Left)
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(10.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xBB16222B))
+                                .padding(horizontal = 9.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = String.format(Locale.US, "%.1fx / 1000x", scale),
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+
+                        // Right-side Floating FAB Stack (Zoom +, Zoom -, Fit, Filter — matching reference video & UI.html)
+                        Column(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .padding(10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xBB16222B))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = String.format(Locale.US, "%.1fx", scale),
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
-                            if (scale > 1.05f) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xCC0F6B54))
-                                        .clickable {
-                                            scale = 1f
-                                            offsetX = 0f
-                                            offsetY = 0f
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.ZoomOutMap,
-                                        contentDescription = "Reset Zoom",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                            CanvasFab(
+                                icon = Icons.Rounded.Add,
+                                desc = "Zoom In",
+                                onClick = { scale = (scale * 1.6f).coerceIn(1f, 1000f) }
+                            )
+                            CanvasFab(
+                                icon = Icons.Rounded.Remove,
+                                desc = "Zoom Out",
+                                onClick = {
+                                    val next = (scale / 1.6f).coerceIn(1f, 1000f)
+                                    scale = next
+                                    if (next <= 1.02f) {
+                                        scale = 1f; offsetX = 0f; offsetY = 0f
+                                    }
                                 }
-                            }
+                            )
+                            CanvasFab(
+                                icon = Icons.Rounded.ZoomOutMap,
+                                desc = "Fit Screen",
+                                onClick = { scale = 1f; offsetX = 0f; offsetY = 0f }
+                            )
+                            CanvasFab(
+                                icon = Icons.Rounded.FilterBAndW,
+                                desc = "Enhance Map Filters",
+                                tint = if (state.filterPreset != MouzaFilterPreset.NORMAL) Color(0xFFFFD54F) else Color.White,
+                                onClick = { showFilterSheet = true }
+                            )
                         }
 
                         // Manual Polygon Draft Action Pill
@@ -576,213 +906,375 @@ fun MouzaPdfScreen(
                 }
             }
 
-            // Bottom Selected Plots & Export Sheet
+            // Bottom Sheet / Tape Bar (matches video & UI.html fbar/tbar)
             if (state.displayBitmap != null) {
-                val sqFtPerPx = viewModel.sqFeetPerGridPixel()
-                val totalSqFt = state.selectedPlots.sumOf { it.pixelCount * sqFtPerPx }
-                val totalArea = LandCalculators.fromSqFeet(totalSqFt)
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                        .neuSurface(cornerRadius = 22.dp, elevation = 8.dp)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
+                if (state.activeTool == MouzaSelectionTool.TAPE_MEASURE) {
+                    var totalTapeFt = 0.0
+                    for (i in 1 until state.tapeDraft.size) {
+                        totalTapeFt += MouzaPdfEngine.computeDistanceFeet(
+                            state.tapeDraft[i - 1], state.tapeDraft[i],
+                            state.pdfPageWidthPts, state.pdfPageHeightPts,
+                            state.selectedScale, state.calibrationMultiplier
+                        )
+                    }
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { isSummaryExpanded = !isSummaryExpanded },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .neuSurface(cornerRadius = 22.dp, elevation = 8.dp)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = if (state.selectedPlots.isEmpty()) {
-                                    "যেকোনো দাগের ভেতরে ট্যাপ করুন"
-                                } else {
-                                    "সিলেক্টেড: ${state.selectedPlots.size}টি দাগ  •  ${String.format(Locale.US, "%.2f", totalArea.decimal)} শতাংশ"
-                                },
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = if (state.selectedPlots.isEmpty()) {
-                                    "দাগ নাম্বারসহ সম্পূর্ণ প্লট অটো সিলেক্ট হবে"
-                                } else {
-                                    String.format(
-                                        Locale.US,
-                                        "%.2f কাঠা  |  %.3f বিঘা  |  %.1f বর্গফুট",
-                                        totalArea.katha, totalArea.bigha, totalArea.sqFeet
-                                    )
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (state.selectedPlots.isNotEmpty()) {
-                            Icon(
-                                imageVector = if (isSummaryExpanded) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                                contentDescription = "Toggle Details"
-                            )
-                        }
-                    }
-
-                    AnimatedVisibility(visible = isSummaryExpanded && state.selectedPlots.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = state.khatianTitle,
-                                onValueChange = { viewModel.updateKhatianTitle(it) },
-                                label = { Text("খতিয়ান নং / মালিকের নাম (PNG ফুটারের জন্য)") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
+                        Text(
+                            text = if (state.tapeDraft.size >= 2) {
+                                "${LandCalculators.formatFeetInches(totalTapeFt)} • ${String.format(Locale.US, "%.1f", totalTapeFt * 12.0 / 7.92)} লিংক • ${String.format(Locale.US, "%.1f", totalTapeFt / 3.0)} গজ • ${String.format(Locale.US, "%.1f", totalTapeFt * 0.3048)} মি."
+                            } else "ফিতা মাপ (নকশায় ট্যাপ করে বিন্দু বসান)",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color(0xFFC47A00),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.undoTapePoint() },
+                                enabled = state.tapeDraft.isNotEmpty(),
+                                modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(14.dp)
-                            )
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(145.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                items(state.selectedPlots, key = { it.id }) { plot ->
-                                    val pArea = LandCalculators.fromSqFeet(plot.pixelCount * sqFtPerPx)
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(plot.color.copy(alpha = 0.1f))
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(14.dp)
-                                                    .clip(CircleShape)
-                                                    .background(plot.color)
-                                            )
-                                            Column {
-                                                Text(
-                                                    text = buildString {
-                                                        append("#${plot.plotIndex}")
-                                                        if (plot.dagNumber.isNotBlank()) append(" • দাগ ${plot.dagNumber}")
-                                                        if (plot.khatianNumber.isNotBlank()) append(" (খ: ${plot.khatianNumber})")
-                                                    },
-                                                    style = MaterialTheme.typography.titleSmall
-                                                )
-                                                Text(
-                                                    text = String.format(
-                                                        Locale.US,
-                                                        "%.2f শতাংশ | %.2f কাঠা | %.0f বর্গফুট",
-                                                        pArea.decimal, pArea.katha, pArea.sqFeet
-                                                    ),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                        Row {
-                                            IconButton(
-                                                onClick = { showCalibrateDialog = plot },
-                                                modifier = Modifier.size(34.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Rounded.Tune,
-                                                    contentDescription = "Calibrate Scale",
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                            IconButton(
-                                                onClick = { editingPlot = plot },
-                                                modifier = Modifier.size(34.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Rounded.Edit,
-                                                    contentDescription = "Edit Dag/Khatian",
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                            IconButton(
-                                                onClick = { viewModel.removePlot(plot.id) },
-                                                modifier = Modifier.size(34.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Rounded.Close,
-                                                    contentDescription = "Remove",
-                                                    tint = MaterialTheme.colorScheme.error,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
+                                Text("পিছনে")
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.clearTapeDraft() },
+                                enabled = state.tapeDraft.isNotEmpty() || state.completedTapes.isNotEmpty(),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Text("মুছুন", color = MaterialTheme.colorScheme.error)
+                            }
+                            Button(
+                                onClick = { viewModel.finishTapeMeasure() },
+                                enabled = state.tapeDraft.size >= 2,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Text("সম্পন্ন")
                             }
                         }
                     }
+                } else {
+                    val totalSqFt = viewModel.totalSelectedSqFeet()
+                    val totalArea = LandCalculators.fromSqFeet(totalSqFt)
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .neuSurface(cornerRadius = 22.dp, elevation = 8.dp)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = { viewModel.undoLastPlot() },
-                            enabled = state.selectedPlots.isNotEmpty(),
-                            modifier = Modifier.testTag("mouza_undo_button"),
-                            shape = RoundedCornerShape(14.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo", modifier = Modifier.size(18.dp))
-                        }
-                        OutlinedButton(
-                            onClick = { viewModel.clearAllPlots() },
-                            enabled = state.selectedPlots.isNotEmpty(),
-                            modifier = Modifier.testTag("mouza_clear_button"),
-                            shape = RoundedCornerShape(14.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-                        ) {
-                            Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear", modifier = Modifier.size(18.dp))
-                        }
-                        Button(
-                            onClick = { viewModel.exportSelectedOnlyPng() },
-                            enabled = state.selectedPlots.isNotEmpty() && !state.isExporting,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("mouza_export_png_button"),
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                            shape = RoundedCornerShape(14.dp),
-                            contentPadding = PaddingValues(vertical = 12.dp)
-                        ) {
-                            if (state.isExporting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color.White
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (state.selectedPlots.isEmpty()) {
+                                        "যেকোনো দাগের ভেতরে ট্যাপ করুন"
+                                    } else {
+                                        String.format(Locale.US, "%.2f শতাংশ", totalArea.decimal)
+                                    },
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.ExtraBold
                                 )
-                            } else {
-                                Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Text(
+                                    text = if (state.selectedPlots.isEmpty()) {
+                                        "দাগ নাম্বারসহ সম্পূর্ণ প্লট অটো সিলেক্ট হবে"
+                                    } else {
+                                        String.format(
+                                            Locale.US,
+                                            "কাঠা: %.2f • বর্গফুট: %.0f • দাগ: %dটি",
+                                            totalArea.katha, totalArea.sqFeet, state.selectedPlots.size
+                                        )
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                            Spacer(Modifier.width(6.dp))
-                            Text("সিলেক্টেড অংশ PNG সেভ", maxLines = 1)
+
+                            Button(
+                                onClick = { showReportSheet = true },
+                                modifier = Modifier.testTag("mouza_report_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                            ) {
+                                Text("বিস্তারিত ও সেভ", maxLines = 1)
+                            }
                         }
                     }
                 }
             }
         }
 
-        SnackbarHost(
-            hostState = snackbarHostState,
+        // Bottom Swipeable Toast Banner (never blocks top bar or map canvas!)
+        BottomSwipeToastBanner(
+            message = state.statusMessage,
+            onDismiss = { viewModel.clearStatusMessage() },
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 64.dp, start = 12.dp, end = 12.dp)
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 94.dp)
         )
+    }
+
+    // Report & Export PNG Bottom Sheet (matching video + UI.html)
+    if (showReportSheet) {
+        val totalSqFt = viewModel.totalSelectedSqFeet()
+        val totalArea = LandCalculators.fromSqFeet(totalSqFt)
+        ModalBottomSheet(onDismissRequest = { showReportSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "চিহ্নিত দাগসমূহ (${state.selectedPlots.size}টি)",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "%.2f শতাংশ • %.2f কাঠা • %.0f বর্গফুট • %.3f বিঘা • %.4f একর",
+                        totalArea.decimal, totalArea.katha, totalArea.sqFeet, totalArea.bigha, totalArea.acre
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                OutlinedTextField(
+                    value = state.khatianTitle,
+                    onValueChange = { viewModel.updateKhatianTitle(it) },
+                    label = { Text("খতিয়ান নং / মালিকের নাম (PNG ফুটারের জন্য)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                )
+
+                if (state.selectedPlots.isEmpty()) {
+                    Text(
+                        text = "এখনো কোনো দাগ সিলেক্ট করা হয়নি।",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.selectedPlots, key = { it.id }) { plot ->
+                            val pArea = LandCalculators.fromSqFeet(viewModel.plotAreaSqFeet(plot))
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(plot.color.copy(alpha = 0.10f))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .clip(CircleShape)
+                                                .background(plot.color)
+                                        )
+                                        Text(
+                                            text = buildString {
+                                                append("দাগ #${plot.plotIndex}")
+                                                if (plot.dagNumber.isNotBlank()) append(" (${plot.dagNumber})")
+                                                if (plot.khatianNumber.isNotBlank()) append(" • খ: ${plot.khatianNumber}")
+                                            },
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Row {
+                                        IconButton(
+                                            onClick = {
+                                                viewModel.requestFocusPlot(plot)
+                                                showReportSheet = false
+                                            },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.CenterFocusStrong, contentDescription = "Zoom to Plot", modifier = Modifier.size(18.dp))
+                                        }
+                                        IconButton(
+                                            onClick = { showCalibrateDialog = plot },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Tune, contentDescription = "Calibrate Scale", modifier = Modifier.size(18.dp))
+                                        }
+                                        IconButton(
+                                            onClick = { editingPlot = plot },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Edit, contentDescription = "Edit Dag/Khatian", modifier = Modifier.size(18.dp))
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.removePlot(plot.id) },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = String.format(
+                                        Locale.US,
+                                        "%.3f শতক • %.3f কাঠা • %.0f বর্গফুট • %.3f বিঘা • %.4f একর",
+                                        pArea.decimal, pArea.katha, pArea.sqFeet, pArea.bigha, pArea.acre
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.exportSelectedOnlyPng(selectedOnly = true)
+                            showReportSheet = false
+                        },
+                        enabled = state.selectedPlots.isNotEmpty() && !state.isExporting,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("mouza_export_png_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("সেভ: নির্বাচিত দাগ", maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.exportSelectedOnlyPng(selectedOnly = false)
+                            showReportSheet = false
+                        },
+                        enabled = !state.isExporting,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("পুরো নকশা সেভ", maxLines = 1)
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+        }
+    }
+
+    // Image Clarity / Filter Enhancement Sheet
+    if (showFilterSheet) {
+        ModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "নকশা ফিল্টার ও স্পষ্টতা",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "ঝাপসা নকশার লেখা ও দাগ পরিষ্কার করুন (অটো ফিলে কোনো সমস্যা হবে না)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                val presets = MouzaFilterPreset.entries
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    presets.chunked(2).forEach { pair ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            pair.forEach { preset ->
+                                Box(modifier = Modifier.weight(1f)) {
+                                    NeuPillChip(
+                                        text = preset.labelBn,
+                                        selected = state.filterPreset == preset,
+                                        onClick = { viewModel.setFilterPreset(preset) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text("উজ্জ্বলতা (${String.format(Locale.US, "%.0f%%", state.brightness * 100)})", style = MaterialTheme.typography.labelLarge)
+                Slider(
+                    value = state.brightness,
+                    onValueChange = { viewModel.setBrightnessContrast(it, state.contrast) },
+                    valueRange = 0.5f..1.8f
+                )
+
+                Text("কন্ট্রাস্ট (${String.format(Locale.US, "%.0f%%", state.contrast * 100)})", style = MaterialTheme.typography.labelLarge)
+                Slider(
+                    value = state.contrast,
+                    onValueChange = { viewModel.setBrightnessContrast(state.brightness, it) },
+                    valueRange = 0.5f..2.5f
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.setFilterPreset(MouzaFilterPreset.NORMAL)
+                            viewModel.setBrightnessContrast(1f, 1f)
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("রিসেট")
+                    }
+                    Button(
+                        onClick = { showFilterSheet = false },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("প্রয়োগ সম্পন্ন")
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+        }
     }
 
     // Edit Dag & Khatian Tag Dialog
@@ -856,4 +1348,80 @@ fun MouzaPdfScreen(
             }
         )
     }
+}
+
+@Composable
+private fun CanvasFab(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    desc: String,
+    tint: Color = Color.White,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Color(0xCC16222B))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = desc, tint = tint, modifier = Modifier.size(20.dp))
+    }
+}
+
+private fun buildFilterColorMatrix(
+    preset: MouzaFilterPreset,
+    brightness: Float,
+    contrast: Float
+): ColorMatrixColorFilter? {
+    if (preset == MouzaFilterPreset.NORMAL && brightness == 1f && contrast == 1f) return null
+
+    val cm = ColorMatrix()
+    when (preset) {
+        MouzaFilterPreset.NORMAL -> Unit
+        MouzaFilterPreset.DOC_SCAN -> {
+            val gray = ColorMatrix().apply { setSaturation(0f) }
+            val boost = contrastMatrix(1.35f, 1.08f)
+            cm.postConcat(gray)
+            cm.postConcat(boost)
+        }
+        MouzaFilterPreset.HIGH_CONTRAST -> {
+            cm.postConcat(contrastMatrix(1.8f, 1.0f))
+        }
+        MouzaFilterPreset.BW -> {
+            cm.postConcat(ColorMatrix().apply { setSaturation(0f) })
+            cm.postConcat(contrastMatrix(2.1f, 1.0f))
+        }
+        MouzaFilterPreset.BRIGHT -> {
+            cm.postConcat(contrastMatrix(1.0f, 1.3f))
+        }
+        MouzaFilterPreset.INVERT -> {
+            cm.postConcat(
+                ColorMatrix(
+                    floatArrayOf(
+                        -1f, 0f, 0f, 0f, 255f,
+                        0f, -1f, 0f, 0f, 255f,
+                        0f, 0f, -1f, 0f, 255f,
+                        0f, 0f, 0f, 1f, 0f
+                    )
+                )
+            )
+        }
+    }
+    if (brightness != 1f || contrast != 1f) {
+        cm.postConcat(contrastMatrix(contrast, brightness))
+    }
+    return ColorMatrixColorFilter(cm)
+}
+
+private fun contrastMatrix(contrast: Float, brightness: Float): ColorMatrix {
+    val t = (1f - contrast) * 128f + (brightness - 1f) * 128f
+    return ColorMatrix(
+        floatArrayOf(
+            contrast, 0f, 0f, 0f, t,
+            0f, contrast, 0f, 0f, t,
+            0f, 0f, contrast, 0f, t,
+            0f, 0f, 0f, 1f, 0f
+        )
+    )
 }

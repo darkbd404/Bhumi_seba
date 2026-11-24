@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Balance
 import androidx.compose.material.icons.rounded.CropSquare
+import androidx.compose.material.icons.rounded.LinearScale
 import androidx.compose.material.icons.rounded.Percent
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.SwapHoriz
@@ -31,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +46,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.engine.LandAreaResult
 import com.example.engine.LandCalculators
+import com.example.engine.LengthUnit
 import com.example.ui.components.NeuPillChip
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
@@ -51,21 +54,31 @@ import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
 import java.util.Locale
 
-private enum class SurveyToolTab(val titleBn: String) {
-    UNIT_CONVERTER("একক কনভার্টার"),
-    SHAPE_SURVEY("আমিন আকৃতি মাপ"),
-    KHATIAN_HISSA("খতিয়ান হিস্যা"),
-    FARAIZ("ওয়ারিশ/ফারায়েজ"),
-    DEED_TAX("দলিল ও খাজনা"),
-    CHAIN_SCALE("চেইন ও গুনিয়া")
+private enum class SurveyToolTab(val key: String, val titleBn: String) {
+    UNIT_CONVERTER("unit", "জমির একক"),
+    LENGTH_CONVERTER("len", "দৈর্ঘ্য মাপ"),
+    SHAPE_SURVEY("shape", "আকৃতি মাপ"),
+    KHATIAN_HISSA("hissa", "খতিয়ান হিস্যা"),
+    FARAIZ("faraiz", "ওয়ারিশ/ফারায়েজ"),
+    DEED_TAX("tax", "দলিল ও দাম"),
+    CHAIN_SCALE("scale", "স্কেল ও চেইন")
 }
 
 @Composable
 fun ToolsScreen(
+    initialTabKey: String = "unit",
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var activeTab by remember { mutableStateOf(SurveyToolTab.UNIT_CONVERTER) }
+    var activeTab by remember(initialTabKey) {
+        mutableStateOf(
+            SurveyToolTab.entries.find { it.key == initialTabKey } ?: SurveyToolTab.UNIT_CONVERTER
+        )
+    }
+
+    LaunchedEffect(initialTabKey) {
+        SurveyToolTab.entries.find { it.key == initialTabKey }?.let { activeTab = it }
+    }
 
     Column(
         modifier = modifier
@@ -112,6 +125,7 @@ fun ToolsScreen(
             SurveyToolTab.entries.forEach { tab ->
                 val icon = when (tab) {
                     SurveyToolTab.UNIT_CONVERTER -> Icons.Rounded.SwapHoriz
+                    SurveyToolTab.LENGTH_CONVERTER -> Icons.Rounded.LinearScale
                     SurveyToolTab.SHAPE_SURVEY -> Icons.Rounded.CropSquare
                     SurveyToolTab.KHATIAN_HISSA -> Icons.Rounded.Percent
                     SurveyToolTab.FARAIZ -> Icons.Rounded.Balance
@@ -137,6 +151,7 @@ fun ToolsScreen(
         ) {
             when (activeTab) {
                 SurveyToolTab.UNIT_CONVERTER -> item { UnitConverterPanel() }
+                SurveyToolTab.LENGTH_CONVERTER -> item { LengthConverterPanel() }
                 SurveyToolTab.SHAPE_SURVEY -> item { ShapeSurveyPanel() }
                 SurveyToolTab.KHATIAN_HISSA -> item { KhatianHissaPanel() }
                 SurveyToolTab.FARAIZ -> item { FaraizPanel() }
@@ -149,9 +164,71 @@ fun ToolsScreen(
 }
 
 @Composable
+private fun LengthConverterPanel() {
+    var inputValue by remember { mutableStateOf("66") }
+    var selectedUnit by remember { mutableStateOf(LengthUnit.FEET) }
+
+    val v = inputValue.toDoubleOrNull() ?: 0.0
+    val converted = LandCalculators.convertLength(v, selectedUnit)
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .neuSurface(cornerRadius = 20.dp, elevation = 5.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("দৈর্ঘ্য একক কনভার্টার", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = inputValue,
+                onValueChange = { inputValue = it },
+                label = { Text("মান (${selectedUnit.labelBn})") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                LengthUnit.entries.forEach { u ->
+                    NeuPillChip(
+                        text = u.labelBn.substringBefore(" "),
+                        selected = selectedUnit == u,
+                        onClick = { selectedUnit = u }
+                    )
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .neuSurface(cornerRadius = 20.dp, elevation = 5.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("রূপান্তরিত ফলাফল", style = MaterialTheme.typography.titleMedium, color = EmeraldPrimary)
+            LengthUnit.entries.forEach { u ->
+                val valNum = converted[u] ?: 0.0
+                StatRow(
+                    label = u.labelBn,
+                    value = String.format(Locale.US, "%.4f", valNum),
+                    highlight = u == LengthUnit.FEET || u == LengthUnit.LINK || u == LengthUnit.METER
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun UnitConverterPanel() {
     var inputValue by remember { mutableStateOf("10") }
-    var inputUnit by remember { mutableIntStateOf(0) } // 0: Decimal, 1: Katha, 2: Bigha, 3: Acre, 4: SqFt, 5: SqM
+    var inputUnit by remember { mutableIntStateOf(0) }
     val units = listOf("শতাংশ", "কাঠা", "বিঘা", "একর", "বর্গফুট", "বর্গমিটার")
 
     val v = inputValue.toDoubleOrNull() ?: 0.0
@@ -204,7 +281,7 @@ private fun UnitConverterPanel() {
 
 @Composable
 private fun ShapeSurveyPanel() {
-    var shapeIdx by remember { mutableIntStateOf(0) } // 0: 4-Side, 1: Triangle, 2: Circle, 3: Trapezoid
+    var shapeIdx by remember { mutableIntStateOf(0) }
     val shapes = listOf("৪ বাহু / অনিয়মিত", "ত্রিভুজ (হেরন)", "বৃত্ত / গোল", "ট্রাপিজিয়াম")
 
     var a by remember { mutableStateOf("60") }
@@ -519,6 +596,7 @@ private fun ChainScalePanel() {
     val yards = feet / 3.0
     val inchesOn16Scale = feet / 330.0
     val inchesOn32Scale = feet / 165.0
+    val inchesOn64Scale = feet / 82.5
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(
@@ -546,6 +624,7 @@ private fun ChainScalePanel() {
             StatRow("গজ (Yard)", String.format(Locale.US, "%.2f গজ", yards))
             StatRow("১৬\"=১ মাইল নকশায় দূরত্ব", String.format(Locale.US, "%.4f ইঞ্চি", inchesOn16Scale), highlight = true)
             StatRow("৩২\"=১ মাইল নকশায় দূরত্ব", String.format(Locale.US, "%.4f ইঞ্চি", inchesOn32Scale), highlight = true)
+            StatRow("৬৪\"=১ মাইল নকশায় দূরত্ব", String.format(Locale.US, "%.4f ইঞ্চি", inchesOn64Scale), highlight = true)
         }
     }
 }

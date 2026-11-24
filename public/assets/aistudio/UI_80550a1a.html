@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="bn"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ভূমি সেবা</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{--bg:#e4e9ee;--l:#fff;--d:#b9c2cc;--t:#25323d;--m:#6b7a88;--g:#0f8a63;--a:#e08a00;--r:#d6405a;color-scheme:light}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#232a31;--l:#2e3841;--d:#171c21;--t:#e6edf3;--m:#93a1ae;--g:#2fcf9b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#232a31;--l:#2e3841;--d:#171c21;--t:#e6edf3;--m:#93a1ae;--g:#2fcf9b;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--t);font-family:'Segoe UI',Tahoma,Geneva,Verdana,'Noto Sans Bengali',sans-serif;overflow:hidden}
+.scr{position:fixed;inset:0;display:none;flex-direction:column;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+.scr.on{display:flex}
+.raise{background:var(--bg);box-shadow:6px 6px 14px var(--d),-6px -6px 14px var(--l);border-radius:20px}
+.inset{background:var(--bg);box-shadow:inset 4px 4px 9px var(--d),inset -4px -4px 9px var(--l);border-radius:16px}
+button,.btn{font:inherit;color:var(--t);border:0;cursor:pointer;background:var(--bg);box-shadow:4px 4px 9px var(--d),-4px -4px 9px var(--l);border-radius:14px;padding:10px 14px;display:inline-flex;align-items:center;gap:6px;justify-content:center}
+button:active,.btn:active,.sel{box-shadow:inset 3px 3px 7px var(--d),inset -3px -3px 7px var(--l)}
+button:focus-visible,.btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--g);outline-offset:2px}
+.pri{color:var(--g);font-weight:700}
+.ic{width:22px;height:22px;flex:none}
+.top{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.top h1{font-size:18px;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sq{width:44px;height:44px;padding:0;border-radius:14px}
+.body{flex:1;overflow:auto;padding:6px 16px 22px}
+.hero{display:flex;gap:14px;align-items:center;padding:18px;margin:6px 0 18px}
+.hero .bd{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;color:var(--g);animation:ring 2.8s ease-in-out infinite}
+.hero .bd .ic{width:32px;height:32px;stroke-dasharray:90;animation:draw 2s ease-out both}
+.hero b{font-size:19px;display:block}.hero small{color:var(--m);line-height:1.5}
+@keyframes ring{0%,100%{box-shadow:6px 6px 14px var(--d),-6px -6px 14px var(--l)}50%{box-shadow:2px 2px 6px var(--d),-2px -2px 6px var(--l),0 0 0 6px color-mix(in srgb,var(--g) 18%,transparent)}}
+@keyframes draw{from{stroke-dashoffset:90}to{stroke-dashoffset:0}}
+@keyframes fl{50%{transform:translateY(-3px)}}
+h2{font-size:15px;margin:18px 4px 12px;color:var(--m)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{padding:16px 12px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:116px;position:relative;font-size:14px;cursor:pointer;border:0;color:var(--t)}
+.card .bd{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;color:var(--g);box-shadow:inset 3px 3px 7px var(--d),inset -3px -3px 7px var(--l)}
+.card.on .bd .ic{animation:fl 2.4s ease-in-out infinite}
+.card.soon{opacity:.82}.card.soon .bd{color:var(--m)}
+.tag{position:absolute;top:8px;right:8px;font-size:10px;padding:2px 7px;border-radius:9px;color:var(--a);box-shadow:inset 2px 2px 4px var(--d),inset -2px -2px 4px var(--l)}
+.tag.f{color:var(--g)}
+.pick{display:flex;gap:12px;align-items:center;padding:18px;text-align:left;width:100%;font-size:15px}
+.pick small{display:block;color:var(--m);margin-top:2px}
+#stagewrap{flex:1;margin:0 12px;position:relative;overflow:hidden;touch-action:none;border-radius:18px}
+#stage{position:absolute;left:0;top:0;transform-origin:0 0}
+#stage canvas{position:absolute;left:0;top:0;display:block}
+.tools{display:flex;gap:10px;padding:4px 12px 12px;overflow-x:auto}
+.tools button{flex:none;font-size:13px;padding:9px 12px}
+#hd,#hd2,#cs{position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none}
+#lp{position:absolute;width:112px;height:112px;border-radius:50%;border:3px solid var(--g);display:none;pointer-events:none;z-index:5;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+#tt{position:absolute;display:none;pointer-events:none;z-index:5;padding:6px 10px;font-size:12px;line-height:1.45;border-radius:10px;white-space:nowrap;color:var(--a)}
+.fab{z-index:6;position:absolute;right:10px;display:flex;flex-direction:column;gap:10px;top:10px}
+.fab button{width:42px;height:42px;padding:0;border-radius:50%}
+.bar{margin:10px 12px 12px;padding:12px 14px}
+.bar .r1{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.bar .big{font-size:22px;font-weight:800;color:var(--g)}
+.bar small{color:var(--m)}
+#msg{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:88%;padding:11px 16px;font-size:13.5px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:30}
+#msg.show{opacity:1}
+.ov{position:fixed;inset:0;background:rgba(10,15,20,.45);display:none;align-items:flex-end;justify-content:center;z-index:20}
+.ov.on{display:flex}
+.sheet{width:100%;max-width:520px;max-height:82%;overflow:auto;padding:20px 18px calc(20px + env(safe-area-inset-bottom,0px));border-radius:26px 26px 0 0;animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(30px);opacity:0}}
+.sheet h3{margin:0 0 6px;font-size:18px}.sheet p{color:var(--m);line-height:1.6;margin:6px 0 14px;font-size:14px}
+.row{display:flex;gap:12px;margin-top:14px}.row>*{flex:1}
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.presets button{justify-content:flex-start;font-size:13px}
+input[type=range]{width:100%;accent-color:var(--g)}
+input[type=number],input[type=search],select{font:inherit;color:var(--t);border:0;padding:12px;border-radius:12px;width:100%;background:var(--bg);box-shadow:inset 3px 3px 7px var(--d),inset -3px -3px 7px var(--l)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}td,th{padding:8px 4px;text-align:left;border-bottom:1px solid color-mix(in srgb,var(--m) 25%,transparent)}
+.res{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}.res div{padding:12px;text-align:center}.res b{display:block;font-size:17px;color:var(--g)}.res small{color:var(--m)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+.scr.on{animation:in .35s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(16px)}}
+@keyframes pop{from{opacity:0;transform:scale(.85) translateY(10px)}}
+.card{animation:pop .5s both;animation-delay:calc(var(--i,0)*60ms);transition:transform .15s}
+.card:active{transform:scale(.96)}
+button{transition:transform .12s,box-shadow .2s}button:active{transform:scale(.97)}
+.pick .bd{animation:fl 2.4s ease-in-out infinite}.hero{animation:pop .6s both}h2{animation:in .5s both}
+.abt{text-align:center}.av{width:116px;height:116px;border-radius:50%;margin:0 auto 12px;padding:6px;animation:ring 3s ease-in-out infinite}.av img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.cts{display:flex;gap:14px;justify-content:center;margin-top:14px;flex-wrap:wrap}.ct{width:50px;height:50px;padding:0;border-radius:50%;color:var(--g);animation:pop .5s both;animation-delay:calc(var(--i)*90ms)}
+.srch{display:flex;gap:10px;padding:0 12px 8px}.srch input{flex:1}
+.lb{display:block;margin-top:12px;font-size:13px;color:var(--m)}
+#rAt{position:absolute;left:8px;bottom:4px;font-size:10px;color:#fff;text-shadow:0 0 3px #000;pointer-events:none}
+#hd2{visibility:hidden}#stage,#hd,#hd2{will-change:transform}
+.hero .bd,.av{animation:none}.card.on .bd .ic{animation-iteration-count:3}.pick .bd{animation-iteration-count:3}
+#splash{position:fixed;inset:0;z-index:99;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;animation:sout .5s ease 1.3s forwards}
+#splash .lg{width:112px;height:112px;filter:drop-shadow(6px 8px 12px var(--d));animation:pop .7s both,fl 1.6s ease-in-out .7s 2}#splash b{font-size:22px;animation:in .7s .3s both}#splash small{color:var(--m);animation:in .7s .5s both}
+@keyframes sout{to{opacity:0;visibility:hidden}}
+button,.card{position:relative;overflow:hidden}
+.rip{position:absolute;border-radius:50%;background:rgba(15,138,99,.25);transform:scale(0);animation:rp .5s ease-out forwards;pointer-events:none}@keyframes rp{to{transform:scale(1);opacity:0}}
+#ld{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px;border-radius:50%;border:4px solid color-mix(in srgb,var(--g) 25%,transparent);border-top-color:var(--g);animation:sp .8s linear infinite;display:none;z-index:7;pointer-events:none}#ld.on{display:block}@keyframes sp{to{transform:rotate(360deg)}}
+.pls{animation:pls .4s}@keyframes pls{40%{transform:scale(1.025)}}
+</style></head><body>
+<div id="splash"><svg class="lg" viewBox="0 0 120 120"><defs><linearGradient id="lgG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#14b184"/><stop offset="1" stop-color="#0a5c44"/></linearGradient></defs><rect width="120" height="120" rx="28" fill="url(#lgG)"/><path d="M26 74 44 40l34 8 18 26-30 14z" fill="#fff" fill-opacity=".92"/><g fill="#f5a524"><circle cx="26" cy="74" r="5"/><circle cx="44" cy="40" r="5"/><circle cx="78" cy="48" r="5"/><circle cx="96" cy="74" r="5"/><circle cx="66" cy="88" r="5"/></g><path d="M80 14c-9 0-15 6-15 14 0 10 15 24 15 24s15-14 15-24c0-8-6-14-15-14z" fill="#e0443e" stroke="#fff" stroke-width="3"/><circle cx="80" cy="28" r="5" fill="#fff"/></svg><b>ভূমি সেবা</b><small>স্মার্ট ভূমি সহায়ক</small></div>
+
+<section class="scr on" id="home">
+ <div class="top"><h1>ভূমি সেবা</h1><button class="sq" id="bAbout" aria-label="অ্যাপ সম্পর্কে"></button></div>
+ <div class="body">
+  <div class="hero raise"><div class="bd raise" id="heroIc"></div><div><b>আপনার জমির নকশা, এক জায়গায়</b><small>মৌজা ম্যাপ থেকে দাগ বেছে জায়গার পরিমাপ জানুন, ছবি হিসেবে সেভ করুন।</small></div></div>
+  <button class="pick raise" id="bPick"><span class="bd" id="pkIc" style="color:var(--g)"></span><span><b>ফোন থেকে নকশা নির্বাচন করুন</b><small>PDF বা ছবি (JPG/PNG) বেছে নিন</small></span></button>
+  <input type="file" id="file" accept="application/pdf,image/*" hidden>
+  <div id="secs"></div>
+ </div>
+</section>
+
+<section class="scr" id="map">
+ <div class="top"><button class="sq" id="mBack" aria-label="ফিরে যান"></button><h1 id="mTitle">নকশা</h1>
+  <button class="sq" id="mUndo" aria-label="আনডু"></button><button class="sq" id="mRedo" aria-label="রিডু"></button><button class="sq" id="mClear" aria-label="সব মুছুন" style="color:var(--r)"></button></div>
+ <div class="tools" id="tools"></div>
+ <div id="stagewrap" class="inset"><div id="ld"></div><div id="stage"><canvas id="cb"></canvas></div><canvas id="hd"></canvas><canvas id="hd2"></canvas><canvas id="cs"></canvas><canvas id="lp"></canvas><div id="tt" class="raise"></div>
+  <div class="fab"><button id="zIn" aria-label="জুম ইন"></button><button id="zOut" aria-label="জুম আউট"></button><button id="zFit" aria-label="ফিট"></button><button id="bFilter" aria-label="ফিল্টার"></button></div></div>
+ <div class="bar raise" id="fbar"><div class="r1"><span class="big" id="tShotok">০.০০ শতক</span><button class="pri" id="bRep" style="padding:8px 12px">বিস্তারিত ও সেভ</button></div><small id="tSub">কাঠা: ০ • বর্গফুট: ০ • দাগ: ০</small></div>
+ <div class="bar raise" id="tbar" style="display:none"><b id="tTot" style="color:var(--a);font-size:16px;line-height:1.5">ফিতা মাপ</b><br><small id="tSub2"></small><div class="row"><button id="tU" aria-label="শেষ পয়েন্ট বাতিল"></button><button id="tC" style="color:var(--r)">মুছুন</button><button class="pri" id="tD">সম্পন্ন</button></div></div>
+</section>
+
+<section class="scr" id="conv"><div class="top"><button class="sq" id="cBack" aria-label="ফিরে যান"></button><h1 id="cT">টুলস</h1></div><div class="body" id="cB"></div></section>
+
+<section class="scr" id="web"><div class="top"><button class="sq" id="wBack" aria-label="ফিরে যান"></button><h1 id="wT">ওয়েব</h1><button class="sq" id="wRe" aria-label="রিলোড"></button></div>
+ <div class="inset" style="flex:1;margin:0 12px;overflow:hidden"><iframe id="wf" style="width:100%;height:100%;border:0;background:#fff" title="ওয়েবসাইট"></iframe></div>
+ <small style="padding:8px 16px 12px;color:var(--m)">কিছু সাইট প্রিভিউতে খোলে না — APK অ্যাপে সব সাইট অ্যাপের ভেতরেই খুলবে।</small></section>
+
+<section class="scr" id="rmap"><div class="top"><button class="sq" id="rBack" aria-label="ফিরে যান"></button><h1>রিয়েল ম্যাপ</h1><button class="sq" id="rGo" aria-label="Google Maps-এ খুলুন"></button></div>
+ <div class="srch"><input id="rq" type="search" placeholder="জায়গা খুঁজুন (গ্রাম, উপজেলা…)" aria-label="জায়গা খুঁজুন"><button class="sq" id="rS" aria-label="খুঁজুন"></button></div>
+ <div class="tools" id="rt"></div>
+ <div id="rwrap" class="inset" style="flex:1;margin:0 12px;position:relative;overflow:hidden;touch-action:none"><canvas id="rc" style="display:block"></canvas><div class="fab"><button id="rZi" aria-label="জুম ইন"></button><button id="rZo" aria-label="জুম আউট"></button><button id="rLoc" aria-label="আমার অবস্থান"></button></div><div id="rAt"></div></div>
+ <div class="bar raise"><b id="rTot" style="color:var(--g);font-size:16px;line-height:1.5">ম্যাপে ট্যাপ করে মাপুন</b><br><small id="rSub"></small><div class="row"><button id="rU" aria-label="শেষ পয়েন্ট বাতিল"></button><button id="rC" style="color:var(--r)">মুছুন</button><button id="rSv" class="pri"></button></div></div>
+</section>
+
+<div class="ov" id="ov"><div class="sheet raise" id="sheet"></div></div>
+<div id="msg" class="raise" role="status"></div>
+<script>
+const ABOUT={name:'ভূমি সেবা',ver:'১.৩',dev:'আব্দুস সালাম',devEn:'Abdus Salam',note:'বাংলাদেশের ভূমি সেবা, নকশা পরিমাপ ও রিয়েল ম্যাপ টুলস — এক অ্যাপে। আগামীতে আরও সেবা যুক্ত হবে।',c:[['phone','tel:01620230864','কল করুন (১)'],['phone','tel:09696590864','কল করুন (২)'],['mail','mailto:salam230864@gmail.com','ইমেইল'],['fb','https://www.facebook.com/Salam.864','ফেসবুক'],['msg','https://m.me/Salam.864','মেসেঞ্জার']]};
+const PHOTO='data:image/jpeg;base64,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';
+const PDFCDN='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+const I={map:'<path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2zM9 3v16M15 5v16"/>',calc:'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h2M14 12h2M8 16h2M14 16h2"/>',doc:'<path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/>',edit:'<path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/>',coin:'<circle cx="12" cy="12" r="9"/><path d="M9 9h5a2 2 0 0 1 0 4H9m2 0v5"/>',pin:'<path d="M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2z"/>',up:'<path d="M12 16V4m-5 5 5-5 5 5M4 20h16"/>',ruler:'<path d="m3 17 14-14 4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2"/>',wand:'<path d="m4 20 11-11M14 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1zM19 12l.7 1.3L21 14l-1.3.7L19 16l-.7-1.3L17 14l1.3-.7z"/>',sl:'<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',undo:'<path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/>',redo:'<path d="m15 14 5-5-5-5M20 9H10a6 6 0 0 0 0 12h3"/>',trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',back:'<path d="M15 5 8 12l7 7"/>',plus:'<path d="M12 5v14M5 12h14"/>',minus:'<path d="M5 12h14"/>',fit:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',hand:'<path d="M8 12V5a1.5 1.5 0 0 1 3 0v6m0-2V4a1.5 1.5 0 0 1 3 0v6m0-3a1.5 1.5 0 0 1 3 0v8a6 6 0 0 1-6 6c-3 0-4-2-6-5l-1-2a1.5 1.5 0 0 1 3-1l1 1"/>',save:'<path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/>'};
+const ic=n=>`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
+Object.assign(I,{mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',fb:'<path d="M14 8h3V4h-3a4 4 0 0 0-4 4v3H7v4h3v5h4v-5h3l1-4h-4V8z"/>',msg:'<path d="M12 3a9 9 0 0 0-9 9c0 2.2.8 4.2 2.2 5.7V21l3.2-1.7A9 9 0 1 0 12 3z"/><path d="m7.5 13.5 3-3.2 2 2 3-2.5-3 3.2-2-2z"/>',globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',shape:'<path d="M4 18 10 5l10 13z"/>',scale:'<path d="M3 8h18v8H3zM7 8v4M11 8v3M15 8v4M19 8v3"/>',locate:'<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',ext:'<path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/>',poly:'<path d="M5 6 19 4l1 13-12 3z"/>'});
+const $=id=>document.getElementById(id);
+const BN='০১২৩৪৫৬৭৮৯',bn=(n,d=2)=>(+n).toFixed(d).replace(/\d/g,c=>BN[c]);
+function toast(t){const m=$('msg');m.textContent=t;m.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>m.classList.remove('show'),2600)}
+function sheet(html){$('sheet').innerHTML=html;$('ov').classList.add('on')}
+function closeSheet(){$('ov').classList.remove('on')}
+$('ov').onclick=e=>{if(e.target.id==='ov')closeSheet()};
+function show(id){document.querySelectorAll('.scr').forEach(s=>s.classList.toggle('on',s.id===id));if(id!=='web')$('wf').removeAttribute('src');if(id!=='map')releaseMap()}
+const cur=()=>document.querySelector('.scr.on').id;
+
+/* icons + home */
+$('bAbout').innerHTML=ic('info');$('heroIc').innerHTML=ic('map');$('pkIc').innerHTML=ic('up');
+[['mBack','back'],['cBack','back'],['mUndo','undo'],['mRedo','redo'],['mClear','trash'],['zIn','plus'],['zOut','minus'],['zFit','fit'],['bFilter','sl']].forEach(([i,n])=>$(i).innerHTML=ic(n));
+[['wBack','back'],['rBack','back'],['wRe','undo'],['rS','search'],['rGo','ext'],['rZi','plus'],['rZo','minus'],['rLoc','locate'],['rU','undo']].forEach(([i,n])=>$(i).innerHTML=ic(n));
+function openWeb(u,t){if(/^(tel|mailto):/.test(u)){location.href=u;return}if(window.Android&&Android.openUrl){Android.openUrl(u);return}$('wT').textContent=t||u;$('wf').src=u;show('web')}
+$('wBack').onclick=()=>show('home');$('wRe').onclick=()=>{const f=$('wf'),u=f.src;f.src='about:blank';setTimeout(()=>f.src=u,50)};
+const WB=(u,t)=>()=>openWeb(u,t);
+const SEC=[
+['ম্যাপ ও মাপার টুলস',[['map','নকশা পরিমাপ (PDF/ছবি)','ফ্রি',()=>$('file').click()],['save','সংরক্ষিত নকশা','ফ্রি',()=>openTool('saved')],['globe','রিয়েল ম্যাপ (স্যাটেলাইট)','ফ্রি',()=>openMap()],['calc','জমির ইউনিট কনভার্টার','ফ্রি',()=>openTool('area')],['ruler','দৈর্ঘ্য কনভার্টার','ফ্রি',()=>openTool('len')],['shape','আকৃতি থেকে ক্ষেত্রফল','ফ্রি',()=>openTool('shape')],['scale','নকশা স্কেল ক্যালকুলেটর','ফ্রি',()=>openTool('scale')],['coin','জমির দাম ক্যালকুলেটর','ফ্রি',()=>openTool('price')],['poly','জমি ভাগ ক্যালকুলেটর','ফ্রি',()=>openTool('divide')],['doc','আমার জমির তালিকা','ফ্রি',()=>openTool('lands')]]],
+['সরকারি ভূমি সেবা (অ্যাপের ভেতরেই খুলবে)',[['doc','ই-পর্চা / খতিয়ান (DLRMS)','সরকারি',WB('https://dlrms.land.gov.bd','DLRMS')],['search','খতিয়ান অনুসন্ধান','সরকারি',WB('https://settlement.gov.bd/Khatian/','খতিয়ান অনুসন্ধান')],['edit','ই-নামজারি','সরকারি',WB('https://mutation.land.gov.bd','ই-নামজারি')],['coin','ভূমি উন্নয়ন কর','সরকারি',WB('https://ldtax.gov.bd','ভূমি উন্নয়ন কর')],['info','ভূমি তথ্য বাতায়ন','সরকারি',WB('https://land.gov.bd','land.gov.bd')],['map','ভূমি ম্যাপ (LMAP)','সরকারি',WB('https://lmap.minland.gov.bd','LMAP')],['info','ভূমি মন্ত্রণালয়','সরকারি',WB('https://minland.gov.bd','ভূমি মন্ত্রণালয়')],['search','ভূমি রেকর্ড ও জরিপ','সরকারি',WB('https://dlrs.gov.bd','জরিপ অধিদপ্তর')],['phone','অভিযোগ প্রতিকার (GRS)','সরকারি',WB('https://www.grs.gov.bd','GRS')],['phone','হেল্পলাইন ১৬১২২','ফ্রি',()=>openWeb('tel:16122')]]],
+['তথ্যসহায়ক সাইট (বেসরকারি, সরকারি নয়)',[['doc','eporcha.tech — খতিয়ান অনুসন্ধান','বেসরকারি',WB('https://eporcha.tech/','eporcha.tech')],['doc','সার্ভে খতিয়ান','বেসরকারি',WB('https://eporcha.tech/survey-khatian','সার্ভে খতিয়ান')],['doc','নামজারী খতিয়ান','বেসরকারি',WB('https://eporcha.tech/namjari-khatian','নামজারী খতিয়ান')],['map','মৌজা ম্যাপ','বেসরকারি',WB('https://eporcha.tech/mouza-map','মৌজা ম্যাপ')],['doc','খতিয়ান বই (মৌজা ভিত্তিক)','বেসরকারি',WB('https://eporcha.tech/mouza-vittik-khatian','খতিয়ান বই')],['doc','দাগ বই (মৌজা ভিত্তিক)','বেসরকারি',WB('https://eporcha.tech/mouza-vittik-dag','দাগ বই')],['pin','dlrmslandgovbd.com','বেসরকারি',WB('https://dlrmslandgovbd.com','dlrmslandgovbd.com')],['map','মৌজা ম্যাপ (dlrmslandgovbd)','বেসরকারি',WB('https://dlrmslandgovbd.com/mouza-map','মৌজা ম্যাপ')]]]];
+function card(i,t,tag,cls,fn,n){const b=document.createElement('button');b.className='card raise '+cls;b.style.setProperty('--i',n);b.innerHTML=`<span class="tag ${tag==='ফ্রি'?'f':''}">${tag}</span><span class="bd">${ic(i)}</span>${t}`;b.onclick=fn;return b}
+SEC.forEach(([h,l])=>{const e=document.createElement('h2');e.textContent=h;$('secs').append(e);const g=document.createElement('div');g.className='grid';l.forEach(([i,t,tag,fn],n)=>g.append(card(i,t,tag,fn?'on':'soon',fn||(()=>toast(t+' — শীঘ্রই চালু হবে')),n)));$('secs').append(g)});
+$('bPick').onclick=()=>$('file').click();
+
+/* tools */
+const AREA=[['শতক',435.6],['কাঠা',720],['ছটাক',45],['গণ্ডা',36],['বিঘা',14400],['একর',43560],['হেক্টর',107639.1],['বর্গফুট',1],['বর্গগজ',9],['বর্গহাত',2.25],['বর্গমিটার',10.7639]];
+const LEN=[['ফুট',1],['ইঞ্চি',1/12],['হাত',1.5],['গজ',3],['মিটার',3.28084],['লিংক/কড়ি',.66],['চেইন',66],['কিলোমিটার',3280.84],['মাইল',5280]];
+const resGrid=(U,b)=>U.map(u=>`<div class="inset"><b>${bn(b/u[1],3)}</b><small>${u[0]}</small></div>`).join('');
+const opt=U=>U.map((u,i)=>`<option value="${i}">${u[0]}</option>`).join('');
+function openTool(k){show('conv');const B=$('cB');
+ if(k==='area'||k==='len'){const U=k==='area'?AREA:LEN;$('cT').textContent=k==='area'?'জমির ইউনিট কনভার্টার':'দৈর্ঘ্য কনভার্টার';
+  B.innerHTML=`<div class="raise" style="padding:18px"><div class="row" style="margin:0"><input type="number" id="cv" value="1" inputmode="decimal" aria-label="পরিমাণ"><select id="cu" aria-label="একক">${opt(U)}</select></div><div class="res" id="cr"></div></div>`;
+  const go=()=>{$('cr').innerHTML=resGrid(U,(+$('cv').value||0)*U[$('cu').value][1])};$('cv').oninput=$('cu').onchange=go;go()}
+ else if(k==='shape'){$('cT').textContent='আকৃতি থেকে ক্ষেত্রফল';
+  const tri=(a,b,c)=>{const s=(a+b+c)/2,q=s*(s-a)*(s-b)*(s-c);return q>0?Math.sqrt(q):0};
+  const SH={rect:['আয়তক্ষেত্র',['দৈর্ঘ্য','প্রস্থ'],v=>v[0]*v[1]],tri:['ত্রিভুজ (৩ বাহু)',['বাহু ১','বাহু ২','বাহু ৩'],v=>tri(v[0],v[1],v[2])],trap:['ট্রাপিজিয়াম',['সমান্তরাল বাহু ১','সমান্তরাল বাহু ২','উচ্চতা'],v=>(v[0]+v[1])/2*v[2]],quad:['চতুর্ভুজ (৪ বাহু + কর্ণ)',['বাহু ১','বাহু ২','বাহু ৩','বাহু ৪','কর্ণ'],v=>tri(v[0],v[1],v[4])+tri(v[2],v[3],v[4])],circ:['বৃত্ত',['ব্যাসার্ধ'],v=>Math.PI*v[0]*v[0]]};
+  const LU=[['ফুট',1],['হাত',1.5],['গজ',3],['মিটার',3.28084],['ইঞ্চি',1/12]];
+  B.innerHTML=`<div class="raise" style="padding:18px"><div class="row" style="margin:0"><select id="sh" aria-label="আকৃতি">${Object.entries(SH).map(([k,v])=>`<option value="${k}">${v[0]}</option>`).join('')}</select><select id="su" aria-label="একক">${opt(LU)}</select></div><div id="si2"></div><div class="res" id="cr"></div></div>`;
+  const go=()=>{const u=LU[$('su').value][1],v=[...$('si2').querySelectorAll('.sv')].map(x=>(+x.value||0)*u);$('cr').innerHTML=resGrid(AREA.slice(0,8),SH[$('sh').value][2](v))};
+  const build=()=>{$('si2').innerHTML=SH[$('sh').value][1].map(n=>`<label class="lb">${n}<input type="number" class="sv" inputmode="decimal"></label>`).join('');$('si2').querySelectorAll('.sv').forEach(x=>x.oninput=go);go()};
+  $('sh').onchange=build;$('su').onchange=go;build()}
+ else{$('cT').textContent='নকশা স্কেল ক্যালকুলেটর';
+  B.innerHTML=`<div class="raise" style="padding:18px"><label class="lb" style="margin-top:0">নকশায় মাপা দৈর্ঘ্য (ইঞ্চি)<input type="number" id="sa" value="1" inputmode="decimal"></label><label class="lb">স্কেল: ১ মাইল = কত ইঞ্চি<input type="number" id="sb" value="${MI}" inputmode="decimal"></label><div class="res" id="cr"></div></div>`;
+  const go=()=>{$('cr').innerHTML=resGrid(LEN,(+$('sa').value||0)*5280/(+$('sb').value||1))};$('sa').oninput=$('sb').oninput=go;go()}}
+
+/* map state */
+const cb=$('cb'),bx=cb.getContext('2d',{willReadFrequently:true}),hd=$('hd'),cs=$('cs'),lp=$('lp'),lx=lp.getContext('2d'),tt=$('tt'),SW=$('stagewrap');
+let W=0,H=0,wall=null,wall2=null,T=3,ftpx=.1,pxIn=96,items=[],redo=[],tool='fill',tp=[],tcur=null,V={x:0,y:0,k:1},fname='নকশা',MI=16,pg=null,bs=1,bmp=null,hdOK=false,hv=null,rt=null,hT=0,ready=false,pid=0,busy=false,curFile=null,pgDoc=null,ANIM=0,curKey='',saveT=0,hadSave=false;
+const COL=['#0f8a63','#e08a00','#3b7de0','#c0408f','#7a5ad8','#d6405a'],dpr=()=>Math.min(window.devicePixelRatio||1,3);
+const TL=[['fill','wand','অটো ফিল'],['tape','ruler','ফিতা মাপ'],['pan','hand','প্যান/মুভ']];
+$('tools').innerHTML=TL.map(t=>`<button data-t="${t[0]}">${ic(t[1])}${t[2]}</button>`).join('')+`<button id="bScale">${ic('sl')}স্কেল</button>`;
+$('tU').innerHTML=ic('undo');
+const dn=it=>String(it.n).replace(/\d/g,c=>BN[c]),FI=ft=>{const t=Math.round(ft*12);return bn(Math.floor(t/12),0)+"'"+bn(t%12,0)+'"'},Ld=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+function setTool(t){tool=t;tcur=null;document.querySelectorAll('#tools [data-t]').forEach(b=>b.classList.toggle('sel',b.dataset.t===t));$('fbar').style.display=t==='tape'?'none':'';$('tbar').style.display=t==='tape'?'':'none';tapeUI();drawCS()}
+$('tools').onclick=e=>{const b=e.target.closest('button');if(b&&b.dataset.t)setTool(b.dataset.t)};
+function setFt(){ftpx=(5280/MI)/pxIn}
+function sizeC(){const r=SW.getBoundingClientRect(),d=dpr();cs.width=Math.round(r.width*d);cs.height=Math.round(r.height*d);cs.style.width=r.width+'px';cs.style.height=r.height+'px'}
+
+$('file').onchange=e=>{const f=e.target.files[0];e.target.value='';if(f)openMapFile(f)};
+const idb=new Promise((res,rej)=>{try{const q=indexedDB.open('bs',1);q.onupgradeneeded=()=>q.result.createObjectStore('m',{keyPath:'key'});q.onsuccess=()=>res(q.result);q.onerror=()=>rej()}catch(e){rej()}});
+const dbp=(mode,fn)=>idb.then(d=>new Promise((res,rej)=>{const t=d.transaction('m',mode),r=fn(t.objectStore('m'));t.oncomplete=()=>res(r&&r.result);t.onerror=rej})).catch(()=>null);
+const flat=p=>p.flatMap(q=>[+q.x.toFixed(1),+q.y.toFixed(1)]),unflat=a=>{const p=[];for(let i=0;i<a.length;i+=2)p.push({x:a[i],y:a[i+1]});return p};
+const pk=it=>it.t==='f'?{t:'f',n:it.n,col:it.col,p:flat(it.pts),c0:it.c0,bw:it.bw,bh:it.bh}:{t:'m',p:flat(it.pts)};
+const upk=o=>{const pts=unflat(o.p);return o.t==='f'?{t:'f',n:o.n,col:o.col,pts,sf:polyA(pts)*ftpx*ftpx,c0:o.c0,bw:o.bw,bh:o.bh}:{t:'m',pts}};
+function changed(){if(!W||!curKey)return;clearTimeout(saveT);saveT=setTimeout(saveMap,700)}
+function saveMap(){if(!W||!curKey||(!items.length&&!hadSave))return;hadSave=true;const f=items.filter(i=>i.t==='f');dbp('readwrite',st=>st.put({key:curKey,name:fname,ts:Date.now(),MI,n:f.length,tot:f.reduce((a,i)=>a+i.sf,0),items:items.map(pk)}))}
+async function openMapFile(f){
+ if(pgDoc){try{pgDoc.destroy()}catch(e){}pgDoc=null}
+ fname=f.name.replace(/\.[^.]+$/,'');$('mTitle').textContent=fname;show('map');toast('HD ম্যাপ লোড হচ্ছে…');ready=false;const my=++pid;curKey=f.name+'|'+f.size;curFile=f;hadSave=false;
+ try{
+  if(f.type==='application/pdf'||/\.pdf$/i.test(f.name)){
+   pdfjsLib.GlobalWorkerOptions.workerSrc=PDFCDN+'pdf.worker.min.js';
+   pgDoc=await pdfjsLib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise;pg=await pgDoc.getPage(1);bmp=null;
+   const v0=pg.getViewport({scale:1});bs=Math.min(4,2200/v0.width);W=Math.round(v0.width*bs);H=Math.round(v0.height*bs);
+   const v=pg.getViewport({scale:Math.min(bs,2000/v0.width)});cb.width=Math.round(v.width);cb.height=Math.round(v.height);bx.fillStyle='#fff';bx.fillRect(0,0,cb.width,cb.height);
+   await pg.render({canvasContext:bx,viewport:v}).promise;pxIn=72*bs;
+  }else{
+   pg=null;bmp=await createImageBitmap(f);bs=Math.min(1,2200/bmp.width);W=Math.round(bmp.width*bs);H=Math.round(bmp.height*bs);
+   const sd=Math.min(1,2000/bmp.width);cb.width=Math.round(bmp.width*sd);cb.height=Math.round(bmp.height*sd);bx.drawImage(bmp,0,0,cb.width,cb.height);pxIn=96*bs;
+  }
+ }catch(err){W=0;toast('ফাইল খুলতে সমস্যা হয়েছে। অন্য ফাইল চেষ্টা করুন।');show('home');return}
+ if(my!==pid)return;
+ const rec=await dbp('readonly',st=>st.get(curKey));MI=rec&&rec.MI||MI;setFt();items=rec&&rec.items?rec.items.map(upk):[];hadSave=!!rec;
+ if(!rec)dbp('readonly',st=>st.get('b:'+curKey)).then(r=>{if(!r)dbp('readwrite',st=>st.put({key:'b:'+curKey,blob:f}))});
+ cb.style.width=W+'px';cb.style.height=H+'px';redo=[];tp=[];sizeC();setTool('fill');fit();stats();ready=true;
+}
+function releaseMap(){if(!W)return;clearTimeout(saveT);saveMap();pid++;ready=false;W=0;H=0;items=[];tp=[];redo=[];if(rt){try{rt.cancel()}catch(e){}}rt=null;if(pgDoc){try{pgDoc.destroy()}catch(e){}}pgDoc=pg=bmp=curFile=null;
+ [cb,hd,hd2,cs].forEach(c=>{c.width=0;c.height=0});hv=null;wcall({cmd:'free'})}
+
+/* view + HD (double-buffered, memory-safe) */
+const HB=[hd,hd2];let hi=0,cq=0;
+const hq=()=>{const r=SW.getBoundingClientRect();let q=dpr()*1.5;while(r.width*r.height*q*q>9e6&&q>1)q-=.25;return q};
+function qCS(){if(!cq)cq=requestAnimationFrame(()=>{cq=0;drawCS()})}
+function apply(){$('stage').style.transform=`translate(${V.x}px,${V.y}px) scale(${V.k})`;hdOK=false;
+ if(hv){const r=V.k/hv.k;HB[hi].style.transform=`translate(${V.x-r*hv.x}px,${V.y-r*hv.y}px) scale(${r})`}
+ qCS();clearTimeout(hT);hT=setTimeout(hdRender,220)}
+async function hdRender(){if(!W||cur()!=='map')return;if(P.size){hT=setTimeout(hdRender,200);return}
+ const r=SW.getBoundingClientRect(),d=hq(),cw=Math.round(r.width*d),ch=Math.round(r.height*d),v={x:V.x,y:V.y,k:V.k},bk=HB[1-hi],fr=HB[hi];
+ if(rt){try{rt.cancel()}catch(e){}rt=null}
+ if(bk.width!==cw||bk.height!==ch){bk.width=cw;bk.height=ch}const x=bk.getContext('2d');x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,cw,ch);x.fillStyle='#fff';x.fillRect(v.x*d,v.y*d,W*v.k*d,H*v.k*d);
+ try{
+  if(pg){rt=pg.render({canvasContext:x,viewport:pg.getViewport({scale:bs*v.k*d}),transform:[1,0,0,1,v.x*d,v.y*d]});await rt.promise}
+  else if(bmp){x.imageSmoothingQuality='high';x.drawImage(bmp,v.x*d,v.y*d,W*v.k*d,H*v.k*d)}
+ }catch(e){return}
+ rt=null;if(!W)return;bk.style.width=fr.style.width=r.width+'px';bk.style.height=fr.style.height=r.height+'px';bk.style.transform='none';bk.style.visibility='visible';fr.style.visibility='hidden';hi=1-hi;hv=v;hdOK=v.x===V.x&&v.y===V.y&&v.k===V.k;
+ if(!hdOK)apply()}
+function fit(){const r=SW.getBoundingClientRect();V.k=Math.min(r.width/W,r.height/H);V.x=(r.width-W*V.k)/2;V.y=(r.height-H*V.k)/2;hv=null;apply()}
+function zoomAt(f,cx,cy){const k=Math.max(.05,Math.min(40,V.k*f));V.x=cx-(cx-V.x)*k/V.k;V.y=cy-(cy-V.y)*k/V.k;V.k=k;apply()}
+function zc(f){const r=SW.getBoundingClientRect();zoomAt(f,r.width/2,r.height/2)}
+$('zIn').onclick=()=>zc(1.5);$('zOut').onclick=()=>zc(1/1.5);$('zFit').onclick=fit;
+
+/* gestures */
+const P=new Map();let G=null,hold=false;
+const rel=e=>{const r=SW.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}},toMap=p=>({x:(p.x-V.x)/V.k,y:(p.y-V.y)/V.k});
+SW.addEventListener('pointerdown',e=>{if(e.target.closest('.fab'))return;SW.setPointerCapture(e.pointerId);P.set(e.pointerId,rel(e));
+ if(P.size===1){G={s:rel(e),t:Date.now(),mv:0,multi:false};hold=tool==='tape'&&!!W;if(hold)loupe(rel(e))}else if(G){G.multi=true;hold=false;loupe(null)}});
+SW.addEventListener('pointermove',e=>{const p=P.get(e.pointerId);if(!p)return;const n=rel(e);
+ if(P.size===1){G.mv=Math.max(G.mv,Ld(n,G.s));if(hold)loupe(n);else{V.x+=n.x-p.x;V.y+=n.y-p.y;apply()}}
+ else if(P.size===2){const o=[...P.entries()].find(([id])=>id!==e.pointerId)[1],pm={x:(p.x+o.x)/2,y:(p.y+o.y)/2},nm={x:(n.x+o.x)/2,y:(n.y+o.y)/2},f=Ld(n,o)/(Ld(p,o)||1);V.x+=nm.x-pm.x;V.y+=nm.y-pm.y;G.mv=99;zoomAt(f,nm.x,nm.y)}
+ p.x=n.x;p.y=n.y});
+const up=e=>{if(!P.has(e.pointerId))return;const n=rel(e),last=P.size===1;P.delete(e.pointerId);
+ if(last&&G&&!G.multi&&e.type==='pointerup'&&W){if(hold){loupe(null);addPt(toMap(n))}else if(G.mv<8&&Date.now()-G.t<500)tap(toMap(n))}
+ if(last){hold=false;loupe(null)}};
+SW.addEventListener('pointerup',up);SW.addEventListener('pointercancel',up);
+SW.addEventListener('wheel',e=>{e.preventDefault();const p=rel(e);zoomAt(e.deltaY<0?1.2:1/1.2,p.x,p.y)},{passive:false});
+
+/* loupe (ফিতা মাপ) */
+function loupe(p){if(!p){lp.style.display=tt.style.display='none';if(tcur){tcur=null;drawCS()}return}
+ const r=SW.getBoundingClientRect(),d=hq(),m=toMap(p);tcur=m;
+ const lx0=Math.max(4,Math.min(r.width-116,p.x-56)),ly0=p.y-160<4?p.y+64:p.y-160;lp.style.display='block';lp.style.left=lx0+'px';lp.style.top=ly0+'px';
+ lp.width=lp.height=224;lx.fillStyle='#fff';lx.fillRect(0,0,224,224);const src=44;
+ if(hdOK)lx.drawImage(HB[hi],(p.x-src/2)*d,(p.y-src/2)*d,src*d,src*d,0,0,224,224);else{const sz=src/V.k,q=cb.width/W;lx.drawImage(cb,(m.x-sz/2)*q,(m.y-sz/2)*q,sz*q,sz*q,0,0,224,224)}
+ lx.strokeStyle='#d6405a';lx.lineWidth=2;lx.beginPath();lx.moveTo(112,86);lx.lineTo(112,138);lx.moveTo(86,112);lx.lineTo(138,112);lx.stroke();
+ if(tp.length){const l=tp[tp.length-1],ft=Ld(l,m)*ftpx;tt.innerHTML=`${FI(ft)} • ${bn(ft*12,0)} ইঞ্চি<br>${bn(ft*12/7.92,1)} লিংক | নকশায় ${bn(Ld(l,m)/pxIn,2)}"`;tt.style.display='block';tt.style.left=Math.max(4,Math.min(r.width-170,lx0-20))+'px';tt.style.top=(ly0<60?ly0+120:ly0-46)+'px'}else tt.style.display='none';
+ drawCS()}
+function addPt(m){if(m.x<0||m.y<0||m.x>=W||m.y>=H)return;tp.push(m);redo=[];tapeUI();drawCS()}
+function tapeUI(){let f=0;for(let i=1;i<tp.length;i++)f+=Ld(tp[i-1],tp[i])*ftpx;$('tTot').textContent=tp.length>1?`${FI(f)} • ${bn(f*12/7.92,1)} কড়ি • ${bn(f/3,1)} গজ • ${bn(f*.3048,1)} মি.`:'ফিতা মাপ';$('tSub2').textContent=`${bn(tp.length,0)}টি পয়েন্ট`+(tp.length<2?' — ম্যাপে চেপে ধরে সরিয়ে বিন্দু বসান':' — আরও যোগ করুন বা সম্পন্ন চাপুন')}
+$('tD').onclick=()=>{if(tp.length>1){items.push({t:'m',pts:tp});stats()}tp=[];tapeUI();drawCS()};
+$('tC').onclick=()=>{tp=[];tapeUI();drawCS()};
+$('tU').onclick=()=>{tp.pop();tapeUI();drawCS()};
+
+/* auto fill */
+function tap(m){if(tool!=='fill')return;const x=Math.round(m.x),y=Math.round(m.y);if(x<0||y<0||x>=W||y>=H)return;flood(x,y)}
+function inPoly(p,q){let c=false;for(let i=0,j=p.length-1;i<p.length;j=i++){if((p[i].y>q.y)!==(p[j].y>q.y)&&q.x<(p[j].x-p[i].x)*(q.y-p[i].y)/(p[j].y-p[i].y)+p[i].x)c=!c}return c}
+function polyA(p){let a=0;for(let i=0;i<p.length;i++){const j=(i+1)%p.length;a+=p[i].x*p[j].y-p[j].x*p[i].y}return Math.abs(a)/2}
+function WK(){let W,H;
+ function dt(m,bw,bh,tg){const INF=60000,d=new Uint16Array(bw*bh);for(let i=0;i<d.length;i++)d[i]=m[i]===tg?0:INF;
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){const i=y*bw+x;let v=d[i];if(x>0&&d[i-1]+1<v)v=d[i-1]+1;if(y>0&&d[i-bw]+1<v)v=d[i-bw]+1;d[i]=v}
+  for(let y=bh-1;y>=0;y--)for(let x=bw-1;x>=0;x--){const i=y*bw+x;let v=d[i];if(x<bw-1&&d[i+1]+1<v)v=d[i+1]+1;if(y<bh-1&&d[i+bw]+1<v)v=d[i+bw]+1;d[i]=v}return d}
+ function closeM(m,bw,bh,R){const d1=dt(m,bw,bh,1),a=new Uint8Array(bw*bh);for(let i=0;i<a.length;i++)a[i]=d1[i]<=R?1:0;const d2=dt(a,bw,bh,0),o=new Uint8Array(bw*bh);for(let i=0;i<o.length;i++)o[i]=d2[i]>R?1:0;return o}
+ function fillHoles(m,bw,bh){const o=new Uint8Array(bw*bh),st=[0];o[0]=1;while(st.length){const i=st.pop(),x=i%bw,y=(i/bw)|0;
+  if(x>0&&!o[i-1]&&!m[i-1]){o[i-1]=1;st.push(i-1)}if(x<bw-1&&!o[i+1]&&!m[i+1]){o[i+1]=1;st.push(i+1)}if(y>0&&!o[i-bw]&&!m[i-bw]){o[i-bw]=1;st.push(i-bw)}if(y<bh-1&&!o[i+bw]&&!m[i+bw]){o[i+bw]=1;st.push(i+bw)}}
+  const r=new Uint8Array(bw*bh);for(let i=0;i<r.length;i++)r[i]=o[i]?0:1;return r}
+ function cut(m,bw,bh,R,sx,sy){let a0=0;for(let i=0;i<m.length;i++)a0+=m[i];const d=dt(m,bw,bh,0),E=new Uint8Array(bw*bh);for(let i=0;i<E.length;i++)E[i]=d[i]>R?1:0;
+  let s=sy*bw+sx;if(!E[s]){let f=-1,best=1e9;for(let dy=-R*2;dy<=R*2;dy++)for(let dx=-R*2;dx<=R*2;dx++){const a=sx+dx,b=sy+dy;if(a>=0&&b>=0&&a<bw&&b<bh&&E[b*bw+a]){const q=dx*dx+dy*dy;if(q<best){best=q;f=b*bw+a}}}if(f<0)return m;s=f}
+  const comp=new Uint8Array(bw*bh),st=[s];comp[s]=1;while(st.length){const i=st.pop(),x=i%bw,y=(i/bw)|0;
+   if(x>0&&E[i-1]&&!comp[i-1]){comp[i-1]=1;st.push(i-1)}if(x<bw-1&&E[i+1]&&!comp[i+1]){comp[i+1]=1;st.push(i+1)}if(y>0&&E[i-bw]&&!comp[i-bw]){comp[i-bw]=1;st.push(i-bw)}if(y<bh-1&&E[i+bw]&&!comp[i+bw]){comp[i+bw]=1;st.push(i+bw)}}
+  const d2=dt(comp,bw,bh,1),o=new Uint8Array(bw*bh);let a1=0;for(let i=0;i<o.length;i++)if(m[i]&&d2[i]<=R){o[i]=1;a1++}return a1>=a0*.08?o:m}
+ function dp(P,eps){if(P.length<3)return P;const k=new Uint8Array(P.length);k[0]=k[P.length-1]=1;const st=[[0,P.length-1]];while(st.length){const[a,b]=st.pop();let md=0,mi=-1;const A=P[a],B=P[b],dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1;for(let i=a+1;i<b;i++){const d=Math.abs((P[i].x-A.x)*dy-(P[i].y-A.y)*dx)/L;if(d>md){md=d;mi=i}}if(md>eps){k[mi]=1;st.push([a,mi],[mi,b])}}return P.filter((_,i)=>k[i])}
+ function trace(m,bw,bh){const st=m.indexOf(1);if(st<0)return[];const D=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]],sx=st%bw,sy=(st/bw)|0,get=(a,b)=>a>=0&&b>=0&&a<bw&&b<bh&&m[b*bw+a];
+  let x=sx,y=sy,b=4,n=0;const pts=[];
+  do{pts.push({x,y});let k=1;for(;k<=8;k++){const d=(b+k)%8;if(get(x+D[d][0],y+D[d][1]))break}if(k>8)break;
+   const d=(b+k)%8,pd=(b+k-1)%8,nx=x+D[d][0],ny=y+D[d][1],qx=x+D[pd][0]-nx,qy=y+D[pd][1]-ny;b=D.findIndex(q=>q[0]===qx&&q[1]===qy);x=nx;y=ny;n++}while((x!==sx||y!==sy)&&n<6e6);
+  return pts}
+ function lfill(buf,w,h,sx,sy,sl){W=w;H=h;const n=w*h,d=new Uint8ClampedArray(buf),g=new Uint8Array(n);for(let i=0;i<n;i++){const j=i*4;g[i]=(d[j]*77+d[j+1]*150+d[j+2]*29)>>8}
+  const R=Math.max(8,Math.round(sl*5)),tmp=new Int32Array(n),mean=new Uint8Array(n),k=1/((2*R+1)*(2*R+1));
+  for(let y=0;y<h;y++){let s=0;const o=y*w;for(let x=-R;x<=R;x++)s+=g[o+Math.min(w-1,Math.max(0,x))];for(let x=0;x<w;x++){tmp[o+x]=s;s+=g[o+Math.min(w-1,x+R+1)]-g[o+Math.max(0,x-R)]}}
+  for(let x=0;x<w;x++){let s=0;for(let y=-R;y<=R;y++)s+=tmp[Math.min(h-1,Math.max(0,y))*w+x];for(let y=0;y<h;y++){mean[y*w+x]=s*k;s+=tmp[Math.min(h-1,y+R+1)*w+x]-tmp[Math.max(0,y-R)*w+x]}}
+  const wall=new Uint8Array(n);for(let i=0;i<n;i++){const t=Math.min(165,mean[i]-30);wall[i]=(g[i]<110||g[i]<t)?1:0}
+  const runs=[],step=Math.max(3,(h/220)|0);for(let y=3;y<h;y+=step){let r=0;for(let x=0;x<w;x++){if(wall[y*w+x])r++;else{if(r>0&&r<80)runs.push(r);r=0}}}runs.sort((a,b)=>a-b);const T=Math.max(2,runs.length?runs[runs.length>>1]:3);
+  const dd=Math.max(2,Math.min(9,Math.round(T*.6))),dW=dt(wall,w,h,1),w2=new Uint8Array(n);for(let i=0;i<n;i++)w2[i]=dW[i]<=dd?1:0;
+  sx=Math.max(0,Math.min(w-1,Math.round(sx)));sy=Math.max(0,Math.min(h-1,Math.round(sy)));let s=sy*w+sx;
+  if(w2[s]){let f=-1;const rs=Math.max(4,Math.round(T*1.3)+dd);for(let r=1;r<=rs&&f<0;r++)for(let dy=-r;dy<=r&&f<0;dy++)for(let dx=-r;dx<=r;dx++){const a=sx+dx,b=sy+dy;if(a>=0&&b>=0&&a<w&&b<h&&!w2[b*w+a]){f=b*w+a;break}}if(f<0)return{err:'wall'};s=f}
+  const seen=new Uint8Array(n),cap=(n*.5|0),out=new Int32Array(cap+8);let cnt=0,x0=w,y0=h,x1=0,y1=0;out[cnt++]=s;seen[s]=1;
+  for(let q=0;q<cnt;q++){const i=out[q],cx=i%w,cy=(i/w)|0;if(cx<x0)x0=cx;if(cx>x1)x1=cx;if(cy<y0)y0=cy;if(cy>y1)y1=cy;if(cnt>=cap)return{err:'open'};
+   if(cx>0&&!seen[i-1]&&!w2[i-1]){seen[i-1]=1;out[cnt++]=i-1}if(cx<w-1&&!seen[i+1]&&!w2[i+1]){seen[i+1]=1;out[cnt++]=i+1}
+   if(cy>0&&!seen[i-w]&&!w2[i-w]){seen[i-w]=1;out[cnt++]=i-w}if(cy<h-1&&!seen[i+w]&&!w2[i+w]){seen[i+w]=1;out[cnt++]=i+w}}
+  const touch=[x0<=1,y0<=1,x1>=w-2,y1>=h-2];
+  const Ro=Math.max(2,Math.round(T*.9)),Rc=Math.max(6,Math.round(T*5)),gr=dd+Math.round(T/2),pad=Math.max(Ro,Rc)+gr+4,bw=x1-x0+1+pad*2,bh=y1-y0+1+pad*2,ox=x0-pad,oy=y0-pad;
+  let m=new Uint8Array(bw*bh);for(let k=0;k<cnt;k++){const i=out[k];m[(((i/w)|0)-oy)*bw+(i%w)-ox]=1}
+  m=cut(m,bw,bh,Ro,(s%w)-ox,((s/w)|0)-oy);m=fillHoles(m,bw,bh);
+  /* absorb lettering that touches the border: closing, limited to ink pixels and small enclosed pockets */
+  const C=closeM(m,bw,bh,Rc),fr=new Uint8Array(bw*bh),lab=new Uint8Array(bw*bh);
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){const gx=x+ox,gy=y+oy;fr[y*bw+x]=(gx>=0&&gy>=0&&gx<w&&gy<h&&!w2[gy*w+gx])?1:0}
+  const Ap=(9*T)*(9*T);
+  for(let i0=0;i0<fr.length;i0++){if(!fr[i0]||lab[i0])continue;const st=[i0],cm=[i0];lab[i0]=1;let bd=false;
+   while(st.length){const i=st.pop(),x=i%bw,y=(i/bw)|0;if(x===0||y===0||x===bw-1||y===bh-1)bd=true;
+    if(x>0&&fr[i-1]&&!lab[i-1]){lab[i-1]=1;st.push(i-1);cm.push(i-1)}if(x<bw-1&&fr[i+1]&&!lab[i+1]){lab[i+1]=1;st.push(i+1);cm.push(i+1)}
+    if(y>0&&fr[i-bw]&&!lab[i-bw]){lab[i-bw]=1;st.push(i-bw);cm.push(i-bw)}if(y<bh-1&&fr[i+bw]&&!lab[i+bw]){lab[i+bw]=1;st.push(i+bw);cm.push(i+bw)}}
+   if(!bd&&cm.length<Ap)for(const i of cm)if(C[i])m[i]=1}
+  for(let i=0;i<m.length;i++)if(!m[i]&&C[i]&&!fr[i])m[i]=1;
+  m=fillHoles(m,bw,bh);
+  {const dm=dt(m,bw,bh,1);for(let i=0;i<m.length;i++)if(!m[i]&&!fr[i]&&dm[i]<=gr)m[i]=1}
+  let cx=0,cy=0,cn=0;for(let y=0;y<bh;y++)for(let x=0;x<bw;x++)if(m[y*bw+x]){cx+=x;cy+=y;cn++}
+  let pts=trace(m,bw,bh);if(pts.length<4)return{err:'fail'};
+  const sm=Math.max(2,Math.round(T*.5)),L=pts.length,sp=[];for(let i=0;i<L;i++){let ax=0,ay=0;for(let j=-sm;j<=sm;j++){const p=pts[(i+j+L)%L];ax+=p.x;ay+=p.y}sp.push({x:ax/(2*sm+1),y:ay/(2*sm+1)})}
+  let fi=0,fd=0;sp.forEach((p,i)=>{const d=Math.hypot(p.x-sp[0].x,p.y-sp[0].y);if(d>fd){fd=d;fi=i}});
+  const eps=Math.max(3,.015*Math.sqrt(cn)),A=dp(sp.slice(0,fi+1),eps),B=dp(sp.slice(fi).concat([sp[0]]),eps),res=[];
+  A.slice(0,-1).concat(B.slice(0,-1)).forEach(p=>res.push(p.x+ox+.5,p.y+oy+.5));
+  return{pts:res,cx:cx/cn+ox,cy:cy/cn+oy,bw:x1-x0,bh:y1-y0,touch}}
+ return m=>m.cmd==='lfill'?lfill(m.buf,m.w,m.h,m.x,m.y,m.sl):{}}
+let FW=null,H2=null,fid=0;const fcb={};
+function wInit(){if(FW||H2)return;try{FW=new Worker(URL.createObjectURL(new Blob(['const WK='+WK.toString()+';const h=WK();onmessage=e=>{const r=h(e.data);r.id=e.data.id;postMessage(r)}'],{type:'text/javascript'})));FW.onmessage=e=>{const c=fcb[e.data.id];delete fcb[e.data.id];c&&c(e.data)};FW.onerror=()=>{FW=null;H2=WK()}}catch(e){H2=WK()}}
+function wcall(m,tr){wInit();if(H2)return new Promise(r=>setTimeout(()=>r(H2(m)),0));return new Promise(r=>{const id=++fid;fcb[id]=r;FW.postMessage(Object.assign({id},m),tr||[])})}
+async function renderWin(x0,y0,ww,hh,sl){const pw=Math.round(ww*sl),ph=Math.round(hh*sl),c=document.createElement('canvas');c.width=pw;c.height=ph;const x=c.getContext('2d',{willReadFrequently:true});x.fillStyle='#fff';x.fillRect(0,0,pw,ph);
+ if(pg)await pg.render({canvasContext:x,viewport:pg.getViewport({scale:bs*sl}),transform:[1,0,0,1,-x0*sl,-y0*sl]}).promise;else{x.imageSmoothingQuality='high';x.drawImage(bmp,x0/bs,y0/bs,ww/bs,hh/bs,0,0,pw,ph)}
+ const buf=x.getImageData(0,0,pw,ph).data.buffer;c.width=0;return{buf,pw,ph}}
+async function flood(sx,sy){if(busy||!W)return;
+ if(items.some(it=>it.t==='f'&&inPoly(it.pts,{x:sx,y:sy}))){toast('এই দাগ আগেই নির্বাচিত');return}
+ busy=true;$('ld').classList.add('on');const my=pid;let res=null,msg='open';
+ try{let hs=170;
+  for(let k=0;k<8;k++){
+   const ww=Math.min(W,2*hs),hh=Math.min(H,2*hs),x0=Math.max(0,Math.min(W-ww,Math.round(sx-ww/2))),y0=Math.max(0,Math.min(H-hh,Math.round(sy-hh/2))),sl=Math.min(3.5,1700/Math.max(ww,hh));
+   const{buf,pw,ph}=await renderWin(x0,y0,ww,hh,sl);if(my!==pid)return;
+   const r=await wcall({cmd:'lfill',buf,w:pw,h:ph,x:(sx-x0)*sl,y:(sy-y0)*sl,sl},[buf]);if(my!==pid)return;
+   if(r.err==='wall'||r.err==='fail'){msg=r.err;break}
+   const pb=[x0<=0,y0<=0,x0+ww>=W,y0+hh>=H],bad=r.err==='open'||r.touch.some((t,i)=>t&&!pb[i]);
+   if(!bad){res={r,x0,y0,sl};break}
+   if(pb.every(Boolean)){msg='open';break}
+   hs*=2.2}
+ }finally{busy=false;$('ld').classList.remove('on')}
+ if(my!==pid)return;
+ if(!res){toast({wall:'আপনি দাগের সীমানা বা কালো রেখার ওপর ক্লিক করেছেন। দাগের ভেতরের অংশে ট্যাপ করুন।',open:'এই দাগের সীমানা খোলা — রেখা কোথাও ভাঙা। আরেকটু জুম করে ভাঙা জায়গার কাছাকাছি নয়, দাগের মাঝখানে ট্যাপ করুন।',fail:'এই দাগ চিহ্নিত করা যায়নি'}[msg]);return}
+ const{r,x0,y0,sl:s2}=res,pts=unflat(r.pts).map(p=>({x:x0+p.x/s2,y:y0+p.y/s2})),n=items.filter(i=>i.t==='f').length;
+ items.push({t:'f',n:String(n+1),col:COL[n%COL.length],pts,sf:polyA(pts)*ftpx*ftpx,c0:{x:x0+r.cx/s2,y:y0+r.cy/s2},bw:r.bw/s2,bh:r.bh/s2,born:performance.now()});redo=[];qCS();stats()}
+
+/* drawing (vector, screen-resolution) */
+function txt(c,s,x,y,ang,sz,col,bold){c.save();c.translate(x,y);if(ang>Math.PI/2||ang<-Math.PI/2)ang+=Math.PI;c.rotate(ang);c.font=`${bold?800:700} ${sz}px 'Segoe UI',Tahoma,sans-serif`;c.textAlign='center';c.textBaseline='middle';c.lineJoin='round';c.lineWidth=sz/3;c.strokeStyle='#fff';c.strokeText(s,0,0);c.fillStyle=col;c.fillText(s,0,0);c.restore()}
+function drawVec(c,v,u){const kk=v.k*u,ox=v.x*u,oy=v.y*u,X=p=>ox+p.x*kk,Y=p=>oy+p.y*kk;c.lineJoin='round';c.lineCap='round';
+ const seg=(a,b,col,from)=>{const ax=X(a),ay=Y(a),bx2=X(b),by=Y(b);if(Math.hypot(bx2-ax,by-ay)<46*u)return;const ang=Math.atan2(by-ay,bx2-ax);let mx=(ax+bx2)/2,my=(ay+by)/2;
+  if(from){const nx=-Math.sin(ang),ny=Math.cos(ang),sg=((mx-from.x)*nx+(my-from.y)*ny)>=0?1:-1;mx+=nx*sg*8*u;my+=ny*sg*8*u}txt(c,FI(Ld(a,b)*ftpx),mx,my,ang,10.5*u,col)};
+ const tape=(pts,live)=>{if(!pts.length)return;c.strokeStyle='#e08a00';c.lineWidth=2.4*u;c.beginPath();pts.forEach((p,i)=>i?c.lineTo(X(p),Y(p)):c.moveTo(X(p),Y(p)));c.stroke();
+  if(live&&tcur){c.setLineDash([6*u,5*u]);c.beginPath();c.moveTo(X(pts[pts.length-1]),Y(pts[pts.length-1]));c.lineTo(X(tcur),Y(tcur));c.stroke();c.setLineDash([])}
+  pts.forEach((p,i)=>{c.beginPath();c.arc(X(p),Y(p),4*u,0,7);c.fillStyle='#ffc233';c.fill();c.lineWidth=1.5*u;c.strokeStyle='#fff';c.stroke();if(i)seg(pts[i-1],p,'#b36b00')})};
+ for(const it of items){
+  if(it.t==='f'){c.beginPath();it.pts.forEach((p,i)=>i?c.lineTo(X(p),Y(p)):c.moveTo(X(p),Y(p)));c.closePath();const ea=it.born?Math.min(1,(performance.now()-it.born)/380):1;if(ea<1)ANIM=1;c.globalAlpha=ea;c.fillStyle=it.col+'47';c.fill();c.lineWidth=2.2*u;c.strokeStyle=it.col;c.stroke();c.globalAlpha=1;
+   const cc={x:X(it.c0),y:Y(it.c0)};
+   it.pts.forEach((p,i)=>{c.beginPath();c.arc(X(p),Y(p),3.2*u,0,7);c.fillStyle=it.col;c.fill();c.lineWidth=1.4*u;c.strokeStyle='#fff';c.stroke();seg(p,it.pts[(i+1)%it.pts.length],it.col,cc)});
+   if(it.bw*kk>60*u&&it.bh*kk>34*u){txt(c,'দাগ '+dn(it),cc.x,cc.y-7*u,0,11*u,it.col,1);txt(c,bn(it.sf/435.6)+' শতক',cc.x,cc.y+7*u,0,12*u,it.col,1)}
+  }else tape(it.pts,false)}
+ tape(tp,true)}
+function drawCS(){if(!cs.width)return;const c=cs.getContext('2d');c.clearRect(0,0,cs.width,cs.height);if(W)drawVec(c,V,dpr());if(ANIM){ANIM=0;qCS()}$('mUndo').style.opacity=items.length||tp.length?1:.4;$('mRedo').style.opacity=redo.length?1:.4}
+const tot=()=>items.reduce((s,i)=>s+(i.t==='f'?i.sf:0),0);
+function stats(){const s=tot(),n=items.filter(i=>i.t==='f').length;$('tShotok').textContent=bn(s/435.6)+' শতক';$('tSub').textContent=`কাঠা: ${bn(s/720)} • বর্গফুট: ${bn(s,0)} • দাগ: ${bn(n,0)}`;changed();const e=$('fbar');e.classList.remove('pls');void e.offsetWidth;e.classList.add('pls')}
+$('mUndo').onclick=()=>{if(tool==='tape'&&tp.length){tp.pop();tapeUI()}else if(items.length){redo.push(items.pop());stats()}drawCS()};
+$('mRedo').onclick=()=>{if(redo.length){items.push(redo.pop());stats();drawCS()}};
+$('mClear').onclick=()=>{if(!items.length&&!tp.length)return;sheet(`<h3>সব পরিমাপ মুছবেন?</h3><p>চিহ্নিত সকল দাগ এবং ক্ষেত্রফলের হিসাব মুছে যাবে। আপনি কি নিশ্চিত?</p><div class="row"><button onclick="closeSheet()">না</button><button style="color:var(--r);font-weight:700" onclick="items=[];redo=[];tp=[];tapeUI();drawCS();stats();closeSheet();toast('সকল দাগ মোছা হয়েছে')">হ্যাঁ, মুছুন</button></div>`)};
+$('bScale').onclick=()=>{sheet(`<h3>স্কেল ও রেজোলিউশন</h3><p>নকশার স্কেল: ১ মাইল = কত ইঞ্চি? (১৬" = ১ মাইল হলে ১৬ লিখুন)। PDF-এর ক্ষেত্রে পৃষ্ঠার আসল মাপ থেকে হিসাব হয়; ছবির ক্ষেত্রে ৯৬ DPI ধরা হয়।</p><input type="number" id="si" value="${MI}" inputmode="decimal" aria-label="ইঞ্চি প্রতি মাইল"><div class="row"><button class="pri" id="sok">প্রয়োগ করুন</button></div>`);
+ $('sok').onclick=()=>{const v=+$('si').value;if(v>0){MI=v;setFt();items.forEach(it=>{if(it.t==='f')it.sf=polyA(it.pts)*ftpx*ftpx});stats();tapeUI();drawCS();closeSheet();toast('স্কেল পরিবর্তন হয়েছে')}}};
+
+/* filters */
+const FL=[['স্বাভাবিক','none'],['ডকুমেন্ট স্ক্যান','grayscale(1) contrast(1.35) brightness(1.1)'],['হাই-কন্ট্রাস্ট','contrast(1.8)'],['সাদা-কালো','grayscale(1) contrast(2)'],['উজ্জ্বলতা বৃদ্ধি','brightness(1.3)'],['ডার্ক মোড','invert(1) hue-rotate(180deg)']];
+let fb='none',br=1,ctr=1;
+const fstr=()=>`${fb==='none'?'':fb} brightness(${br}) contrast(${ctr})`;
+function applyF(){cb.style.filter=hd.style.filter=hd2.style.filter=fstr()}
+$('bFilter').onclick=()=>{sheet(`<h3>নকশা ফিল্টার ও স্পষ্টতা</h3><p>ঝাপসা নকশার লেখা ও দাগ পরিষ্কার করুন। অটো ফিলে এর প্রভাব পড়ে না।</p><div class="presets">${FL.map((f,i)=>`<button data-i="${i}" class="${fb===f[1]?'sel':''}">${f[0]}</button>`).join('')}</div><label>উজ্জ্বলতা <input type="range" id="rb" min=".5" max="1.8" step=".05" value="${br}"></label><label>কন্ট্রাস্ট <input type="range" id="rc" min=".5" max="2.5" step=".05" value="${ctr}"></label><div class="row"><button class="pri" onclick="closeSheet()">প্রয়োগ সম্পন্ন</button></div>`);
+ $('sheet').querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{fb=FL[b.dataset.i][1];applyF();$('sheet').querySelectorAll('[data-i]').forEach(x=>x.classList.toggle('sel',x===b))});
+ $('rb').oninput=e=>{br=e.target.value;applyF()};$('rc').oninput=e=>{ctr=e.target.value;applyF()}};
+
+/* report + save PNG (HD) */
+function zoomDag(it){const r=SW.getBoundingClientRect(),xs=it.pts.map(p=>p.x),ys=it.pts.map(p=>p.y),bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...ys)-Math.min(...ys),k=Math.min(r.width/(bw*1.5),r.height/(bh*1.5),40);V.k=k;V.x=r.width/2-it.c0.x*k;V.y=r.height/2-it.c0.y*k;hv=null;apply()}
+function report(){const f=items.filter(i=>i.t==='f'),ms=items.filter(i=>i.t==='m'),s=tot();
+ sheet(`<h3>চিহ্নিত দাগসমূহ (${bn(f.length,0)}টি)</h3><p style="margin:0 0 12px"><b style="color:var(--g);font-size:22px">${bn(s/435.6)} শতক</b><br><small>${bn(s/720)} কাঠা • ${bn(s,0)} বর্গফুট • ${bn(s/14400,3)} বিঘা • ${bn(s/43560,4)} একর</small></p>${f.map((x,i)=>`<div class="inset" style="padding:12px;margin-bottom:12px"><div class="row" style="margin:0;align-items:flex-end"><label style="flex:1;font-size:12px;color:var(--m)"><span style="color:${x.col}">●</span> দাগ নং<input type="search" data-n="${i}" value="${esc(x.n)}" aria-label="দাগ নম্বর"></label><button data-z="${i}" style="flex:none;padding:11px" aria-label="ম্যাপে যান">${ic('locate')}</button><button data-r="${i}" style="flex:none;padding:11px;color:var(--r)" aria-label="মুছুন">${ic('trash')}</button></div><div class="res" style="margin-top:10px">${box('শতক',bn(x.sf/435.6,3))+box('কাঠা',bn(x.sf/720,3))+box('বর্গফুট',bn(x.sf,0))+box('বিঘা',bn(x.sf/14400,3))+box('একর',bn(x.sf/43560,4))+box('বর্গগজ',bn(x.sf/9,1))}</div></div>`).join('')||'<p>এখনো কোনো দাগ নির্বাচন করা হয়নি।</p>'}${ms.length?`<p>ফিতা মাপ: ${ms.map(m=>{let t=0;for(let i=1;i<m.pts.length;i++)t+=Ld(m.pts[i-1],m.pts[i])*ftpx;return FI(t)}).join(', ')}</p>`:''}<div class="row"><button class="pri" id="sp1">${ic('save')}সেভ: শুধু নির্বাচিত দাগ</button></div><div class="row"><button id="sp2">পুরো নকশা সেভ</button><button onclick="closeSheet()">বন্ধ করুন</button></div>`);
+ const S=$('sheet');S.querySelectorAll('[data-n]').forEach(i=>i.oninput=()=>{f[i.dataset.n].n=i.value;qCS();changed()});
+ S.querySelectorAll('[data-z]').forEach(b=>b.onclick=()=>{closeSheet();zoomDag(f[b.dataset.z])});
+ S.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{const k=items.indexOf(f[b.dataset.r]);items.splice(k,1);stats();qCS();report()});
+ $('sp1').onclick=()=>savePng(true);$('sp2').onclick=()=>savePng(false)}
+$('bRep').onclick=report;
+async function savePng(sel){toast('HD ছবি তৈরি হচ্ছে…');await new Promise(r=>setTimeout(r,60));
+ const F=items.filter(i=>i.t==='f'),ps=items.flatMap(i=>i.pts);let bx0=0,by0=0,bw=W,bh=H;
+ if(sel){if(!ps.length){toast('আগে দাগ নির্বাচন করুন');return}const mnx=Math.min(...ps.map(p=>p.x)),mxx=Math.max(...ps.map(p=>p.x)),mny=Math.min(...ps.map(p=>p.y)),mxy=Math.max(...ps.map(p=>p.y)),m=Math.max(14,.05*Math.max(mxx-mnx,mxy-mny));bx0=Math.max(0,mnx-m);by0=Math.max(0,mny-m);bw=Math.min(W,mxx+m)-bx0;bh=Math.min(H,mxy+m)-by0}
+ const f=Math.min(3.5,4200/Math.max(bw,bh)),c=document.createElement('canvas');c.width=Math.round(bw*f);c.height=Math.round(bh*f);
+ const t=document.createElement('canvas');t.width=c.width;t.height=c.height;const y=t.getContext('2d');y.fillStyle='#fff';y.fillRect(0,0,t.width,t.height);
+ try{if(pg)await pg.render({canvasContext:y,viewport:pg.getViewport({scale:bs*f}),transform:[1,0,0,1,-bx0*f,-by0*f]}).promise;else{y.imageSmoothingQuality='high';y.drawImage(bmp,bx0/bs,by0/bs,bw/bs,bh/bs,0,0,t.width,t.height)}}catch(e){y.drawImage(cb,0,0,t.width,t.height)}
+ const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.save();
+ if(sel&&F.length){x.beginPath();F.forEach(it=>{it.pts.forEach((p,i)=>{const X=(p.x-bx0)*f,Y=(p.y-by0)*f;i?x.lineTo(X,Y):x.moveTo(X,Y)});x.closePath()});x.clip()}
+ x.filter=fstr();x.drawImage(t,0,0);x.filter='none';x.restore();drawVec(x,{x:-bx0,y:-by0,k:1},f);
+ await outPng(c,`${fname}${sel?'-dag':''}-${Date.now()}.png`)}
+async function outPng(c,name){let url;try{url=c.toDataURL('image/png')}catch(e){toast('ছবি তৈরি করা যায়নি (ইন্টারনেট ছবির অনুমতি)');return}
+ if(window.Android){closeSheet();toast(Android.save(url.split(',')[1],name));return}
+ const C=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.Filesystem;
+ if(C){for(const dir of['DOCUMENTS','EXTERNAL']){try{await C.writeFile({path:'ভূমিসেবা/'+name,data:url.split(',')[1],directory:dir,recursive:true});closeSheet();toast('ছবি সেভ হয়েছে');return}catch(e){}}toast('সেভ করা যায়নি')}
+ else{const a=document.createElement('a');a.href=url;a.download=name;a.click();closeSheet();toast('PNG ছবি সেভ হচ্ছে')}}
+
+/* extra tools */
+const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),money=n=>Math.round(n).toLocaleString('en-IN').replace(/\d/g,c=>BN[c]);
+const box=(t,v)=>`<div class="inset"><b>${v}</b><small>${t}</small></div>`;
+async function savedList(){const B=$('cB');$('cT').textContent='সংরক্ষিত নকশা';B.innerHTML='<p class="lb">লোড হচ্ছে…</p>';
+ const L=((await dbp('readonly',st=>st.getAll()))||[]).filter(r=>!String(r.key).startsWith('b:')).sort((a,b)=>b.ts-a.ts);
+ B.innerHTML=L.length?L.map((r,i)=>`<div class="raise" style="padding:14px;margin-bottom:14px"><b>${esc(r.name)}</b><br><small style="color:var(--m)">দাগ ${bn(r.n||0,0)}টি • মোট ${bn((r.tot||0)/435.6)} শতক</small><div class="row"><button data-o="${i}" class="pri">খুলুন</button><button data-d="${i}" style="color:var(--r)">মুছুন</button></div></div>`).join(''):'<p class="lb">এখনো কোনো নকশা সংরক্ষিত নেই। নকশা খুলে দাগ নির্বাচন করলে নিজে নিজে সংরক্ষণ হবে।</p>';
+ B.onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.o!=null){const r=L[b.dataset.o],bl=await dbp('readonly',st=>st.get('b:'+r.key));if(bl&&bl.blob)openMapFile(bl.blob);else toast('ফাইল পাওয়া যায়নি')}else if(b.dataset.d!=null){const r=L[b.dataset.d];await dbp('readwrite',st=>{st.delete(r.key);st.delete('b:'+r.key)});savedList()}}}
+function landsTool(){const B=$('cB');$('cT').textContent='আমার জমির তালিকা';let L=[],ed=-1;try{L=JSON.parse(localStorage.getItem('bs_lands')||'[]')}catch(e){}
+ const sv=()=>{try{localStorage.setItem('bs_lands',JSON.stringify(L))}catch(e){toast('সংরক্ষণ করা যায়নি')}},F=[['n','নাম/বিবরণ'],['m','মৌজা'],['d','দাগ নং'],['k','খতিয়ান নং'],['a','পরিমাণ (শতক)','n'],['o','নোট']];
+ const draw=()=>{const tot=L.reduce((s,x)=>s+(+x.a||0),0);
+  B.innerHTML=`<div class="raise" style="padding:16px"><div class="grid" style="gap:10px">${F.map(([k,l,t])=>`<label class="lb" style="margin:0">${l}<input ${t?'type="number" inputmode="decimal"':'type="search"'} data-k="${k}" value="${esc(ed>=0?(L[ed][k]||''):'')}"></label>`).join('')}</div><div class="row"><button class="pri" id="la">${ed>=0?'আপডেট করুন':'যোগ করুন'}</button></div></div><h2>মোট ${bn(L.length,0)}টি • ${bn(tot)} শতক (${bn(tot*435.6/720)} কাঠা)</h2>${L.map((x,i)=>`<div class="raise" style="padding:14px;margin-bottom:12px"><b>${esc(x.n||'জমি')}</b> <small>${bn(+x.a||0)} শতক</small><br><small style="color:var(--m)">${esc([x.m&&'মৌজা: '+x.m,x.d&&'দাগ: '+x.d,x.k&&'খতিয়ান: '+x.k,x.o].filter(Boolean).join(' • '))}</small><div class="row"><button data-e="${i}">এডিট</button><button data-x="${i}" style="color:var(--r)">মুছুন</button></div></div>`).join('')}`;
+  $('la').onclick=()=>{const o={};B.querySelectorAll('[data-k]').forEach(i=>o[i.dataset.k]=i.value.trim());if(!Object.values(o).some(Boolean)){toast('কিছু লিখুন');return}if(ed>=0)L[ed]=o;else L.push(o);ed=-1;sv();draw()};
+  B.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{ed=+b.dataset.e;draw();B.scrollTop=0});B.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>{L.splice(+b.dataset.x,1);ed=-1;sv();draw()})};
+ draw()}
+function priceTool(){$('cT').textContent='জমির দাম ক্যালকুলেটর';const U=AREA.slice(0,6),I=(id,l)=>`<label class="lb">${l}<input type="number" id="${id}" inputmode="decimal"></label>`;
+ $('cB').innerHTML=`<div class="raise" style="padding:18px"><label class="lb" style="margin-top:0">জমির পরিমাণ</label><div class="row" style="margin-top:6px"><input type="number" id="pa" inputmode="decimal" aria-label="পরিমাণ"><select id="pu" aria-label="একক">${opt(U)}</select></div><label class="lb">দর (টাকা) — প্রতি</label><div class="row" style="margin-top:6px"><input type="number" id="pr" inputmode="decimal" aria-label="দর"><select id="pv" aria-label="দরের একক">${opt(U)}</select></div>${I('p1','নিবন্ধন/স্ট্যাম্প ও কর (%) — আপনার জানা হার')}${I('p2','অন্যান্য খরচ (%)')}${I('p3','স্থির খরচ (টাকা)')}<div class="res" id="cr"></div></div>`;
+ const go=()=>{const sf=(+$('pa').value||0)*U[$('pu').value][1],base=sf/U[$('pv').value][1]*(+$('pr').value||0),ex=base*((+$('p1').value||0)+(+$('p2').value||0))/100+(+$('p3').value||0),tt=base+ex;
+  $('cr').innerHTML=box('মূল দাম (টাকা)',money(base))+box('অতিরিক্ত খরচ',money(ex))+box('মোট খরচ',money(tt))+box('প্রতি শতক (মোট)',sf?money(tt/(sf/435.6)):'০')+box('প্রতি কাঠা (মোট)',sf?money(tt/(sf/720)):'০')+box('প্রতি বিঘা (মোট)',sf?money(tt/(sf/14400)):'০')};
+ $('cB').querySelectorAll('input,select').forEach(x=>x.oninput=x.onchange=go);go()}
+function divTool(){$('cT').textContent='জমি ভাগ ক্যালকুলেটর';
+ $('cB').innerHTML=`<div class="raise" style="padding:18px"><label class="lb" style="margin-top:0">মোট জমি</label><div class="row" style="margin-top:6px"><input type="number" id="da" inputmode="decimal" aria-label="পরিমাণ"><select id="du" aria-label="একক">${opt(AREA.slice(0,6))}</select></div><label class="lb">কত ভাগ? (সংখ্যা, অথবা অনুপাত যেমন ২:৩:৫)<input type="search" id="dp" value="2"></label><div id="cr" style="margin-top:14px"></div></div>`;
+ const go=()=>{const sf=(+$('da').value||0)*AREA[$('du').value][1],t=$('dp').value.trim();let w=/[:,\s]/.test(t)?t.split(/[:,\s]+/).map(Number).filter(x=>x>0):Array(Math.max(0,Math.min(50,Math.round(+t)||0))).fill(1);const sm=w.reduce((a,b)=>a+b,0);
+  $('cr').innerHTML=w.slice(0,50).map((x,i)=>{const p=sf*x/sm;return `<div class="inset" style="padding:12px;margin-bottom:10px"><b>${bn(i+1,0)}ম অংশ: ${bn(p/435.6)} শতক</b><br><small>${bn(p/720)} কাঠা • ${bn(p,0)} বর্গফুট • ${bn(p/9,1)} বর্গগজ</small></div>`}).join('')};
+ $('cB').querySelectorAll('input,select').forEach(x=>x.oninput=x.onchange=go);go()}
+const _ot=openTool;openTool=function(k){$('cB').onclick=null;if(k==='saved'){show('conv');savedList()}else if(k==='lands'){show('conv');landsTool()}else if(k==='price'){show('conv');priceTool()}else if(k==='divide'){show('conv');divTool()}else _ot(k)};
+document.addEventListener('pointerdown',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;const r=b.getBoundingClientRect(),z=Math.max(r.width,r.height)*2,i=document.createElement('i');i.className='rip';i.style.cssText=`width:${z}px;height:${z}px;left:${e.clientX-r.left-z/2}px;top:${e.clientY-r.top-z/2}px`;b.append(i);setTimeout(()=>i.remove(),520)},{passive:true});
+
+/* real map (Esri/OSM tiles, no API key) */
+const SRC={sat:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}','© Esri, Maxar, Earthstar Geographics',19],str:['https://tile.openstreetmap.org/{z}/{x}/{y}.png','© OpenStreetMap contributors',19],top:['https://tile.opentopomap.org/{z}/{x}/{y}.png','© OpenTopoMap, © OpenStreetMap',17]};
+const rc=$('rc'),rw=$('rwrap'),TC=new Map(),m2=(la,lo)=>{const s=Math.sin(la*Math.PI/180);return{x:(lo+180)/360,y:.5-Math.log((1+s)/(1-s))/(4*Math.PI)}},m2ll=(x,y)=>({lat:180/Math.PI*Math.atan(Math.sinh(Math.PI*(1-2*y))),lon:x*360-180});
+const R={c:m2(23.8103,90.4125),z:15,src:'sat',tool:'ruler',pts:[],loc:null,pin:null};
+const hav=(a,b)=>{const t=Math.PI/180,dl=(b.lat-a.lat)*t,dn=(b.lon-a.lon)*t,h=Math.sin(dl/2)**2+Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dn/2)**2;return 12742017.6*Math.asin(Math.sqrt(h))};
+function tile(sk,z,x,y,peek){const k=sk+z+'/'+x+'/'+y;let e=TC.get(k);if(e)return e.complete&&e.naturalWidth?e:null;if(peek||z<1)return null;e=new Image();e.crossOrigin='anonymous';e.onload=rq_;e.src=SRC[sk][0].replace('{z}',z).replace('{x}',x).replace('{y}',y);TC.set(k,e);if(TC.size>600)TC.delete(TC.keys().next().value);return null}
+let rraf=0;function rq_(){if(!rraf)rraf=requestAnimationFrame(()=>{rraf=0;rdraw()})}
+function rov(c,SP,P,ar){if(!P.length)return;c.lineJoin='round';c.beginPath();P.forEach((p,i)=>{const[a,b]=SP(p);i?c.lineTo(a,b):c.moveTo(a,b)});if(ar&&P.length>2){c.closePath();c.fillStyle='rgba(47,224,166,.3)';c.fill()}c.lineWidth=2.6;c.strokeStyle=ar?'#2fe0a6':'#ffc233';c.stroke();
+ const sg=[];for(let i=1;i<P.length;i++)sg.push([P[i-1],P[i]]);if(ar&&P.length>2)sg.push([P[P.length-1],P[0]]);
+ sg.forEach(([a,b])=>{const[x1,y1]=SP(a),[x2,y2]=SP(b);if(Math.hypot(x2-x1,y2-y1)>50)txt(c,FI(hav(a,b)*3.28084),(x1+x2)/2,(y1+y2)/2-9,Math.atan2(y2-y1,x2-x1),11,'#b36b00')});
+ P.forEach(p=>{const[a,b]=SP(p);c.beginPath();c.arc(a,b,5.5,0,7);c.fillStyle='#fff';c.fill();c.lineWidth=2.2;c.strokeStyle=ar?'#0f8a63':'#e08a00';c.stroke()})}
+function rdraw(){if(cur()!=='rmap')return;const d=dpr(),w=rw.clientWidth,h=rw.clientHeight;if(!w)return;if(rc.width!==Math.round(w*d)||rc.height!==Math.round(h*d)){rc.width=Math.round(w*d);rc.height=Math.round(h*d);rc.style.width=w+'px';rc.style.height=h+'px'}
+ const c=rc.getContext('2d');c.setTransform(d,0,0,d,0,0);c.fillStyle='#2b3138';c.fillRect(0,0,w,h);
+ const S=SRC[R.src],zt=Math.max(1,Math.min(S[2],Math.round(R.z))),f=2**(R.z-zt),n=2**zt,cx=R.c.x*256*n,cy=R.c.y*256*n;
+ for(let ty=Math.floor((cy-h/2/f)/256);ty<=Math.floor((cy+h/2/f)/256);ty++){if(ty<0||ty>=n)continue;for(let tx=Math.floor((cx-w/2/f)/256);tx<=Math.floor((cx+w/2/f)/256);tx++){
+  const X=((tx%n)+n)%n,px=(tx*256-cx)*f+w/2,py=(ty*256-cy)*f+h/2,sz=256*f+.7,im=tile(R.src,zt,X,ty);
+  if(im)c.drawImage(im,px,py,sz,sz);else if(zt>1){const pi=tile(R.src,zt-1,X>>1,ty>>1,1);if(pi)c.drawImage(pi,(X&1)*128,(ty&1)*128,128,128,px,py,sz,sz)}}}
+ const ws=256*2**R.z,SP=p=>{const m=m2(p.lat,p.lon);return[(m.x-R.c.x)*ws+w/2,(m.y-R.c.y)*ws+h/2]};rov(c,SP,R.pts,R.tool==='area');
+ [R.loc,R.pin].forEach((p,i)=>{if(p){const[a,b]=SP(p);c.beginPath();c.arc(a,b,i?7:8,0,7);c.fillStyle=i?'#d6405a':'#3b7de0';c.fill();c.lineWidth=3;c.strokeStyle='#fff';c.stroke()}});
+ const lat=m2ll(R.c.x,R.c.y).lat,mpp=156543.03392*Math.cos(lat*Math.PI/180)/2**R.z;let L=[1,2,5,10,20,50,100,200,500,1000,2000,5000,10000,20000,50000,100000,200000].find(v=>v/mpp>=80)||1e5;
+ c.fillStyle='#fff';c.fillRect(12,h-24,L/mpp,4);c.fillRect(12,h-30,2,10);c.fillRect(12+L/mpp-2,h-30,2,10);txt(c,L>=1000?bn(L/1000,0)+' কিমি':bn(L,0)+' মি.',12+L/mpp/2,h-38,0,11,'#0b3d2c',1);
+ $('rAt').textContent=S[1];$('rU').style.opacity=R.pts.length?1:.4}
+const tload=(sk,z,x,y)=>new Promise(res=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>res(null);i.src=SRC[sk][0].replace('{z}',z).replace('{x}',x).replace('{y}',y);setTimeout(()=>res(null),9000)});
+async function rsave(){const P=R.pts,ar=R.tool==='area'&&P.length>2;if(P.length<2){toast('আগে ম্যাপে মাপুন (ফিতা বা জমি মাপ)');return}toast('HD ছবি তৈরি হচ্ছে…');
+ const S=SRC[R.src],M=P.map(p=>m2(p.lat,p.lon)),mnx=Math.min(...M.map(m=>m.x)),mxx=Math.max(...M.map(m=>m.x)),mny=Math.min(...M.map(m=>m.y)),mxy=Math.max(...M.map(m=>m.y)),side=Math.max(mxx-mnx,mxy-mny)||1e-7;
+ const ze=Math.max(3,Math.min(20,Math.log2(1500/(side*256)))),ws=256*2**ze,pad=70,x0=mnx*ws-pad,y0=mny*ws-pad,cw=Math.ceil((mxx-mnx)*ws+2*pad),ch=Math.ceil((mxy-mny)*ws+2*pad);
+ const c=document.createElement('canvas');c.width=cw;c.height=ch;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,cw,ch);
+ const zt=Math.max(1,Math.min(S[2],Math.round(ze))),f=2**(ze-zt),n=2**zt,jobs=[];
+ for(let ty=Math.floor(y0/(256*f));ty<=Math.floor((y0+ch)/(256*f));ty++)for(let tx=Math.floor(x0/(256*f));tx<=Math.floor((x0+cw)/(256*f));tx++){if(ty<0||ty>=n)continue;jobs.push(tload(R.src,zt,((tx%n)+n)%n,ty).then(im=>({im,px:tx*256*f-x0,py:ty*256*f-y0})))}
+ const T2=await Promise.all(jobs);x.save();
+ if(ar){x.beginPath();M.forEach((m,i)=>{const X=m.x*ws-x0,Y=m.y*ws-y0;i?x.lineTo(X,Y):x.moveTo(X,Y)});x.closePath();x.clip()}
+ T2.forEach(t=>t.im&&x.drawImage(t.im,t.px,t.py,256*f+.7,256*f+.7));x.restore();
+ rov(x,p=>{const m=m2(p.lat,p.lon);return[m.x*ws-x0,m.y*ws-y0]},P,ar);x.font='12px sans-serif';x.fillStyle='#333';x.fillText(S[1],8,ch-8);
+ await outPng(c,`realmap-${ar?'jomi':'map'}-${Date.now()}.png`)}
+$('rSv').innerHTML=ic('save')+'সেভ';$('rSv').onclick=rsave;
+function rinfo(){const P=R.pts,T2=$('rTot'),S2=$('rSub');
+ if(R.tool==='pin'){T2.textContent=R.pin?`${R.pin.lat.toFixed(6)}, ${R.pin.lon.toFixed(6)}`:'ম্যাপে ট্যাপ করে স্থানাঙ্ক জানুন';S2.textContent=R.pin?'অক্ষাংশ, দ্রাঘিমাংশ':'';return}
+ if(R.tool==='ruler'){let m=0;for(let i=1;i<P.length;i++)m+=hav(P[i-1],P[i]);T2.textContent=P.length>1?`${FI(m*3.28084)} • ${bn(m,1)} মি. • ${bn(m/.9144,1)} গজ • ${bn(m/.4572,1)} হাত`:'ফিতা: ম্যাপে ট্যাপ করে বিন্দু বসান';S2.textContent=`${bn(P.length,0)}টি পয়েন্ট`+(P.length>1?` • ${bn(m/1000,3)} কিমি`:'');return}
+ if(R.tool==='area'){if(P.length<3){T2.textContent='জমির কোণায় কোণায় ট্যাপ করুন (কমপক্ষে ৩টি)';S2.textContent=`${bn(P.length,0)}টি পয়েন্ট`;return}
+  const la=P.reduce((s,p)=>s+p.lat,0)/P.length,lo=P.reduce((s,p)=>s+p.lon,0)/P.length,k=Math.cos(la*Math.PI/180),XY=P.map(p=>({x:(p.lon-lo)*111320*k,y:(p.lat-la)*110574}));let per=0;for(let i=0;i<P.length;i++)per+=hav(P[i],P[(i+1)%P.length]);
+  const sf=polyA(XY)*10.7639;T2.textContent=`${bn(sf/435.6)} শতক`;S2.textContent=`কাঠা ${bn(sf/720)} • বর্গফুট ${bn(sf,0)} • একর ${bn(sf/43560,3)} • বিঘা ${bn(sf/14400,2)} • পরিসীমা ${FI(per*3.28084)}`;return}
+ T2.textContent='প্যান/জুম করে জায়গা দেখুন';S2.textContent=''}
+const _ri=rinfo;rinfo=function(){_ri();try{localStorage.setItem('bs_rmap',JSON.stringify({p:R.pts,t:R.tool,s:R.src,c:R.c,z:R.z}))}catch(e){}};
+function rsetBtns(){document.querySelectorAll('#rt [data-l]').forEach(b=>b.classList.toggle('sel',b.dataset.l===R.src));document.querySelectorAll('#rt [data-m]').forEach(b=>b.classList.toggle('sel',b.dataset.m===R.tool))}
+$('rt').innerHTML=[['l','sat','layers','স্যাটেলাইট'],['l','str','map','রাস্তা'],['l','top','pin','টেরেইন'],['m','ruler','ruler','ফিতা/দূরত্ব'],['m','area','poly','জমি মাপ'],['m','pin','locate','স্থানাঙ্ক'],['m','move','hand','প্যান']].map(([k,v,i,t])=>`<button data-${k}="${v}">${ic(i)}${t}</button>`).join('');
+$('rt').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.l){R.src=b.dataset.l}else{R.tool=b.dataset.m;R.pts=[];R.pin=null}rsetBtns();rinfo();rdraw()};
+function rzoom(dz,px,py){const w=rw.clientWidth,h=rw.clientHeight,ws=256*2**R.z,z2=Math.max(3,Math.min(21,R.z+dz)),w2=256*2**z2,mx=R.c.x+(px-w/2)/ws,my=R.c.y+(py-h/2)/ws;R.z=z2;R.c.x=mx-(px-w/2)/w2;R.c.y=my-(py-h/2)/w2}
+const RP=new Map();let RG=null;const rrel=e=>{const r=rw.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}};
+rw.addEventListener('pointerdown',e=>{if(e.target.closest('.fab'))return;rw.setPointerCapture(e.pointerId);RP.set(e.pointerId,rrel(e));RG={s:rrel(e),t:Date.now(),mv:0}});
+rw.addEventListener('pointermove',e=>{const p=RP.get(e.pointerId);if(!p)return;const n=rrel(e),ws=256*2**R.z;
+ if(RP.size===1){RG.mv=Math.max(RG.mv,Ld(n,RG.s));R.c.x-=(n.x-p.x)/ws;R.c.y-=(n.y-p.y)/ws}
+ else if(RP.size===2){const o=[...RP.entries()].find(([i])=>i!==e.pointerId)[1],pm={x:(p.x+o.x)/2,y:(p.y+o.y)/2},nm={x:(n.x+o.x)/2,y:(n.y+o.y)/2};RG.mv=99;R.c.x-=(nm.x-pm.x)/ws;R.c.y-=(nm.y-pm.y)/ws;rzoom(Math.log2(Ld(n,o)/(Ld(p,o)||1)),nm.x,nm.y)}
+ p.x=n.x;p.y=n.y;rq_()});
+const rup=e=>{if(!RP.has(e.pointerId))return;const n=rrel(e),last=RP.size===1;RP.delete(e.pointerId);if(last&&RG&&RG.mv<8&&Date.now()-RG.t<500&&e.type==='pointerup')rtap(n)};
+rw.addEventListener('pointerup',rup);rw.addEventListener('pointercancel',rup);
+rw.addEventListener('wheel',e=>{e.preventDefault();const p=rrel(e);rzoom(e.deltaY<0?.5:-.5,p.x,p.y);rdraw()},{passive:false});
+function rtap(p){const ws=256*2**R.z,ll=m2ll(R.c.x+(p.x-rw.clientWidth/2)/ws,R.c.y+(p.y-rw.clientHeight/2)/ws);
+ if(R.tool==='ruler'||R.tool==='area')R.pts.push(ll);else if(R.tool==='pin')R.pin=ll;else return;rinfo();rdraw()}
+$('rZi').onclick=()=>{rzoom(1,rw.clientWidth/2,rw.clientHeight/2);rdraw()};$('rZo').onclick=()=>{rzoom(-1,rw.clientWidth/2,rw.clientHeight/2);rdraw()};
+$('rU').onclick=()=>{R.pts.pop();rinfo();rdraw()};$('rC').onclick=()=>{R.pts=[];R.pin=null;rinfo();rdraw()};$('rBack').onclick=()=>show('home');
+function setLoc(a,b){R.loc={lat:a,lon:b};R.c=m2(a,b);R.z=Math.max(R.z,17);rdraw()}
+$('rLoc').onclick=()=>{if(window.Android&&Android.loc){const s=Android.loc();if(s==='perm'){toast('লোকেশন অনুমতি দিয়ে আবার চাপুন');return}if(!s){toast('GPS চালু করে আবার চেষ্টা করুন');return}const[a,b]=s.split(',').map(Number);setLoc(a,b)}
+ else if(navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>setLoc(p.coords.latitude,p.coords.longitude),()=>toast('লোকেশন পাওয়া যায়নি'),{enableHighAccuracy:true,timeout:15000});else toast('লোকেশন সাপোর্ট নেই')};
+async function rsearch(){const q=$('rq').value.trim();if(!q)return;toast('খোঁজা হচ্ছে…');try{const j=await(await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=bd&q='+encodeURIComponent(q))).json();if(!j.length){toast('জায়গা পাওয়া যায়নি');return}R.c=m2(+j[0].lat,+j[0].lon);R.z=16;rdraw()}catch(e){toast('ইন্টারনেট সংযোগ দেখুন')}}
+$('rS').onclick=rsearch;$('rq').onkeydown=e=>{if(e.key==='Enter')rsearch()};
+$('rGo').onclick=()=>{const l=m2ll(R.c.x,R.c.y);openWeb(`https://www.google.com/maps/@${l.lat.toFixed(6)},${l.lon.toFixed(6)},${Math.round(R.z)}z/data=!3m1!1e3`,'Google Maps')};
+function openMap(){show('rmap');try{const o=JSON.parse(localStorage.getItem('bs_rmap')||'null');if(o&&o.c){R.pts=o.p||[];R.tool=o.t||'ruler';R.src=o.s||'sat';R.c=o.c;R.z=o.z||15}}catch(e){}rsetBtns();rinfo();requestAnimationFrame(()=>{rdraw();toast('রিয়েল ম্যাপের জন্য ইন্টারনেট দরকার')})}
+
+/* back / exit */
+function aboutHTML(){return `<div class="abt"><div class="av raise"><img src="${PHOTO}" alt="ডেভেলপারের ছবি"></div><h3>${ABOUT.dev}</h3><small style="color:var(--m)">${ABOUT.devEn}</small><p>${ABOUT.name} • সংস্করণ ${ABOUT.ver}<br>${ABOUT.note}</p><div class="cts">${ABOUT.c.map((x,i)=>`<button class="ct" data-u="${x[1]}" aria-label="${x[2]}" style="--i:${i}">${ic(x[0])}</button>`).join('')}</div></div>`}
+function bindAbout(){$('sheet').querySelectorAll('.ct').forEach(b=>b.onclick=()=>openWeb(b.dataset.u,''))}
+function exitAsk(){sheet(`<h3 style="text-align:center">অ্যাপ থেকে বের হবেন?</h3>${aboutHTML()}<div class="row"><button onclick="closeSheet()">থাকুন</button><button style="color:var(--r);font-weight:700" id="ex">বের হই</button></div>`);bindAbout();
+ $('ex').onclick=()=>{const A=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.App;if(window.Android){Android.exitApp();return}A?A.exitApp():(closeSheet(),toast('ব্রাউজার ট্যাব নিজে বন্ধ করুন'))}}
+function onBack(){if($('ov').classList.contains('on')){closeSheet();return}if(cur()!=='home'){show('home');return}exitAsk()}
+$('mBack').onclick=$('cBack').onclick=()=>show('home');
+$('bAbout').onclick=()=>{sheet(aboutHTML()+'<div class="row"><button class="pri" onclick="closeSheet()">ঠিক আছে</button></div>');bindAbout()};
+const CA=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.App;
+if(CA)CA.addListener('backButton',onBack);else{history.pushState({},'');addEventListener('popstate',()=>{history.pushState({},'');onBack()})}
+addEventListener('resize',()=>{if(W&&cur()==='map'){sizeC();fit()}if(cur()==='rmap')rdraw()});
+</script></body></html>

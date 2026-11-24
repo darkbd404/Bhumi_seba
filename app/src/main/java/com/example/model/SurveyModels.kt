@@ -17,7 +17,7 @@ data object RealMapRoute
 data object ServicesRoute
 
 @Serializable
-data object ToolsRoute
+data class ToolsRoute(val initialTab: String = "unit")
 
 @Serializable
 data object AiAssistantRoute
@@ -44,8 +44,20 @@ enum class MouzaScale(
 }
 
 enum class MouzaSelectionTool(val labelBn: String) {
-    AUTO_TAP("অটো দাগ সিলেক্ট"),
-    POLYGON_DRAW("ম্যানুয়াল পলিগন")
+    AUTO_TAP("অটো ফিল"),
+    EDIT_CORNERS("পয়েন্ট এডিট"),
+    TAPE_MEASURE("ফিতা মাপ"),
+    POLYGON_DRAW("পলিগন"),
+    PAN_ONLY("প্যান/মুভ")
+}
+
+enum class MouzaFilterPreset(val labelBn: String) {
+    NORMAL("স্বাভাবিক"),
+    DOC_SCAN("ডকুমেন্ট স্ক্যান"),
+    HIGH_CONTRAST("হাই-কন্ট্রাস্ট"),
+    BW("সাদা-কালো"),
+    BRIGHT("উজ্জ্বলতা বৃদ্ধি"),
+    INVERT("ডার্ক মোড")
 }
 
 data class MouzaPlot(
@@ -54,7 +66,7 @@ data class MouzaPlot(
     val dagNumber: String = "",
     val khatianNumber: String = "",
     val pixelCount: Int,
-    val maskIndices: IntArray, // Indices in detection grid (width * height)
+    val maskIndices: IntArray, // Indices in detection grid (when raster fallback used)
     val gridWidth: Int,
     val gridHeight: Int,
     val minX: Int,
@@ -62,12 +74,24 @@ data class MouzaPlot(
     val maxX: Int,
     val maxY: Int,
     val color: Color,
-    val manualPolygonNormalized: List<Pair<Float, Float>>? = null // Used when drawn manually
+    val manualPolygonNormalized: List<Pair<Float, Float>>? = null, // Used when drawn manually
+    val polygonNormalized: List<Pair<Float, Float>>? = null, // Editable vector boundary from auto-fill or manual edit
+    val centroidNormalized: Pair<Float, Float>? = null,
+    val exactAreaSqFeet: Double? = null // Vector polygon computed SqFt (when available)
 ) {
+    fun effectivePolygon(): List<Pair<Float, Float>>? = polygonNormalized ?: manualPolygonNormalized
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is MouzaPlot) return false
-        return id == other.id
+        return id == other.id &&
+            plotIndex == other.plotIndex &&
+            dagNumber == other.dagNumber &&
+            khatianNumber == other.khatianNumber &&
+            pixelCount == other.pixelCount &&
+            exactAreaSqFeet == other.exactAreaSqFeet &&
+            polygonNormalized == other.polygonNormalized &&
+            manualPolygonNormalized == other.manualPolygonNormalized
     }
 
     override fun hashCode(): Int = id
@@ -79,7 +103,8 @@ enum class MapLayerOption(
     val titleEn: String,
     val tileUrl: String,
     val attribution: String,
-    val maxZoom: Int = 20,
+    val maxNativeZoom: Int = 18,
+    val maxZoom: Int = 22,
     val supportsLabelOverlay: Boolean = false
 ) {
     GOOGLE_HYBRID(
@@ -88,7 +113,8 @@ enum class MapLayerOption(
         titleEn = "Google Hybrid",
         tileUrl = "https://mt1.google.com/vt/lyrs=y&hl=bn&x={x}&y={y}&z={z}",
         attribution = "Map data © Google",
-        maxZoom = 21,
+        maxNativeZoom = 20,
+        maxZoom = 22,
         supportsLabelOverlay = false
     ),
     GOOGLE_STREETS(
@@ -97,7 +123,8 @@ enum class MapLayerOption(
         titleEn = "Google Streets",
         tileUrl = "https://mt1.google.com/vt/lyrs=m&hl=bn&x={x}&y={y}&z={z}",
         attribution = "Map data © Google",
-        maxZoom = 21,
+        maxNativeZoom = 20,
+        maxZoom = 22,
         supportsLabelOverlay = false
     ),
     ESRI_SATELLITE(
@@ -106,7 +133,8 @@ enum class MapLayerOption(
         titleEn = "Esri Satellite",
         tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attribution = "Tiles © Esri — World Imagery",
-        maxZoom = 19,
+        maxNativeZoom = 18,
+        maxZoom = 22,
         supportsLabelOverlay = true
     ),
     OPEN_STREET_MAP(
@@ -115,7 +143,8 @@ enum class MapLayerOption(
         titleEn = "OpenStreetMap",
         tileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         attribution = "© OpenStreetMap contributors",
-        maxZoom = 19,
+        maxNativeZoom = 19,
+        maxZoom = 22,
         supportsLabelOverlay = false
     ),
     ESRI_STREET(
@@ -124,7 +153,8 @@ enum class MapLayerOption(
         titleEn = "Esri Street",
         tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
         attribution = "Tiles © Esri — World Street Map",
-        maxZoom = 19,
+        maxNativeZoom = 18,
+        maxZoom = 22,
         supportsLabelOverlay = false
     ),
     ESRI_TOPO(
@@ -133,7 +163,8 @@ enum class MapLayerOption(
         titleEn = "Esri Topo",
         tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
         attribution = "Tiles © Esri — World Topo Map",
-        maxZoom = 19,
+        maxNativeZoom = 18,
+        maxZoom = 22,
         supportsLabelOverlay = false
     ),
     OPEN_TOPO_MAP(
@@ -142,7 +173,8 @@ enum class MapLayerOption(
         titleEn = "OpenTopoMap",
         tileUrl = "https://tile.opentopomap.org/{z}/{x}/{y}.png",
         attribution = "© OpenTopoMap (CC-BY-SA)",
-        maxZoom = 17,
+        maxNativeZoom = 17,
+        maxZoom = 22,
         supportsLabelOverlay = false
     )
 }
@@ -160,7 +192,7 @@ enum class MapMeasureCategory(
 }
 
 enum class LandServiceCategory(val titleBn: String) {
-    OWN_PORTALS("গুরুত্বপূর্ণ ও নিজস্ব পোর্টাল"),
+    OWN_PORTALS("তথ্যসহায়ক পোর্টাল (বেসরকারি)"),
     GOVT_LAND("সরকারি ভূমি ও খতিয়ান সেবা"),
     TAX_DEED("কর, নামজারি ও দলিল সেবা"),
     SURVEY_HELP("নকশা, আইন ও সহায়তা")

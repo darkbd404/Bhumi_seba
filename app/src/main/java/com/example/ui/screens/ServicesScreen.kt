@@ -71,6 +71,14 @@ private val allBangladeshLandPortals = listOf(
         isFeatured = true
     ),
     LandServicePortal(
+        id = "dlrms_mouza",
+        titleBn = "মৌজা ম্যাপ (dlrmslandgovbd)",
+        subtitleBn = "মৌজা ভিত্তিক ডিজিটাল নকশা ও দাগ অনুসন্ধান",
+        url = "https://dlrmslandgovbd.com/mouza-map",
+        category = LandServiceCategory.OWN_PORTALS,
+        badgeText = "Map"
+    ),
+    LandServicePortal(
         id = "eporcha",
         titleBn = "E-Porcha Tech (ই-পর্চা ও খতিয়ান)",
         subtitleBn = "সার্টিফাইড খতিয়ান, পর্চা ও মৌজা ম্যাপ সেবা",
@@ -78,6 +86,62 @@ private val allBangladeshLandPortals = listOf(
         category = LandServiceCategory.OWN_PORTALS,
         badgeText = "Featured",
         isFeatured = true
+    ),
+    LandServicePortal(
+        id = "eporcha_survey",
+        titleBn = "সার্ভে খতিয়ান (eporcha.tech)",
+        subtitleBn = "সিএস, এসএ, আরএস ও বিএস সার্ভে খতিয়ান তথ্য",
+        url = "https://eporcha.tech/survey-khatian",
+        category = LandServiceCategory.OWN_PORTALS,
+        badgeText = "Khatian"
+    ),
+    LandServicePortal(
+        id = "eporcha_namjari",
+        titleBn = "নামজারী খতিয়ান (eporcha.tech)",
+        subtitleBn = "অনলাইন নামজারি ও মিউটেশন খতিয়ান সেবা",
+        url = "https://eporcha.tech/namjari-khatian",
+        category = LandServiceCategory.OWN_PORTALS,
+        badgeText = "Namjari"
+    ),
+    LandServicePortal(
+        id = "eporcha_mouza",
+        titleBn = "মৌজা ম্যাপ (eporcha.tech)",
+        subtitleBn = "ডিজিটাল মৌজা ম্যাপ ও প্লট তথ্য সহায়তা",
+        url = "https://eporcha.tech/mouza-map",
+        category = LandServiceCategory.OWN_PORTALS,
+        badgeText = "Map"
+    ),
+    LandServicePortal(
+        id = "eporcha_khatian_book",
+        titleBn = "খতিয়ান বই (মৌজা ভিত্তিক)",
+        subtitleBn = "মৌজা অনুযায়ী সম্পূর্ণ খতিয়ান তালিকা",
+        url = "https://eporcha.tech/mouza-vittik-khatian",
+        category = LandServiceCategory.OWN_PORTALS,
+        badgeText = "Book"
+    ),
+    LandServicePortal(
+        id = "eporcha_dag_book",
+        titleBn = "দাগ বই (মৌজা ভিত্তিক)",
+        subtitleBn = "মৌজা অনুযায়ী দাগ নাম্বার ও জমির বিবরণ",
+        url = "https://eporcha.tech/mouza-vittik-dag",
+        category = LandServiceCategory.OWN_PORTALS,
+        badgeText = "Dag"
+    ),
+    LandServicePortal(
+        id = "dlrms_gov",
+        titleBn = "ই-পর্চা / খতিয়ান (DLRMS সরকারি)",
+        subtitleBn = "ভূমি রেকর্ড ও জরিপ অধিদপ্তরের অফিসিয়াল পোর্টাল",
+        url = "https://dlrms.land.gov.bd",
+        category = LandServiceCategory.GOVT_LAND,
+        badgeText = "Official"
+    ),
+    LandServicePortal(
+        id = "settlement_khatian",
+        titleBn = "খতিয়ান অনুসন্ধান (Settlement)",
+        subtitleBn = "অনলাইন জরিপ ও সেটেলমেন্ট খতিয়ান যাচাই",
+        url = "https://settlement.gov.bd/Khatian/",
+        category = LandServiceCategory.GOVT_LAND,
+        badgeText = "Official"
     ),
     LandServicePortal(
         id = "minland",
@@ -102,6 +166,22 @@ private val allBangladeshLandPortals = listOf(
         url = "https://map.land.gov.bd",
         category = LandServiceCategory.GOVT_LAND,
         badgeText = "Map"
+    ),
+    LandServicePortal(
+        id = "lmap",
+        titleBn = "ভূমি ম্যাপ (LMAP)",
+        subtitleBn = "ভূমি মন্ত্রণালয়ের ইন্টারেক্টিভ ডিজিটাল ম্যাপ",
+        url = "https://lmap.minland.gov.bd",
+        category = LandServiceCategory.GOVT_LAND,
+        badgeText = "LMAP"
+    ),
+    LandServicePortal(
+        id = "dlrs",
+        titleBn = "ভূমি রেকর্ড ও জরিপ অধিদপ্তর (DLRS)",
+        subtitleBn = "সরকারি জরিপ ও রেকর্ড সংরক্ষণ অধিদপ্তর",
+        url = "https://dlrs.gov.bd",
+        category = LandServiceCategory.GOVT_LAND,
+        badgeText = "Official"
     ),
     LandServicePortal(
         id = "mutation",
@@ -150,6 +230,14 @@ private val allBangladeshLandPortals = listOf(
         url = "https://land.gov.bd",
         category = LandServiceCategory.SURVEY_HELP,
         badgeText = "Portal"
+    ),
+    LandServicePortal(
+        id = "grs",
+        titleBn = "অভিযোগ প্রতিকার ব্যবস্থা (GRS)",
+        subtitleBn = "সরকারি ভূমি সেবা সংক্রান্ত অনলাইন অভিযোগ",
+        url = "https://www.grs.gov.bd",
+        category = LandServiceCategory.SURVEY_HELP,
+        badgeText = "GRS"
     )
 )
 
@@ -296,14 +384,17 @@ private fun ServicePortalCard(
     onClick: () -> Unit
 ) {
     val (icon: ImageVector, accent: Color) = when (portal.id) {
-        "dlrms" -> Icons.Rounded.Public to EmeraldPrimary
-        "eporcha", "eporcha_gov" -> Icons.Rounded.Description to TealSecondary
-        "smart_map" -> Icons.Rounded.Map to Color(0xFF1A73E8)
+        "dlrms", "dlrms_gov" -> Icons.Rounded.Public to EmeraldPrimary
+        "eporcha", "eporcha_gov", "eporcha_survey", "eporcha_namjari", "eporcha_khatian_book", "eporcha_dag_book" ->
+            Icons.Rounded.Description to TealSecondary
+        "settlement_khatian" -> Icons.Rounded.Search to Color(0xFF00897B)
+        "smart_map", "lmap", "dlrms_mouza", "eporcha_mouza" -> Icons.Rounded.Map to Color(0xFF1A73E8)
         "mutation" -> Icons.Rounded.Domain to Color(0xFF7B3FE4)
         "ldtax" -> Icons.Rounded.Payments to SurveyGold
         "dolil" -> Icons.Rounded.ReceiptLong to Color(0xFFD81B60)
         "uttoradhikar" -> Icons.Rounded.Balance to Color(0xFF00897B)
         "landpedia" -> Icons.Rounded.Gavel to Color(0xFF5E35B1)
+        "grs" -> Icons.Rounded.Call to Color(0xFFD6405A)
         else -> Icons.Rounded.AccountBalance to EmeraldPrimary
     }
 

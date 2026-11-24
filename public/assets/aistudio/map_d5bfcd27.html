@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>লাইভ জমি পরিমাপ (No Missing Tile)</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: #e6ecf5;
+      color: #1e293b;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .header {
+      padding: 10px 14px;
+      background: #e6ecf5;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 15px;
+      color: #0f5132;
+      z-index: 1000;
+    }
+
+    .layer-btn {
+      padding: 6px 10px;
+      border: none;
+      border-radius: 10px;
+      background: #e6ecf5;
+      box-shadow: 3px 3px 6px #c5cdd8, -3px -3px 6px #ffffff;
+      font-size: 12px;
+      font-weight: 600;
+      color: #0d6efd;
+      cursor: pointer;
+    }
+
+    #map {
+      flex: 1;
+      width: 100%;
+      background: #cfd8e3;
+    }
+
+    .panel {
+      background: #e6ecf5;
+      padding: 12px 14px;
+      border-top-left-radius: 20px;
+      border-top-right-radius: 20px;
+      box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.12);
+      z-index: 1000;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    .card {
+      background: #e6ecf5;
+      padding: 9px 6px;
+      border-radius: 12px;
+      box-shadow: inset 3px 3px 6px #c5cdd8, inset -3px -3px 6px #ffffff;
+    }
+
+    .card span {
+      display: block;
+      font-size: 11px;
+      color: #555;
+    }
+
+    .card strong {
+      font-size: 15px;
+      color: #0f5132;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .ctrl-btn {
+      padding: 10px 6px;
+      border: none;
+      border-radius: 12px;
+      background: #e6ecf5;
+      box-shadow: 4px 4px 8px #c5cdd8, -4px -4px 8px #ffffff;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #1e293b;
+    }
+
+    .ctrl-btn:active, .layer-btn:active {
+      box-shadow: inset 3px 3px 6px #c5cdd8, inset -3px -3px 6px #ffffff;
+    }
+
+    .btn-gps { color: #0d6efd; }
+    .btn-add { color: #198754; }
+    .btn-clear { color: #dc3545; }
+
+    #status {
+      font-size: 12px;
+      text-align: center;
+      margin-bottom: 8px;
+      color: #475569;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <span>লাইভ জমি পরিমাপ</span>
+    <button class="layer-btn" id="layerToggleBtn" onclick="toggleLayer()">🛰️ স্যাটেলাইট ভিউ</button>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="panel">
+    <div id="status">যত খুশি জুম করুন—ম্যাপ ডাটা মিসিং হবে না। কোণাগুলোতে ট্যাপ করুন।</div>
+
+    <div class="result-grid">
+      <div class="card">
+        <span>শতাংশ (Decimal)</span>
+        <strong id="decimalVal">0.00</strong>
+      </div>
+      <div class="card">
+        <span>কাঠা (Katha)</span>
+        <strong id="kathaVal">0.00</strong>
+      </div>
+      <div class="card">
+        <span>বর্গফুট (Sq. Ft)</span>
+        <strong id="sqftVal">0.0</strong>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl-btn btn-gps" onclick="locateUser()">📍 লোকেশন</button>
+      <button class="ctrl-btn btn-add" onclick="addCurrentGpsPoint()">➕ GPS পয়েন্ট</button>
+      <button class="ctrl-btn btn-clear" onclick="clearAll()">🗑️ মুছুন</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
+  <script>
+    const map = L.map('map', {
+      minZoom: 3,
+      maxZoom: 22
+    }).setView([23.4607, 91.1809], 17);
+
+    // maxNativeZoom: 18 দিয়ে অতিরিক্ত জুমে "Map data not available" আটকে দেওয়া হয়েছে
+    const satelliteLayer = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxNativeZoom: 18,
+        maxZoom: 22,
+        attribution: 'Esri'
+      }
+    );
+
+    const streetLayer = L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {
+        maxNativeZoom: 19,
+        maxZoom: 22,
+        attribution: 'OpenStreetMap'
+      }
+    );
+
+    let isSatellite = true;
+    satelliteLayer.addTo(map);
+
+    function toggleLayer() {
+      const btn = document.getElementById('layerToggleBtn');
+      if (isSatellite) {
+        map.removeLayer(satelliteLayer);
+        streetLayer.addTo(map);
+        btn.textContent = '🗺️ স্ট্রিট ভিউ';
+        isSatellite = false;
+      } else {
+        map.removeLayer(streetLayer);
+        satelliteLayer.addTo(map);
+        btn.textContent = '🛰️ স্যাটেলাইট ভিউ';
+        isSatellite = true;
+      }
+    }
+
+    let points = [];
+    let markers = [];
+    let polygon = null;
+    let userMarker = null;
+    let currentGps = null;
+
+    const statusEl = document.getElementById('status');
+
+    map.on('click', function (e) {
+      addPoint(e.latlng.lat, e.latlng.lng);
+    });
+
+    function addPoint(lat, lng) {
+      points.push([lng, lat]);
+
+      const marker = L.circleMarker([lat, lng], {
+        radius: 6,
+        color: '#ffffff',
+        fillColor: '#ff3b30',
+        fillOpacity: 1,
+        weight: 2
+      }).addTo(map);
+
+      markers.push(marker);
+      updatePolygonAndArea();
+    }
+
+    function updatePolygonAndArea() {
+      if (polygon) {
+        map.removeLayer(polygon);
+      }
+
+      if (points.length >= 2) {
+        const latLngs = points.map(p => [p[1], p[0]]);
+        polygon = L.polygon(latLngs, {
+          color: '#00ff88',
+          weight: 3,
+          fillColor: '#00ff88',
+          fillOpacity: 0.25
+        }).addTo(map);
+      }
+
+      if (points.length >= 3) {
+        const closedPoints = [...points, points[0]];
+        const poly = turf.polygon([closedPoints]);
+        const areaSqMeters = turf.area(poly);
+
+        const sqFt = areaSqMeters * 10.7639104;
+        const decimal = sqFt / 435.6;
+        const katha = sqFt / 720;
+
+        document.getElementById('decimalVal').textContent = decimal.toFixed(2);
+        document.getElementById('kathaVal').textContent = katha.toFixed(2);
+        document.getElementById('sqftVal').textContent = sqFt.toFixed(1);
+
+        statusEl.textContent = `মোট ${points.length}টি কোণা যোগ হয়েছে।`;
+      } else {
+        document.getElementById('decimalVal').textContent = '0.00';
+        document.getElementById('kathaVal').textContent = '0.00';
+        document.getElementById('sqftVal').textContent = '0.0';
+        statusEl.textContent = `আরও ${3 - points.length}টি কোণা যোগ করলে জমির পরিমাণ দেখাবে।`;
+      }
+    }
+
+    function locateUser() {
+      if (!navigator.geolocation) {
+        statusEl.textContent = 'আপনার ডিভাইসে GPS সাপোর্ট করছে না।';
+        return;
+      }
+
+      statusEl.textContent = 'লাইভ GPS লোকেশন খোঁজা হচ্ছে...';
+
+      navigator.geolocation.watchPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const accuracy = pos.coords.accuracy;
+          currentGps = { lat, lng };
+
+          if (!userMarker) {
+            map.setView([lat, lng], 19);
+            userMarker = L.marker([lat, lng])
+              .addTo(map)
+              .bindPopup('আপনার বর্তমান অবস্থান')
+              .openPopup();
+          } else {
+            userMarker.setLatLng([lat, lng]);
+          }
+
+          statusEl.textContent = `GPS সংযুক্ত (নির্ভুলতা: ~${Math.round(accuracy)} মিটার)`;
+        },
+        () => {
+          statusEl.textContent = 'লোকেশন পারমিশন অন করুন।';
+        },
+        { enableHighAccuracy: true, maximumAge: 0 }
+      );
+    }
+
+    function addCurrentGpsPoint() {
+      if (!currentGps) {
+        locateUser();
+        statusEl.textContent = 'প্রথমে GPS লোকেশন চালু হচ্ছে, ১-২ সেকেন্ড পর আবার চাপুন।';
+        return;
+      }
+      addPoint(currentGps.lat, currentGps.lng);
+    }
+
+    function clearAll() {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+      points = [];
+      if (polygon) {
+        map.removeLayer(polygon);
+        polygon = null;
+      }
+      updatePolygonAndArea();
+      statusEl.textContent = 'সব পয়েন্ট মুছে ফেলা হয়েছে।';
+    }
+  </script>
+</body>
+</html>
