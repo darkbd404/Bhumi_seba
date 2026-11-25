@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.test.core.app.ApplicationProvider
 import com.example.engine.MouzaPdfEngine
 import com.example.engine.PlotWallIndex
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -27,7 +28,7 @@ class ExampleRobolectricTest {
     fun readAppNameFromContext() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val appName = context.getString(R.string.app_name)
-        assertEquals("Bhumi Survey BD", appName)
+        assertEquals("ভূমি সেবা ডিজিটাল", appName)
     }
 
     @Test
@@ -226,5 +227,216 @@ class ExampleRobolectricTest {
         // Must change area smoothly by much less than 0.25 decimal per click
         assertTrue("Expected gradual decimal change < 0.25, was $deltaDecimal", deltaDecimal < 0.25)
     }
+
+    @Test
+    fun mouzaPdfViewModel_lockedPlotPreventsEditingResizingAndDeletionUntilUnlocked() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.example.viewmodel.MouzaPdfViewModel(app)
+        val stateField = com.example.viewmodel.MouzaPdfViewModel::class.java.getDeclaredField("_uiState")
+        stateField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val flow = stateField.get(vm) as kotlinx.coroutines.flow.MutableStateFlow<com.example.viewmodel.MouzaPdfUiState>
+        val bmp = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+        flow.value = flow.value.copy(displayBitmap = bmp, pdfPageWidthPts = 1000, pdfPageHeightPts = 1000)
+
+        // Create Plot 1 (will be locked)
+        vm.onPointerPlace(0.10f, 0.10f)
+        vm.onPointerPlace(0.30f, 0.10f)
+        vm.onPointerPlace(0.30f, 0.30f)
+        vm.finishManualPolygon()
+
+        // Create Plot 2 (will remain unlocked)
+        vm.onPointerPlace(0.50f, 0.50f)
+        vm.onPointerPlace(0.70f, 0.50f)
+        vm.onPointerPlace(0.70f, 0.70f)
+        vm.finishManualPolygon()
+
+        assertEquals(2, vm.uiState.value.selectedPlots.size)
+        val plot1Initial = vm.uiState.value.selectedPlots[0]
+        val plot2Initial = vm.uiState.value.selectedPlots[1]
+
+        // Lock Plot 1
+        vm.togglePlotLock(plot1Initial.id)
+        assertTrue(vm.uiState.value.selectedPlots[0].isLocked)
+        assertTrue(!vm.uiState.value.selectedPlots[1].isLocked)
+
+        // Attempt vertex movement, nudge, edge split, delete vertex, calibration, scale change, and removal on locked Plot 1
+        vm.updatePlotVertex(plot1Initial.id, 0, 0.05f, 0.05f)
+        vm.selectVertex(plot1Initial.id, 0)
+        vm.deleteSelectedOrNearestVertex(0.10f, 0.10f)
+        vm.calibrateWithKnownPlot(plot1Initial.id, 99.0)
+        vm.setScale(com.example.model.MouzaScale.SCALE_32)
+        vm.removePlot(plot1Initial.id)
+
+        val lockedAfterAttempts = vm.uiState.value.selectedPlots.first { it.id == plot1Initial.id }
+        assertEquals(plot1Initial.effectivePolygon(), lockedAfterAttempts.effectivePolygon())
+        assertEquals(plot1Initial.exactAreaSqFeet ?: 0.0, lockedAfterAttempts.exactAreaSqFeet ?: 0.0, 0.001)
+
+        // Plot 2 (unlocked) should have been recalculated when scale changed, while Plot 1 remained protected
+        val plot2AfterScale = vm.uiState.value.selectedPlots.first { it.id == plot2Initial.id }
+        assertTrue((plot2AfterScale.exactAreaSqFeet ?: 0.0) < (plot2Initial.exactAreaSqFeet ?: 0.0))
+
+        // Clear all should delete unlocked Plot 2 but preserve locked Plot 1
+        vm.clearAllPlots()
+        assertEquals(1, vm.uiState.value.selectedPlots.size)
+        assertEquals(plot1Initial.id, vm.uiState.value.selectedPlots.first().id)
+
+        // Unlock Plot 1 and verify editing and removal now succeed
+        vm.togglePlotLock(plot1Initial.id)
+        assertTrue(!vm.uiState.value.selectedPlots.first().isLocked)
+        vm.updatePlotVertex(plot1Initial.id, 0, 0.05f, 0.05f)
+        assertEquals(0.05f to 0.05f, vm.uiState.value.selectedPlots.first().effectivePolygon()?.get(0))
+        vm.removePlot(plot1Initial.id)
+        assertEquals(0, vm.uiState.value.selectedPlots.size)
+    }
+
+    @Test
+    fun realMapViewModel_lockToggleProtectsFinalizedMeasurementAndAutoResetsWhenEmpty() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.example.viewmodel.RealMapViewModel(app)
+
+        // Cannot lock before placing pins
+        vm.togglePlotLock()
+        assertTrue(!vm.uiState.value.isPlotLocked)
+
+        // Add points then lock
+        vm.updateMeasurementFromBridge(points = 4, areaSqM = 404.68, perimeterM = 80.0, selectedPinIdx = 2)
+        vm.togglePlotLock()
+        assertTrue(vm.uiState.value.isPlotLocked)
+        assertEquals(-1, vm.uiState.value.selectedPinIdx)
+
+        vm.notifyLockedEditBlocked()
+        assertTrue(vm.uiState.value.statusMessage?.contains("লক") == true)
+
+        // Unlock toggles off
+        vm.togglePlotLock()
+        assertTrue(!vm.uiState.value.isPlotLocked)
+
+        // Locking again and clearing points auto-unlocks
+        vm.togglePlotLock()
+        assertTrue(vm.uiState.value.isPlotLocked)
+        vm.updateMeasurementFromBridge(points = 0, areaSqM = 0.0, perimeterM = 0.0, selectedPinIdx = -1)
+        assertTrue(!vm.uiState.value.isPlotLocked)
+    }
+
+    @Test
+    fun appPreferences_surveyorProfileDefaultsAndSaveLoad() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = com.example.data.AppPreferences(context)
+        val initial = prefs.surveyorProfileFlow.first()
+        assertEquals("Abdus Salam", initial.name)
+        assertEquals("01620230864", initial.phone)
+        assertEquals("salam230864@gmail.com", initial.email)
+
+        val updated = initial.copy(
+            name = "মোঃ আব্দুস সালাম",
+            phone = "01711000000",
+            email = "surveyor@example.com",
+            designation = "সার্ভেয়ার"
+        )
+        prefs.saveSurveyorProfile(updated)
+        val loaded = prefs.surveyorProfileFlow.first()
+        assertEquals("মোঃ আব্দুস সালাম", loaded.name)
+        assertEquals("01711000000", loaded.phone)
+        assertEquals("surveyor@example.com", loaded.email)
+        assertEquals("সার্ভেয়ার", loaded.designation)
+    }
+
+    @Test
+    fun mouzaPdfViewModel_shouldReuseViewportTileRefusesDeepZoomOrLowResTile() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.example.viewmodel.MouzaPdfViewModel(app)
+        val hiResTile = MouzaPdfEngine.ViewportTileResult(
+            bitmap = Bitmap.createBitmap(1800, 1800, Bitmap.Config.ARGB_8888),
+            normLeft = 0.10f,
+            normTop = 0.10f,
+            normRight = 0.50f,
+            normBottom = 0.50f,
+            zoomScale = 4.0f
+        )
+
+        // Matching zoom & sufficient resolution within cached bounds reuses tile
+        assertTrue(
+            vm.shouldReuseViewportTile(
+                existing = hiResTile,
+                zoomScale = 4.2f,
+                normLeft = 0.15f,
+                normTop = 0.15f,
+                normRight = 0.45f,
+                normBottom = 0.45f,
+                viewportWidthPx = 1080,
+                viewportHeightPx = 1600
+            )
+        )
+
+        // Zooming deeper (>1.22x) must NOT reuse stale tile so PDF re-renders sharply
+        assertTrue(
+            !vm.shouldReuseViewportTile(
+                existing = hiResTile,
+                zoomScale = 6.0f,
+                normLeft = 0.22f,
+                normTop = 0.22f,
+                normRight = 0.38f,
+                normBottom = 0.38f,
+                viewportWidthPx = 1080,
+                viewportHeightPx = 1600
+            )
+        )
+
+        // A low-resolution tile must NOT be reused for a large viewport
+        val lowResTile = hiResTile.copy(
+            bitmap = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+        )
+        assertTrue(
+            !vm.shouldReuseViewportTile(
+                existing = lowResTile,
+                zoomScale = 4.0f,
+                normLeft = 0.15f,
+                normTop = 0.15f,
+                normRight = 0.45f,
+                normBottom = 0.45f,
+                viewportWidthPx = 1080,
+                viewportHeightPx = 1600
+            )
+        )
+    }
+
+    @Test
+    fun pngExporter_contextCropBoundsIncludeSurroundingLandAndDesktopHtmlIsValid() {
+        val smallPlot = com.example.model.MouzaPlot(
+            id = 1,
+            plotIndex = 1,
+            color = ComposeColor.Green,
+            pixelCount = 100,
+            gridWidth = 1000,
+            gridHeight = 1000,
+            minX = 480,
+            minY = 480,
+            maxX = 520,
+            maxY = 520,
+            centroidNormalized = 0.50f to 0.50f,
+            maskIndices = IntArray(0),
+            polygonNormalized = listOf(
+                0.48f to 0.48f,
+                0.52f to 0.48f,
+                0.52f to 0.52f,
+                0.48f to 0.52f
+            )
+        )
+        val bounds = com.example.engine.PngExporter.computeMouzaContextCropBounds(
+            plots = listOf(smallPlot),
+            selectedOnly = true
+        )
+        // Ensures at least 0.06 normalized surrounding context on every side around the plot
+        assertTrue("Left bound ${bounds[0]} should pad <= 0.42", bounds[0] <= 0.42f)
+        assertTrue("Top bound ${bounds[1]} should pad <= 0.42", bounds[1] <= 0.42f)
+        assertTrue("Right bound ${bounds[2]} should pad >= 0.58", bounds[2] >= 0.58f)
+        assertTrue("Bottom bound ${bounds[3]} should pad >= 0.58", bounds[3] >= 0.58f)
+
+        val html = com.example.engine.DesktopAppExporter.buildStandaloneDesktopHtml()
+        assertTrue(html.contains("ভূমি সেবা ডিজিটাল"))
+        assertTrue(html.contains("leaflet"))
+    }
 }
+
 

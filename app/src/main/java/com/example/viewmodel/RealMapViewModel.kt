@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,6 +64,7 @@ data class RealMapUiState(
     val isLoadingKhatian: Boolean = false,
     val khatianRecords: List<KhatianRecord> = emptyList(),
     val activeSearchTarget: Pair<String, String>? = null, // (khatianNo, dagNo)
+    val isPlotLocked: Boolean = false,
     val statusMessage: String? = null
 )
 
@@ -122,8 +124,38 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
                 pointCount = points,
                 selectedPinIdx = selectedPinIdx,
                 areaSqMeters = areaSqM.coerceAtLeast(0.0),
-                perimeterMeters = perimeterM.coerceAtLeast(0.0)
+                perimeterMeters = perimeterM.coerceAtLeast(0.0),
+                isPlotLocked = if (points == 0) false else it.isPlotLocked
             )
+        }
+    }
+
+    fun togglePlotLock() {
+        val current = _uiState.value
+        if (current.pointCount == 0 && !current.isPlotLocked) {
+            _uiState.update { it.copy(statusMessage = "লক করার আগে ম্যাপে পিন বসিয়ে জমি পরিমাপ করুন") }
+            return
+        }
+        setPlotLocked(!current.isPlotLocked)
+    }
+
+    fun setPlotLocked(locked: Boolean) {
+        _uiState.update {
+            it.copy(
+                isPlotLocked = locked,
+                selectedPinIdx = if (locked) -1 else it.selectedPinIdx,
+                statusMessage = if (locked) {
+                    "পরিমাপ লক করা হয়েছে — পিন এডিট, রিসাইজ বা মুভ হবে না"
+                } else {
+                    "পরিমাপ আনলক করা হয়েছে — এখন পিন এডিট করতে পারবেন"
+                }
+            )
+        }
+    }
+
+    fun notifyLockedEditBlocked() {
+        _uiState.update {
+            it.copy(statusMessage = "এই পরিমাপটি লক করা আছে — এডিট করতে আগে আনলক করুন")
         }
     }
 
@@ -160,6 +192,7 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
             mapCenterLon = centerLon,
             mapZoom = zoom,
             mapPoints = pointsLatLon.map { SerializableLatLon(it.first, it.second) },
+            mapPlotLocked = state.isPlotLocked,
             splitSharesCount = state.splitSharesCount,
             khatianFilePath = activeKhatianFile?.takeIf { it.exists() }?.absolutePath,
             khatianFileName = state.khatianDocName,
@@ -225,6 +258,7 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
                     khatianCurrentPage = 0,
                     khatianPreviewBitmap = restoredKhatianBmp,
                     khatianRecords = project.khatianRecords,
+                    isPlotLocked = project.mapPlotLocked,
                     statusMessage = "রিস্টোর হয়েছে: ${project.title}"
                 )
             }
@@ -259,7 +293,7 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
                     val url = URL("https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=5")
                     val conn = (url.openConnection() as HttpURLConnection).apply {
                         requestMethod = "GET"
-                        setRequestProperty("User-Agent", "BhumiSurveyBD/1.0")
+                        setRequestProperty("User-Agent", "BhumiSebaDigital/1.0")
                         connectTimeout = 8000
                         readTimeout = 8000
                     }
@@ -300,7 +334,8 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
         pointsLatLon: List<Pair<Double, Double>>,
         mode: String,
         fallbackBitmap: Bitmap?,
-        cropRectNormalized: RectF?
+        cropRectNormalized: RectF?,
+        asPdf: Boolean = false
     ) {
         val state = _uiState.value
         val sqFeet = state.areaSqMeters * LandCalculators.SQ_FT_PER_SQ_METER
@@ -308,8 +343,14 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
         val perimeterFeet = state.perimeterMeters * 3.280839895
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isExporting = true, statusMessage = "ম্যাপের সিলেক্টেড অংশ HD PNG সেভ হচ্ছে...") }
+            _uiState.update {
+                it.copy(
+                    isExporting = true,
+                    statusMessage = if (asPdf) "মৌজা স্টাইল PDF তৈরি হচ্ছে..." else "মৌজা স্টাইল PNG সেভ হচ্ছে..."
+                )
+            }
             try {
+                val profile = prefs.surveyorProfileFlow.first()
                 val line1 = if (state.areaSqMeters > 0.0) {
                     String.format(
                         Locale.US,
@@ -329,19 +370,35 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
                     area.sqFeet, perimeterFeet, state.perimeterMeters, state.selectedLayer.titleEn
                 )
 
-                val res = PngExporter.exportSelectedMapPlotPng(
-                    context = appContext,
-                    pointsLatLon = pointsLatLon,
-                    mode = mode,
-                    layer = state.selectedLayer,
-                    showLabelsOverlay = state.showLabelsOverlay,
-                    areaSqMeters = state.areaSqMeters,
-                    fallbackBitmap = fallbackBitmap,
-                    fallbackCropRect = cropRectNormalized,
-                    summaryHeader = "Bhumi Survey BD • ${state.selectedCategory.titleBn}",
-                    summaryLine1 = line1,
-                    summaryLine2 = line2
-                )
+                val res = if (asPdf) {
+                    PngExporter.exportSelectedMapPlotPdf(
+                        context = appContext,
+                        pointsLatLon = pointsLatLon,
+                        mode = mode,
+                        layer = state.selectedLayer,
+                        showLabelsOverlay = state.showLabelsOverlay,
+                        areaSqMeters = state.areaSqMeters,
+                        fallbackBitmap = fallbackBitmap,
+                        fallbackCropRect = cropRectNormalized,
+                        summaryHeader = "ভূমি সেবা ডিজিটাল • ${state.selectedCategory.titleBn}",
+                        surveyorProfile = profile
+                    )
+                } else {
+                    PngExporter.exportSelectedMapPlotPng(
+                        context = appContext,
+                        pointsLatLon = pointsLatLon,
+                        mode = mode,
+                        layer = state.selectedLayer,
+                        showLabelsOverlay = state.showLabelsOverlay,
+                        areaSqMeters = state.areaSqMeters,
+                        fallbackBitmap = fallbackBitmap,
+                        fallbackCropRect = cropRectNormalized,
+                        summaryHeader = "ভূমি সেবা ডিজিটাল • ${state.selectedCategory.titleBn}",
+                        summaryLine1 = line1,
+                        summaryLine2 = line2,
+                        surveyorProfile = profile
+                    )
+                }
 
                 if (state.areaSqMeters > 0.0) {
                     prefs.addMeasurementRecord(
@@ -390,7 +447,14 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val displayName = resolveFileName(uri)
                 val mime = appContext.contentResolver.getType(uri)
-                val info = MouzaPdfEngine.copyDocumentToCache(appContext, uri, displayName, mime)
+                val info = MouzaPdfEngine.copyDocumentToCache(
+                    context = appContext,
+                    uri = uri,
+                    fileName = displayName,
+                    mimeType = mime,
+                    storageDirName = "active_work_docs",
+                    cachePrefix = "active_khatian_"
+                )
                 val savedDir = File(appContext.filesDir, "saved_khatian_docs").apply { mkdirs() }
                 val destFile = withContext(Dispatchers.IO) {
                     val ext = info.tempFile.extension.ifBlank { if (info.isPdf) "pdf" else "png" }

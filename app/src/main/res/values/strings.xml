@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">Bhumi Survey BD</string>
-    <string name="app_subtitle">Smart Mouza Map &amp; Bangladesh Land Survey Suite</string>
+    <string name="app_name">ভূমি সেবা ডিজিটাল</string>
+    <string name="app_subtitle">ডিজিটাল মৌজা ম্যাপ ও ভূমি জরিপ সেবা</string>
     <string name="nav_home">Home</string>
     <string name="nav_mouza">Mouza PDF</string>
     <string name="nav_map">Real Map</string>

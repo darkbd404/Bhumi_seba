@@ -20,6 +20,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Bhumi Survey BD"
+rootProject.name = "ভূমি সেবা ডিজিটাল"
 
 include(":app")

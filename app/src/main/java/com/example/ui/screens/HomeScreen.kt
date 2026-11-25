@@ -141,7 +141,7 @@ fun HomeScreen(
                     AnimatedCompassBadge(sizeDp = 48)
                     Column {
                         Text(
-                            text = "Bhumi Survey BD",
+                            text = "ভূমি সেবা ডিজিটাল",
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onBackground,
                             fontWeight = FontWeight.Bold

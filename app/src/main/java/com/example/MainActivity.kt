@@ -87,6 +87,7 @@ import com.example.model.RealMapRoute
 import com.example.model.SavedProjectType
 import com.example.model.SavedSurveyProject
 import com.example.model.ServicesRoute
+import com.example.model.SurveyorProfile
 import com.example.model.ToolsRoute
 import com.example.model.WebBrowserRoute
 import com.example.ui.components.ExitConfirmationDialog
@@ -129,6 +130,7 @@ class MainActivity : ComponentActivity() {
             val savedRecords by prefs.savedRecordsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
             val savedProjects by prefs.savedProjectsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
             val devPhotoUri by prefs.devPhotoUriFlow.collectAsStateWithLifecycle(initialValue = null)
+            val surveyorProfile by prefs.surveyorProfileFlow.collectAsStateWithLifecycle(initialValue = SurveyorProfile())
 
             BhumiSurveyTheme(darkTheme = isDarkMode) {
                 BhumiSurveyApp(
@@ -136,11 +138,15 @@ class MainActivity : ComponentActivity() {
                     savedRecords = savedRecords,
                     savedProjects = savedProjects,
                     devPhotoUri = devPhotoUri,
+                    surveyorProfile = surveyorProfile,
                     onToggleTheme = {
                         scope.launch { prefs.setDarkMode(!isDarkMode) }
                     },
                     onSaveDevPhoto = { uriStr ->
                         scope.launch { prefs.setDevPhotoUri(uriStr) }
+                    },
+                    onSaveSurveyorProfile = { profile ->
+                        scope.launch { prefs.saveSurveyorProfile(profile) }
                     },
                     onDeleteProject = { projId ->
                         scope.launch { prefs.deleteSurveyProject(projId) }
@@ -161,8 +167,10 @@ private fun BhumiSurveyApp(
     savedRecords: List<com.example.model.SavedMeasurementRecord>,
     savedProjects: List<SavedSurveyProject>,
     devPhotoUri: String?,
+    surveyorProfile: SurveyorProfile,
     onToggleTheme: () -> Unit,
     onSaveDevPhoto: (String) -> Unit,
+    onSaveSurveyorProfile: (SurveyorProfile) -> Unit,
     onDeleteProject: (String) -> Unit,
     onClearHistory: () -> Unit,
     onExitApp: () -> Unit
@@ -396,7 +404,9 @@ private fun BhumiSurveyApp(
                     composable<AboutRoute> {
                         AboutScreen(
                             savedPhotoUri = devPhotoUri,
+                            surveyorProfile = surveyorProfile,
                             onPhotoPicked = onSaveDevPhoto,
+                            onSaveSurveyorProfile = onSaveSurveyorProfile,
                             onNavigateBack = { navController.popBackStack() },
                             onOpenUrlInApp = { url, title ->
                                 navController.navigate(WebBrowserRoute(url = url, title = title))

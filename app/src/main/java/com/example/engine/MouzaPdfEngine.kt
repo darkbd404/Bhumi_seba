@@ -302,7 +302,9 @@ object MouzaPdfEngine {
         context: Context,
         uri: Uri,
         fileName: String,
-        mimeType: String?
+        mimeType: String?,
+        storageDirName: String = "active_work_docs",
+        cachePrefix: String = "active_mouza_"
     ): DocumentInfo = withContext(Dispatchers.IO) {
         val looksPdf = mimeType?.contains("pdf", ignoreCase = true) == true ||
             fileName.endsWith(".pdf", ignoreCase = true)
@@ -311,11 +313,12 @@ object MouzaPdfEngine {
             if (dotExt in listOf("jpg", "jpeg", "png", "webp")) dotExt else "img"
         }
 
-        context.cacheDir.listFiles { f -> f.name.startsWith("active_mouza_") }?.forEach {
+        val workDir = File(context.filesDir, storageDirName).apply { mkdirs() }
+        workDir.listFiles { f -> f.name.startsWith(cachePrefix) }?.forEach {
             runCatching { it.delete() }
         }
 
-        val cacheFile = File(context.cacheDir, "active_mouza_${System.currentTimeMillis()}.$ext")
+        val cacheFile = File(workDir, "${cachePrefix}${System.currentTimeMillis()}.$ext")
         context.contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(cacheFile).use { output ->
                 input.copyTo(output, bufferSize = 65536)
@@ -395,7 +398,7 @@ object MouzaPdfEngine {
                 val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
                 val isLowRam = am?.isLowRamDevice == true
                 val targetMaxDim = if (ultraHd) {
-                    if (isLowRam) 1800 else 2400
+                    if (isLowRam) 1800 else 2800
                 } else {
                     1400
                 }
@@ -459,6 +462,25 @@ object MouzaPdfEngine {
         }
     }
 
+    internal fun hasInkPixels(bitmap: Bitmap): Boolean {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w < 8 || h < 8 || bitmap.isRecycled) return false
+        val stepX = max(1, w / 24)
+        val stepY = max(1, h / 24)
+        var nonBlank = 0
+        for (y in 0 until h step stepY) {
+            for (x in 0 until w step stepX) {
+                val c = bitmap.getPixel(x, y)
+                if (Color.red(c) < 245 || Color.green(c) < 245 || Color.blue(c) < 245) {
+                    nonBlank++
+                    if (nonBlank >= 6) return true
+                }
+            }
+        }
+        return false
+    }
+
     /**
      * Renders ONLY the currently visible normalized viewport rectangle [normLeft..normRight, normTop..normBottom]
      * straight from vector PDF (or full-resolution source image) at full device crispness — even at 1000x zoom!
@@ -479,10 +501,11 @@ object MouzaPdfEngine {
         val nr = normRight.coerceIn(nl + 0.0002f, 1f)
         val nb = normBottom.coerceIn(nt + 0.0002f, 1f)
 
-        val outW = targetWidthPx.coerceIn(120, 1800)
-        val outH = targetHeightPx.coerceIn(120, 2200)
+        val outW = targetWidthPx.coerceIn(120, 2400)
+        val outH = targetHeightPx.coerceIn(120, 2600)
 
         if (isPdf) {
+            if (!docFile.exists()) return@withContext null
             renderMutex.withLock {
                 runCatching {
                     val pfd = ParcelFileDescriptor.open(docFile, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -508,7 +531,8 @@ object MouzaPdfEngine {
                         postTranslate(-nl * pageW, -nt * pageH)
                         postScale(uniformScale, uniformScale)
                     }
-                    page.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    val destClip = Rect(0, 0, finalW, finalH)
+                    page.render(bitmap, destClip, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     page.close()
                     renderer.close()
                     pfd.close()

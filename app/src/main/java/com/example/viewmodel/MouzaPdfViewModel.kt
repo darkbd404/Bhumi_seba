@@ -30,6 +30,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -210,9 +211,30 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    internal fun shouldReuseViewportTile(
+        existing: MouzaPdfEngine.ViewportTileResult?,
+        zoomScale: Float,
+        normLeft: Float,
+        normTop: Float,
+        normRight: Float,
+        normBottom: Float,
+        viewportWidthPx: Int,
+        viewportHeightPx: Int
+    ): Boolean {
+        if (existing == null || existing.bitmap.isRecycled) return false
+        val coversRect = normLeft >= existing.normLeft &&
+            normRight <= existing.normRight &&
+            normTop >= existing.normTop &&
+            normBottom <= existing.normBottom
+        val zoomMatches = zoomScale in (existing.zoomScale * 0.85f)..(existing.zoomScale * 1.22f)
+        val hasEnoughRes = existing.bitmap.width >= (viewportWidthPx * 1.15f).roundToInt().coerceAtMost(2400) ||
+            existing.bitmap.height >= (viewportHeightPx * 1.15f).roundToInt().coerceAtMost(2600)
+        return coversRect && zoomMatches && hasEnoughRes
+    }
+
     /**
-     * Silently sharpens the visible viewport at high zoom (> 2.2x) with 30% padded caching
-     * so small pans/taps never trigger constant re-loading.
+     * Silently sharpens the visible viewport at high zoom (>= 2.2x) with 30% padded caching
+     * and crisp re-rendering whenever the user zooms deeper 2x-1000x.
      */
     fun requestViewportHdRender(
         zoomScale: Float,
@@ -232,29 +254,21 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             return
         }
 
-        // Skip re-rendering if existing cached tile already covers the viewport at comparable zoom
         val existing = _uiState.value.viewportTile
-        if (existing != null && !existing.bitmap.isRecycled) {
-            val coversRect = normLeft >= existing.normLeft &&
-                normRight <= existing.normRight &&
-                normTop >= existing.normTop &&
-                normBottom <= existing.normBottom
-            val zoomMatches = zoomScale in (existing.zoomScale * 0.65f)..(existing.zoomScale * 1.65f)
-            if (coversRect && zoomMatches) {
-                return
-            }
+        if (shouldReuseViewportTile(existing, zoomScale, normLeft, normTop, normRight, normBottom, viewportWidthPx, viewportHeightPx)) {
+            return
         }
 
         val spanW = (normRight - normLeft).coerceAtLeast(0.0005f)
         val spanH = (normBottom - normTop).coerceAtLeast(0.0005f)
-        val padL = (normLeft - spanW * 0.30f).coerceIn(0f, 0.9995f)
-        val padT = (normTop - spanH * 0.30f).coerceIn(0f, 0.9995f)
-        val padR = (normRight + spanW * 0.30f).coerceIn(padL + 0.0005f, 1f)
-        val padB = (normBottom + spanH * 0.30f).coerceIn(padT + 0.0005f, 1f)
+        val padL = (normLeft - spanW * 0.28f).coerceIn(0f, 0.9995f)
+        val padT = (normTop - spanH * 0.28f).coerceIn(0f, 0.9995f)
+        val padR = (normRight + spanW * 0.28f).coerceIn(padL + 0.0005f, 1f)
+        val padB = (normBottom + spanH * 0.28f).coerceIn(padT + 0.0005f, 1f)
 
         viewportTileJob?.cancel()
         viewportTileJob = viewModelScope.launch {
-            delay(420)
+            delay(120)
             val tile = MouzaPdfEngine.renderViewportTile(
                 docFile = file,
                 isPdf = activeIsPdf,
@@ -263,13 +277,15 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 normTop = padT,
                 normRight = padR,
                 normBottom = padB,
-                targetWidthPx = (viewportWidthPx * 1.4f).roundToInt().coerceAtMost(1800),
-                targetHeightPx = (viewportHeightPx * 1.4f).roundToInt().coerceAtMost(2200)
+                targetWidthPx = (viewportWidthPx * 1.85f).roundToInt().coerceIn(900, 2400),
+                targetHeightPx = (viewportHeightPx * 1.85f).roundToInt().coerceIn(900, 2600)
             )
-            if (tile != null) {
+            if (tile != null && MouzaPdfEngine.hasInkPixels(tile.bitmap)) {
                 _uiState.update {
                     it.copy(viewportTile = tile.copy(zoomScale = zoomScale))
                 }
+            } else {
+                tile?.bitmap?.recycle()
             }
         }
     }
@@ -282,6 +298,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
     fun setScale(scale: MouzaScale) {
         _uiState.update { state ->
             val updatedPlots = state.selectedPlots.map { plot ->
+                if (plot.isLocked) return@map plot
                 val poly = plot.effectivePolygon()
                 if (poly != null) {
                     plot.copy(
@@ -303,6 +320,10 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         if (actualDecimal <= 0.0) return
         val state = _uiState.value
         val plot = state.selectedPlots.find { it.id == plotId } ?: return
+        if (plot.isLocked) {
+            _uiState.update { it.copy(statusMessage = "দাগ #${plot.plotIndex} লক করা আছে — ক্যালিব্রেট করতে আগে আনলক করুন") }
+            return
+        }
         val poly = plot.effectivePolygon()
         val rawDecimal = if (poly != null) {
             MouzaPdfEngine.computePolygonAreaSqFeet(
@@ -320,6 +341,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         if (rawDecimal > 0.0) {
             val mult = actualDecimal / rawDecimal
             val updated = state.selectedPlots.map { p ->
+                if (p.isLocked) return@map p
                 val pPoly = p.effectivePolygon()
                 if (pPoly != null) {
                     p.copy(
@@ -336,6 +358,31 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                     statusMessage = "স্কেল ক্যালিব্রেশন সম্পন্ন!"
                 )
             }
+        }
+    }
+
+    fun togglePlotLock(plotId: Int) {
+        val current = _uiState.value.selectedPlots.find { it.id == plotId } ?: return
+        setPlotLocked(plotId, !current.isLocked)
+    }
+
+    fun setPlotLocked(plotId: Int, locked: Boolean) {
+        _uiState.update { state ->
+            val target = state.selectedPlots.find { it.id == plotId } ?: return@update state
+            val updated = state.selectedPlots.map { p ->
+                if (p.id == plotId) p.copy(isLocked = locked) else p
+            }
+            val clearedVertex = if (locked && state.selectedVertex?.first == plotId) null else state.selectedVertex
+            val label = target.dagNumber.ifBlank { "#${target.plotIndex}" }
+            state.copy(
+                selectedPlots = updated,
+                selectedVertex = clearedVertex,
+                statusMessage = if (locked) {
+                    "দাগ $label লক করা হয়েছে — এডিট, রিসাইজ বা মুভ বন্ধ"
+                } else {
+                    "দাগ $label আনলক করা হয়েছে — এখন এডিট করতে পারবেন"
+                }
+            )
         }
     }
 
@@ -389,12 +436,22 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         when (state.activeTool) {
             MouzaSelectionTool.PAN_ONLY -> return
             MouzaSelectionTool.EDIT_CORNERS -> {
-                // First check if user tapped near an existing corner to select it for move/delete
-                val hitVertex = findNearestVertex(state.selectedPlots, normX, normY, maxDistSq = maxHitSq * 1.6f)
-                if (hitVertex != null) {
+                // First check if user tapped near an existing corner (unlocked preferred, block if locked)
+                val hitAnyVertex = findNearestVertex(state.selectedPlots, normX, normY, maxDistSq = maxHitSq * 1.6f)
+                if (hitAnyVertex != null) {
+                    val hitPlot = state.selectedPlots.find { it.id == hitAnyVertex.first }
+                    if (hitPlot?.isLocked == true) {
+                        _uiState.update {
+                            it.copy(
+                                selectedVertex = null,
+                                statusMessage = "দাগ #${hitPlot.plotIndex} লক করা আছে — এডিট করতে আগে আনলক করুন"
+                            )
+                        }
+                        return
+                    }
                     _uiState.update {
                         it.copy(
-                            selectedVertex = hitVertex,
+                            selectedVertex = hitAnyVertex,
                             statusMessage = "কোণা সিলেক্ট হয়েছে — ড্র্যাগ করুন বা 'বিন্দু ডিলিট' চাপুন"
                         )
                     }
@@ -435,7 +492,6 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             MouzaSelectionTool.AUTO_TAP -> {
                 val file = activeDocFile ?: return
                 if (state.isAutoFilling) return
-                viewportTileJob?.cancel()
                 autoFillJob?.cancel()
                 autoFillJob = viewModelScope.launch {
                     _uiState.update { it.copy(isAutoFilling = true) }
@@ -484,14 +540,24 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                             }
                         }
                         is MouzaPdfEngine.AutoFillResult.AlreadySelected -> {
-                            val updated = state.selectedPlots.filterNot { it.id == res.plotId }
-                                .mapIndexed { idx, p -> p.copy(plotIndex = idx + 1) }
-                            _uiState.update {
-                                it.copy(
-                                    isAutoFilling = false,
-                                    selectedPlots = updated,
-                                    statusMessage = "দাগ আনসিলেক্ট করা হয়েছে"
-                                )
+                            val existing = state.selectedPlots.find { it.id == res.plotId }
+                            if (existing?.isLocked == true) {
+                                _uiState.update {
+                                    it.copy(
+                                        isAutoFilling = false,
+                                        statusMessage = "দাগ #${existing.plotIndex} লক করা আছে — আনসিলেক্ট করতে আগে আনলক করুন"
+                                    )
+                                }
+                            } else {
+                                val updated = state.selectedPlots.filterNot { it.id == res.plotId }
+                                    .mapIndexed { idx, p -> p.copy(plotIndex = idx + 1) }
+                                _uiState.update {
+                                    it.copy(
+                                        isAutoFilling = false,
+                                        selectedPlots = updated,
+                                        statusMessage = "দাগ আনসিলেক্ট করা হয়েছে"
+                                    )
+                                }
                             }
                         }
                         is MouzaPdfEngine.AutoFillResult.Failed -> {
@@ -513,6 +579,11 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
      */
     fun updatePlotVertex(plotId: Int, vertexIdx: Int, newNormX: Float, newNormY: Float) {
         val state = _uiState.value
+        val targetPlot = state.selectedPlots.find { it.id == plotId } ?: return
+        if (targetPlot.isLocked) {
+            _uiState.update { it.copy(statusMessage = "দাগ #${targetPlot.plotIndex} লক করা আছে — সরাতে আগে আনলক করুন") }
+            return
+        }
         val updated = state.selectedPlots.map { plot ->
             if (plot.id != plotId) return@map plot
             val poly = plot.effectivePolygon()?.toMutableList() ?: return@map plot
@@ -535,30 +606,56 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
 
     fun snapNearestVertexTo(normX: Float, normY: Float) {
         val state = _uiState.value
-        val target = state.selectedVertex ?: findNearestVertex(state.selectedPlots, normX, normY, maxDistSq = Float.MAX_VALUE)
-        if (target != null) {
-            updatePlotVertex(target.first, target.second, normX, normY)
+        val unlockedPlots = state.selectedPlots.filterNot { it.isLocked }
+        val chosen = state.selectedVertex?.let { sv ->
+            val owner = state.selectedPlots.find { it.id == sv.first }
+            if (owner?.isLocked == true) {
+                _uiState.update { it.copy(statusMessage = "দাগ #${owner.plotIndex} লক করা আছে — আগে আনলক করুন") }
+                return
+            }
+            sv
+        } ?: findNearestVertex(unlockedPlots, normX, normY, maxDistSq = Float.MAX_VALUE)
+
+        if (chosen != null) {
+            updatePlotVertex(chosen.first, chosen.second, normX, normY)
             _uiState.update {
                 it.copy(
-                    selectedVertex = target,
+                    selectedVertex = chosen,
                     statusMessage = "কোণা পয়েন্টারে সরানো হয়েছে"
                 )
             }
+        } else if (state.selectedPlots.isNotEmpty()) {
+            _uiState.update { it.copy(statusMessage = "লক করা দাগ এডিট করা যাবে না — আগে আনলক করুন") }
         }
     }
 
     fun selectVertex(plotId: Int, vertexIdx: Int) {
+        val plot = _uiState.value.selectedPlots.find { it.id == plotId }
+        if (plot?.isLocked == true) {
+            _uiState.update { it.copy(statusMessage = "দাগ #${plot.plotIndex} লক করা আছে — আগে আনলক করুন") }
+            return
+        }
         _uiState.update { it.copy(selectedVertex = plotId to vertexIdx) }
     }
 
     fun deleteSelectedOrNearestVertex(centerNormX: Float, centerNormY: Float) {
         val state = _uiState.value
-        val target = state.selectedVertex ?: findNearestVertex(state.selectedPlots, centerNormX, centerNormY, maxDistSq = Float.MAX_VALUE)
+        val unlockedPlots = state.selectedPlots.filterNot { it.isLocked }
+        val target = state.selectedVertex ?: findNearestVertex(unlockedPlots, centerNormX, centerNormY, maxDistSq = Float.MAX_VALUE)
         if (target == null) {
-            _uiState.update { it.copy(statusMessage = "ডিলিট করার মতো কোনো কোণা পাওয়া যায়নি") }
+            val msg = if (state.selectedPlots.any { it.isLocked }) {
+                "লক করা দাগের কোণা ডিলিট করা যাবে না — আগে আনলক করুন"
+            } else {
+                "ডিলিট করার মতো কোনো কোণা পাওয়া যায়নি"
+            }
+            _uiState.update { it.copy(statusMessage = msg) }
             return
         }
         val plot = state.selectedPlots.find { it.id == target.first } ?: return
+        if (plot.isLocked) {
+            _uiState.update { it.copy(statusMessage = "দাগ #${plot.plotIndex} লক করা আছে — আগে আনলক করুন") }
+            return
+        }
         val poly = plot.effectivePolygon()?.toMutableList() ?: return
         if (poly.size <= 3) {
             _uiState.update {
@@ -692,6 +789,11 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         }
 
         if (bestPlotId != -1 && bestEdgeAfterIdx >= 0) {
+            val targetPlot = state.selectedPlots.find { it.id == bestPlotId }
+            if (targetPlot?.isLocked == true) {
+                _uiState.update { it.copy(statusMessage = "দাগ #${targetPlot.plotIndex} লক করা আছে — আগে আনলক করুন") }
+                return
+            }
             val updated = state.selectedPlots.map { plot ->
                 if (plot.id != bestPlotId) return@map plot
                 val poly = plot.effectivePolygon()?.toMutableList() ?: return@map plot
@@ -790,8 +892,14 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun removePlot(plotId: Int) {
-        val removed = _uiState.value.selectedPlots.find { it.id == plotId }
-        if (removed != null) redoStack.addLast(removed)
+        val removed = _uiState.value.selectedPlots.find { it.id == plotId } ?: return
+        if (removed.isLocked) {
+            _uiState.update {
+                it.copy(statusMessage = "দাগ #${removed.plotIndex} লক করা আছে — বাদ দিতে আগে আনলক করুন")
+            }
+            return
+        }
+        redoStack.addLast(removed)
         val updated = _uiState.value.selectedPlots.filterNot { it.id == plotId }
             .mapIndexed { idx, p -> p.copy(plotIndex = idx + 1) }
         _uiState.update {
@@ -811,12 +919,22 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         }
         val current = state.selectedPlots
         if (current.isEmpty()) return
-        redoStack.addLast(current.last())
+        val lastUnlockedIdx = current.indexOfLast { !it.isLocked }
+        if (lastUnlockedIdx < 0) {
+            _uiState.update {
+                it.copy(statusMessage = "সব দাগ লক করা আছে — আনডু করতে আগে আনলক করুন")
+            }
+            return
+        }
+        val removed = current[lastUnlockedIdx]
+        redoStack.addLast(removed)
+        val updated = current.filterIndexed { i, _ -> i != lastUnlockedIdx }
+            .mapIndexed { idx, p -> p.copy(plotIndex = idx + 1) }
         _uiState.update {
             it.copy(
-                selectedPlots = current.dropLast(1),
+                selectedPlots = updated,
                 canRedo = true,
-                statusMessage = "সর্বশেষ দাগ বাদ দেওয়া হয়েছে"
+                statusMessage = "সর্বশেষ আনলক দাগ বাদ দেওয়া হয়েছে"
             )
         }
     }
@@ -834,21 +952,34 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun clearAllPlots() {
+        val current = _uiState.value.selectedPlots
+        val keptLocked = current.filter { it.isLocked }
+            .mapIndexed { idx, p -> p.copy(plotIndex = idx + 1) }
         redoStack.clear()
         _uiState.update {
             it.copy(
-                selectedPlots = emptyList(),
+                selectedPlots = keptLocked,
                 canRedo = false,
+                selectedVertex = null,
                 manualPolygonDraft = emptyList(),
                 tapeDraft = emptyList(),
                 completedTapes = emptyList(),
                 overlayMaskBitmap = null,
-                statusMessage = "সব পরিমাপ পরিষ্কার করা হয়েছে"
+                statusMessage = if (keptLocked.isNotEmpty()) {
+                    "আনলক দাগ মুছে ফেলা হয়েছে (লক করা ${keptLocked.size}টি সুরক্ষিত)"
+                } else {
+                    "সব পরিমাপ পরিষ্কার করা হয়েছে"
+                }
             )
         }
     }
 
     fun updatePlotTags(plotId: Int, dagNumber: String, khatianNumber: String) {
+        val target = _uiState.value.selectedPlots.find { it.id == plotId } ?: return
+        if (target.isLocked) {
+            _uiState.update { it.copy(statusMessage = "দাগ #${target.plotIndex} লক করা আছে — আগে আনলক করুন") }
+            return
+        }
         val updated = _uiState.value.selectedPlots.map {
             if (it.id == plotId) it.copy(dagNumber = dagNumber, khatianNumber = khatianNumber) else it
         }
@@ -898,7 +1029,10 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         return _uiState.value.selectedPlots.sumOf { plotAreaSqFeet(it) }
     }
 
-    fun exportSelectedOnlyPng(selectedOnly: Boolean = true) {
+    fun exportSelectedOnlyPdf(selectedOnly: Boolean = true) =
+        exportSelectedOnlyPng(selectedOnly = selectedOnly, asPdf = true)
+
+    fun exportSelectedOnlyPng(selectedOnly: Boolean = true, asPdf: Boolean = false) {
         val state = _uiState.value
         val source = state.displayBitmap ?: return
         if (selectedOnly && state.selectedPlots.isEmpty()) {
@@ -906,24 +1040,50 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             return
         }
         viewModelScope.launch {
-            _uiState.update { it.copy(isExporting = true, statusMessage = "HD PNG তৈরি হচ্ছে...") }
+            _uiState.update {
+                it.copy(
+                    isExporting = true,
+                    statusMessage = if (asPdf) "মৌজা শিট PDF তৈরি হচ্ছে..." else "মৌজা শিট PNG তৈরি হচ্ছে..."
+                )
+            }
             try {
                 val sqFtPerPx = sqFeetPerGridPixel()
-                val res = PngExporter.exportSelectedMouzaPlotsPng(
-                    context = appContext,
-                    sourceBitmap = source,
-                    plots = state.selectedPlots,
-                    sqFeetPerGridPixel = sqFtPerPx,
-                    khatianTitle = state.khatianTitle,
-                    docFile = activeDocFile,
-                    isPdf = activeIsPdf,
-                    pageIndex = state.currentPage,
-                    pageWidthPts = state.pdfPageWidthPts,
-                    pageHeightPts = state.pdfPageHeightPts,
-                    scale = state.selectedScale,
-                    calibrationMultiplier = state.calibrationMultiplier,
-                    selectedOnly = selectedOnly
-                )
+                val profile = prefs.surveyorProfileFlow.first()
+                val res = if (asPdf) {
+                    PngExporter.exportSelectedMouzaPlotsPdf(
+                        context = appContext,
+                        sourceBitmap = source,
+                        plots = state.selectedPlots,
+                        sqFeetPerGridPixel = sqFtPerPx,
+                        khatianTitle = state.khatianTitle,
+                        docFile = activeDocFile,
+                        isPdf = activeIsPdf,
+                        pageIndex = state.currentPage,
+                        pageWidthPts = state.pdfPageWidthPts,
+                        pageHeightPts = state.pdfPageHeightPts,
+                        scale = state.selectedScale,
+                        calibrationMultiplier = state.calibrationMultiplier,
+                        selectedOnly = selectedOnly,
+                        surveyorProfile = profile
+                    )
+                } else {
+                    PngExporter.exportSelectedMouzaPlotsPng(
+                        context = appContext,
+                        sourceBitmap = source,
+                        plots = state.selectedPlots,
+                        sqFeetPerGridPixel = sqFtPerPx,
+                        khatianTitle = state.khatianTitle,
+                        docFile = activeDocFile,
+                        isPdf = activeIsPdf,
+                        pageIndex = state.currentPage,
+                        pageWidthPts = state.pdfPageWidthPts,
+                        pageHeightPts = state.pdfPageHeightPts,
+                        scale = state.selectedScale,
+                        calibrationMultiplier = state.calibrationMultiplier,
+                        selectedOnly = selectedOnly,
+                        surveyorProfile = profile
+                    )
+                }
                 val totalSqFt = max(totalSelectedSqFeet(), 0.0)
                 val area = LandCalculators.fromSqFeet(totalSqFt)
                 if (state.selectedPlots.isNotEmpty()) {
@@ -950,7 +1110,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 _uiState.update {
                     it.copy(
                         isExporting = false,
-                        statusMessage = "PNG সেভ ব্যর্থ: ${e.localizedMessage ?: "ত্রুটি"}"
+                        statusMessage = "সেভ ব্যর্থ: ${e.localizedMessage ?: "ত্রুটি"}"
                     )
                 }
             }
@@ -976,11 +1136,18 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 _uiState.update { it.copy(selectedDraftIdx = next) }
             }
             MouzaSelectionTool.EDIT_CORNERS -> {
-                val allVertices = state.selectedPlots.flatMap { plot ->
-                    val poly = plot.effectivePolygon() ?: emptyList()
-                    poly.indices.map { idx -> plot.id to idx }
+                val allVertices = state.selectedPlots
+                    .filterNot { it.isLocked }
+                    .flatMap { plot ->
+                        val poly = plot.effectivePolygon() ?: emptyList()
+                        poly.indices.map { idx -> plot.id to idx }
+                    }
+                if (allVertices.isEmpty()) {
+                    if (state.selectedPlots.any { it.isLocked }) {
+                        _uiState.update { it.copy(statusMessage = "সব দাগ লক করা আছে — কোণা সরাতে আনলক করুন") }
+                    }
+                    return
                 }
-                if (allVertices.isEmpty()) return
                 val curIdx = state.selectedVertex?.let { sv -> allVertices.indexOf(sv) } ?: -1
                 val nextIdx = if (curIdx < 0) {
                     if (delta >= 0) 0 else allVertices.lastIndex
@@ -1012,12 +1179,21 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             }
             MouzaSelectionTool.EDIT_CORNERS -> {
                 val target = state.selectedVertex ?: run {
-                    val lastPlot = state.selectedPlots.lastOrNull() ?: return
-                    val poly = lastPlot.effectivePolygon() ?: return
+                    val lastUnlockedPlot = state.selectedPlots.lastOrNull { !it.isLocked } ?: run {
+                        if (state.selectedPlots.any { it.isLocked }) {
+                            _uiState.update { it.copy(statusMessage = "সব দাগ লক করা আছে — আগে আনলক করুন") }
+                        }
+                        return
+                    }
+                    val poly = lastUnlockedPlot.effectivePolygon() ?: return
                     if (poly.isEmpty()) return
-                    lastPlot.id to 0
+                    lastUnlockedPlot.id to 0
                 }
                 val plot = state.selectedPlots.find { it.id == target.first } ?: return
+                if (plot.isLocked) {
+                    _uiState.update { it.copy(statusMessage = "দাগ #${plot.plotIndex} লক করা আছে — আগে আনলক করুন") }
+                    return
+                }
                 val poly = plot.effectivePolygon() ?: return
                 if (target.second !in poly.indices) return
                 val (ox, oy) = poly[target.second]
@@ -1082,7 +1258,8 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                         khatianNumber = plot.khatianNumber,
                         colorArgb = plot.color.toArgb().toLong(),
                         polygonNormalized = poly.map { SerializablePoint(it.first, it.second) },
-                        exactAreaSqFeet = plotAreaSqFeet(plot)
+                        exactAreaSqFeet = plotAreaSqFeet(plot),
+                        isLocked = plot.isLocked
                     )
                 }
 
@@ -1205,7 +1382,8 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                     basePlot.copy(
                         dagNumber = sp.dagNumber,
                         khatianNumber = sp.khatianNumber,
-                        exactAreaSqFeet = sqFt
+                        exactAreaSqFeet = sqFt,
+                        isLocked = sp.isLocked
                     )
                 }
                 nextPlotId = (restoredPlots.maxOfOrNull { it.id } ?: 0) + 1
@@ -1292,7 +1470,14 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             try {
                 val displayName = resolveFileName(uri)
                 val mime = appContext.contentResolver.getType(uri)
-                val info = MouzaPdfEngine.copyDocumentToCache(appContext, uri, displayName, mime)
+                val info = MouzaPdfEngine.copyDocumentToCache(
+                    context = appContext,
+                    uri = uri,
+                    fileName = displayName,
+                    mimeType = mime,
+                    storageDirName = "active_work_docs",
+                    cachePrefix = "active_khatian_"
+                )
                 val savedDir = File(appContext.filesDir, "saved_khatian_docs").apply { mkdirs() }
                 val destFile = withContext(Dispatchers.IO) {
                     val ext = info.tempFile.extension.ifBlank { if (info.isPdf) "pdf" else "png" }

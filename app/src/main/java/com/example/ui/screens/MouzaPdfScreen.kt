@@ -77,6 +77,8 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterBAndW
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GpsFixed
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.PictureAsPdf
@@ -716,7 +718,7 @@ fun MouzaPdfScreen(
                     }
 
                     // Live Viewport Ultra-HD Re-Render on pan/zoom stop (up to 1000x!)
-                    LaunchedEffect(scale, offsetX, offsetY, state.fileName, state.currentPage, boxW, boxH) {
+                    LaunchedEffect(scale, offsetX, offsetY, state.fileName, state.currentPage, boxW, boxH, state.hdReady) {
                         val nl = toNormX(0f).coerceIn(0f, 0.9999f)
                         val nt = toNormY(0f).coerceIn(0f, 0.9999f)
                         val nr = toNormX(boxW).coerceIn(nl + 0.0002f, 1f)
@@ -793,16 +795,18 @@ fun MouzaPdfScreen(
                                     if (curState.activeTool == MouzaSelectionTool.EDIT_CORNERS && curState.selectedPlots.isNotEmpty()) {
                                         var best: Pair<Int, Int>? = null
                                         var bestDist = 48f
-                                        curState.selectedPlots.forEach { plot ->
-                                            val poly = plot.effectivePolygon() ?: return@forEach
-                                            poly.forEachIndexed { idx, (nx, ny) ->
-                                                val d = hypot(curToScreenX(nx) - down.position.x, curToScreenY(ny) - down.position.y)
-                                                if (d < bestDist) {
-                                                    bestDist = d
-                                                    best = plot.id to idx
+                                        curState.selectedPlots
+                                            .filterNot { it.isLocked }
+                                            .forEach { plot ->
+                                                val poly = plot.effectivePolygon() ?: return@forEach
+                                                poly.forEachIndexed { idx, (nx, ny) ->
+                                                    val d = hypot(curToScreenX(nx) - down.position.x, curToScreenY(ny) - down.position.y)
+                                                    if (d < bestDist) {
+                                                        bestDist = d
+                                                        best = plot.id to idx
+                                                    }
                                                 }
                                             }
-                                        }
                                         activeVertexDrag = best
                                     } else if (curState.activeTool == MouzaSelectionTool.POLYGON_DRAW && curState.manualPolygonDraft.isNotEmpty()) {
                                         // Drag draft point if pointer mode is off OR user drags an explicitly selected draft point
@@ -1038,8 +1042,8 @@ fun MouzaPdfScreen(
                                     val plotColorInt = plot.color.toArgb()
                                     edgeTextPaint.color = plotColorInt
 
-                                    // Edge foot measurements + corner dots
-                                    val isEditMode = state.activeTool == MouzaSelectionTool.EDIT_CORNERS
+                                     // Edge foot measurements + corner dots
+                                    val isEditMode = state.activeTool == MouzaSelectionTool.EDIT_CORNERS && !plot.isLocked
                                     for (i in poly.indices) {
                                         val sA = screenPts[i]
                                         val sB = screenPts[(i + 1) % screenPts.size]
@@ -1076,7 +1080,7 @@ fun MouzaPdfScreen(
                                             }
                                         }
 
-                                        // Midpoint split indicator in Edit Corners mode
+                                        // Midpoint split indicator in Edit Corners mode (unlocked only)
                                         if (isEditMode && edgePx >= 48f) {
                                             val mx = (sA.x + sB.x) / 2f
                                             val my = (sA.y + sB.y) / 2f
@@ -1084,11 +1088,12 @@ fun MouzaPdfScreen(
                                             drawCircle(plot.color, radius = 4f, center = Offset(mx, my))
                                         }
 
-                                        // Vertex corner handle (highlight selected corner brightly for edit/delete)
-                                        val isSelVertex = state.selectedVertex == (plot.id to i)
+                                        // Vertex corner handle (locked plots show compact protected vertices)
+                                        val isSelVertex = !plot.isLocked && state.selectedVertex == (plot.id to i)
                                         val handleRadius = when {
                                             isSelVertex -> 16f
                                             isEditMode -> 13f
+                                            plot.isLocked -> 5.5f
                                             else -> 6.5f
                                         }
                                         drawCircle(
@@ -1100,6 +1105,7 @@ fun MouzaPdfScreen(
                                             color = when {
                                                 isSelVertex -> Color(0xFFFFEA00)
                                                 isEditMode -> Color(0xFFFFB300)
+                                                plot.isLocked -> Color(0xFF00897B)
                                                 else -> plot.color
                                             },
                                             radius = handleRadius,
@@ -1114,7 +1120,8 @@ fun MouzaPdfScreen(
                                     val maxY = screenPts.maxOf { it.y }
                                     if (maxX - minX > 72f && maxY - minY > 44f) {
                                         val plotArea = LandCalculators.fromSqFeet(viewModel.plotAreaSqFeet(plot))
-                                        val titleText = if (plot.dagNumber.isNotBlank()) "দাগ ${plot.dagNumber}" else "দাগ #${plot.plotIndex}"
+                                        val lockPrefix = if (plot.isLocked) "🔒 " else ""
+                                        val titleText = lockPrefix + if (plot.dagNumber.isNotBlank()) "দাগ ${plot.dagNumber}" else "দাগ #${plot.plotIndex}"
                                         val subText = String.format(Locale.US, "%.2f শতক", plotArea.decimal)
                                         drawIntoCanvas { canvas ->
                                             val nc = canvas.nativeCanvas
@@ -1422,6 +1429,33 @@ fun MouzaPdfScreen(
                     }
                 }
 
+                // Individual Plot Lock / Unlock Quick Strip below map
+                AnimatedVisibility(
+                    visible = state.selectedPlots.isNotEmpty(),
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 10.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        state.selectedPlots.forEach { plot ->
+                            val lbl = plot.dagNumber.ifBlank { "#${plot.plotIndex}" }
+                            UtilityBarChip(
+                                label = if (plot.isLocked) "লকড: দাগ $lbl" else "লক করুন: $lbl",
+                                icon = if (plot.isLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                                selected = plot.isLocked,
+                                testTag = "mouza_lock_plot_${plot.id}",
+                                onClick = { viewModel.togglePlotLock(plot.id) }
+                            )
+                        }
+                    }
+                }
+
                 // Exact normalized coordinates under screen center crosshair
                 fun centerNormX(): Float = 0.5f - (offsetX / (trackedFitW.coerceAtLeast(1f) * scale))
                 fun centerNormY(): Float = 0.5f - (offsetY / (trackedFitH.coerceAtLeast(1f) * scale))
@@ -1671,7 +1705,7 @@ fun MouzaPdfScreen(
                                     shape = RoundedCornerShape(14.dp),
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
                                 ) {
-                                    Text("PNG ও সেভ", maxLines = 1)
+                                    Text("রিপোর্ট ও সেভ", maxLines = 1)
                                 }
                             }
                         }
@@ -1773,8 +1807,36 @@ fun MouzaPdfScreen(
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold
                                         )
+                                        if (plot.isLocked) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(EmeraldPrimary)
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "লকড",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
                                     }
                                     Row {
+                                        IconButton(
+                                            onClick = { viewModel.togglePlotLock(plot.id) },
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .testTag("report_lock_plot_${plot.id}")
+                                        ) {
+                                            Icon(
+                                                imageVector = if (plot.isLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                                                contentDescription = if (plot.isLocked) "Unlock Plot" else "Lock Plot",
+                                                tint = if (plot.isLocked) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                         IconButton(
                                             onClick = {
                                                 viewModel.requestFocusPlot(plot)
@@ -1785,22 +1847,49 @@ fun MouzaPdfScreen(
                                             Icon(Icons.Rounded.CenterFocusStrong, contentDescription = "Zoom to Plot", modifier = Modifier.size(18.dp))
                                         }
                                         IconButton(
-                                            onClick = { showCalibrateDialog = plot },
+                                            onClick = {
+                                                if (plot.isLocked) {
+                                                    viewModel.showStatusHint("দাগ #${plot.plotIndex} লক করা আছে — ক্যালিব্রেট করতে আনলক করুন")
+                                                } else {
+                                                    showCalibrateDialog = plot
+                                                }
+                                            },
                                             modifier = Modifier.size(34.dp)
                                         ) {
-                                            Icon(Icons.Rounded.Tune, contentDescription = "Calibrate Scale", modifier = Modifier.size(18.dp))
+                                            Icon(
+                                                Icons.Rounded.Tune,
+                                                contentDescription = "Calibrate Scale",
+                                                tint = if (plot.isLocked) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f) else MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.size(18.dp)
+                                            )
                                         }
                                         IconButton(
-                                            onClick = { editingPlot = plot },
+                                            onClick = {
+                                                if (plot.isLocked) {
+                                                    viewModel.showStatusHint("দাগ #${plot.plotIndex} লক করা আছে — এডিট করতে আনলক করুন")
+                                                } else {
+                                                    editingPlot = plot
+                                                }
+                                            },
                                             modifier = Modifier.size(34.dp)
                                         ) {
-                                            Icon(Icons.Rounded.Edit, contentDescription = "Edit Dag/Khatian", modifier = Modifier.size(18.dp))
+                                            Icon(
+                                                Icons.Rounded.Edit,
+                                                contentDescription = "Edit Dag/Khatian",
+                                                tint = if (plot.isLocked) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f) else MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.size(18.dp)
+                                            )
                                         }
                                         IconButton(
                                             onClick = { viewModel.removePlot(plot.id) },
                                             modifier = Modifier.size(34.dp)
                                         ) {
-                                            Icon(Icons.Rounded.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                            Icon(
+                                                Icons.Rounded.Close,
+                                                contentDescription = "Remove",
+                                                tint = if (plot.isLocked) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f) else MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(18.dp)
+                                            )
                                         }
                                     }
                                 }
@@ -1819,7 +1908,7 @@ fun MouzaPdfScreen(
                 }
 
                 Text(
-                    text = "২ভাবে সেভ করুন (PNG ছবি অথবা পরে রিস্টোরের জন্য PDF/ম্যাপ ডাটা):",
+                    text = "আশেপাশের ম্যাপ ও আপনার প্রোফাইল (নাম, ছবি, মোবাইল, Gmail) সহ ক্লাসিক মৌজা শিটে সেভ করুন:",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1853,6 +1942,40 @@ fun MouzaPdfScreen(
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         Text("পুরো PNG", maxLines = 1)
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.exportSelectedOnlyPdf(selectedOnly = true)
+                            showReportSheet = false
+                        },
+                        enabled = state.selectedPlots.isNotEmpty() && !state.isExporting,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("mouza_export_pdf_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("PDF: নির্বাচিত", maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.exportSelectedOnlyPdf(selectedOnly = false)
+                            showReportSheet = false
+                        },
+                        enabled = !state.isExporting,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("পুরো PDF", maxLines = 1)
                     }
                 }
                 OutlinedButton(

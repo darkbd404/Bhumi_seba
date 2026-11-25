@@ -65,10 +65,13 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Pentagon
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PieChart
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.Remove
@@ -313,6 +316,14 @@ fun RealMapScreen(
             )
         }
     }
+    LaunchedEffect(state.isPlotLocked, mapReady) {
+        if (mapReady) {
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.setLocked(${state.isPlotLocked});",
+                null
+            )
+        }
+    }
     LaunchedEffect(state.pendingRestoreProject, mapReady) {
         val proj = state.pendingRestoreProject ?: return@LaunchedEffect
         if (mapReady) {
@@ -324,7 +335,7 @@ fun RealMapScreen(
                 })
             }
             webViewRef?.evaluateJavascript(
-                "window.bhumiMap && window.bhumiMap.restoreState(${proj.mapCenterLat}, ${proj.mapCenterLon}, ${proj.mapZoom}, '${proj.mapCategoryId}', $ptsArr);",
+                "window.bhumiMap && window.bhumiMap.restoreState(${proj.mapCenterLat}, ${proj.mapCenterLon}, ${proj.mapZoom}, '${proj.mapCategoryId}', $ptsArr, ${proj.mapPlotLocked});",
                 null
             )
             viewModel.consumePendingRestore()
@@ -585,6 +596,15 @@ fun RealMapScreen(
                     testTag = "map_gps_button",
                     onClick = { requestOrUseLocation(addPointIfWalking = false) }
                 )
+                if (state.pointCount > 0) {
+                    UtilityBarChip(
+                        label = if (state.isPlotLocked) "লকড (আনলক)" else "প্লট লক",
+                        icon = if (state.isPlotLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                        selected = state.isPlotLocked,
+                        testTag = "map_lock_toggle",
+                        onClick = { viewModel.togglePlotLock() }
+                    )
+                }
             }
 
             // Unobstructed Zero-CDN Self-Contained Interactive Mercator Tile Engine WebView
@@ -629,6 +649,11 @@ fun RealMapScreen(
                                         selectedPinIdx: Int
                                     ) {
                                         viewModel.updateMeasurementFromBridge(points, areaSqM, perimeterM, selectedPinIdx)
+                                    }
+
+                                    @JavascriptInterface
+                                    fun onLockedEditBlocked() {
+                                        viewModel.notifyLockedEditBlocked()
                                     }
                                 },
                                 "AndroidMapBridge"
@@ -721,7 +746,10 @@ fun RealMapScreen(
             }
 
             // Docked Contextual Action Row BELOW map (keeps satellite map clear!)
-            val showMapActionRow = pointerModeEnabled || state.selectedCategory == MapMeasureCategory.GPS_WALK || state.selectedPinIdx >= 0
+            val showMapActionRow = pointerModeEnabled ||
+                state.selectedCategory == MapMeasureCategory.GPS_WALK ||
+                state.selectedPinIdx >= 0 ||
+                state.pointCount > 0
             AnimatedVisibility(
                 visible = showMapActionRow,
                 enter = expandVertically() + fadeIn(),
@@ -735,23 +763,48 @@ fun RealMapScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (state.pointCount > 0) {
+                        UtilityBarChip(
+                            label = if (state.isPlotLocked) "লকড • আনলক করুন" else "পরিমাপ লক করুন",
+                            icon = if (state.isPlotLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                            selected = state.isPlotLocked,
+                            testTag = "map_docked_lock_button",
+                            onClick = { viewModel.togglePlotLock() }
+                        )
+                    }
+
                     if (pointerModeEnabled) {
                         Button(
                             onClick = {
-                                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.addCenterPoint();", null)
+                                if (state.isPlotLocked) {
+                                    viewModel.notifyLockedEditBlocked()
+                                } else {
+                                    webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.addCenterPoint();", null)
+                                }
                             },
                             modifier = Modifier.testTag("map_pointer_add_button"),
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (state.isPlotLocked) Color(0xFF78909C) else EmeraldPrimary
+                            ),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
                         ) {
-                            Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(
+                                if (state.isPlotLocked) Icons.Rounded.Lock else Icons.Rounded.GpsFixed,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
                             Spacer(Modifier.width(5.dp))
-                            Text("পয়েন্টারে পিন বসান", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            Text(
+                                if (state.isPlotLocked) "প্লট লকড" else "পয়েন্টারে পিন বসান",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1
+                            )
                         }
                     }
 
-                    if (state.selectedPinIdx >= 0) {
+                    if (state.selectedPinIdx >= 0 && !state.isPlotLocked) {
                         Button(
                             onClick = {
                                 webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.moveSelectedPinToCenter();", null)
@@ -768,16 +821,26 @@ fun RealMapScreen(
                     if (state.selectedCategory == MapMeasureCategory.GPS_WALK) {
                         Button(
                             onClick = {
-                                if (!state.isGpsWalkActive) {
-                                    viewModel.setGpsWalkActive(true)
+                                if (state.isPlotLocked) {
+                                    viewModel.notifyLockedEditBlocked()
+                                } else {
+                                    if (!state.isGpsWalkActive) {
+                                        viewModel.setGpsWalkActive(true)
+                                    }
+                                    requestOrUseLocation(addPointIfWalking = true)
                                 }
-                                requestOrUseLocation(addPointIfWalking = true)
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (state.isPlotLocked) Color(0xFF78909C) else EmeraldPrimary
+                            ),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 11.dp, vertical = 7.dp)
                         ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(
+                                if (state.isPlotLocked) Icons.Rounded.Lock else Icons.Rounded.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
                             Spacer(Modifier.width(4.dp))
                             Text("GPS পয়েন্ট যোগ", style = MaterialTheme.typography.labelMedium, maxLines = 1)
                         }
@@ -815,7 +878,11 @@ fun RealMapScreen(
                     },
                     onNudge = { dxPx, dyPx ->
                         val tMode = if (mapTargetPoint) "pin" else "pointer"
-                        webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.nudge($dxPx, $dyPx, '$tMode');", null)
+                        if (mapTargetPoint && state.isPlotLocked) {
+                            viewModel.notifyLockedEditBlocked()
+                        } else {
+                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.nudge($dxPx, $dyPx, '$tMode');", null)
+                        }
                     },
                     onClose = { showNudgePad = false }
                 )
@@ -924,7 +991,11 @@ fun RealMapScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.undo();", null)
+                            if (state.isPlotLocked) {
+                                viewModel.notifyLockedEditBlocked()
+                            } else {
+                                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.undo();", null)
+                            }
                         },
                         enabled = state.pointCount > 0,
                         modifier = Modifier.testTag("map_undo_button"),
@@ -935,24 +1006,37 @@ fun RealMapScreen(
                     }
                     OutlinedButton(
                         onClick = {
-                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.deleteSelectedPin();", null)
+                            if (state.isPlotLocked) {
+                                viewModel.notifyLockedEditBlocked()
+                            } else {
+                                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.deleteSelectedPin();", null)
+                            }
                         },
                         enabled = state.pointCount > 0,
                         modifier = Modifier.testTag("map_delete_pin_button"),
                         shape = RoundedCornerShape(14.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
                     ) {
-                        Icon(Icons.Rounded.Remove, contentDescription = "Delete Pin", modifier = Modifier.size(16.dp), tint = Color(0xFFD6405A))
+                        Icon(
+                            if (state.isPlotLocked) Icons.Rounded.Lock else Icons.Rounded.Remove,
+                            contentDescription = "Delete Pin",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (state.isPlotLocked) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFD6405A)
+                        )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            text = if (state.selectedPinIdx >= 0) "পিন #${state.selectedPinIdx + 1}" else "বিন্দু ডিলিট",
-                            color = Color(0xFFD6405A),
+                            text = if (state.isPlotLocked) "লকড" else if (state.selectedPinIdx >= 0) "পিন #${state.selectedPinIdx + 1}" else "বিন্দু ডিলিট",
+                            color = if (state.isPlotLocked) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFD6405A),
                             maxLines = 1
                         )
                     }
                     OutlinedButton(
                         onClick = {
-                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.clearAll();", null)
+                            if (state.isPlotLocked) {
+                                viewModel.notifyLockedEditBlocked()
+                            } else {
+                                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.clearAll();", null)
+                            }
                         },
                         enabled = state.pointCount > 0,
                         modifier = Modifier.testTag("map_clear_button"),
@@ -961,20 +1045,9 @@ fun RealMapScreen(
                     ) {
                         Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear", modifier = Modifier.size(18.dp))
                     }
-                    OutlinedButton(
-                        onClick = { showSaveProjectDialog = true },
-                        enabled = state.pointCount > 0 && !state.isExporting,
-                        modifier = Modifier.testTag("map_save_data_button"),
-                        shape = RoundedCornerShape(14.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
-                    ) {
-                        Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("ডাটা সেভ", maxLines = 1)
-                    }
-                    Button(
-                        onClick = {
-                            val wv = webViewRef ?: return@Button
+                    val triggerMapExport: (Boolean) -> Unit = { asPdf ->
+                        val wv = webViewRef
+                        if (wv != null) {
                             scope.launch {
                                 wv.evaluateJavascript("window.bhumiMap && window.bhumiMap.fitSelectedBounds();", null)
                                 delay(420)
@@ -985,27 +1058,56 @@ fun RealMapScreen(
                                             pointsLatLon = parsed.points,
                                             mode = parsed.mode,
                                             fallbackBitmap = fallbackBmp,
-                                            cropRectNormalized = parsed.cropRect
+                                            cropRectNormalized = parsed.cropRect,
+                                            asPdf = asPdf
                                         )
                                     }
                                 }
                             }
-                        },
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { showSaveProjectDialog = true },
+                        enabled = state.pointCount > 0 && !state.isExporting,
+                        modifier = Modifier.testTag("map_save_data_button"),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("ডাটা", maxLines = 1)
+                    }
+                    Button(
+                        onClick = { triggerMapExport(false) },
                         enabled = state.pointCount > 0 && !state.isExporting,
                         modifier = Modifier
                             .weight(1f)
                             .testTag("map_export_png_button"),
                         colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
                         shape = RoundedCornerShape(14.dp),
-                        contentPadding = PaddingValues(vertical = 12.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
                     ) {
                         if (state.isExporting) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
                         } else {
-                            Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
-                        Spacer(Modifier.width(5.dp))
-                        Text("PNG সেভ", maxLines = 1)
+                        Spacer(Modifier.width(4.dp))
+                        Text("PNG", maxLines = 1)
+                    }
+                    Button(
+                        onClick = { triggerMapExport(true) },
+                        enabled = state.pointCount > 0 && !state.isExporting,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("map_export_pdf_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("PDF", maxLines = 1)
                     }
                 }
             }
@@ -1373,6 +1475,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 mode: 'area',
                 points: [],
                 selectedPinIdx: -1,
+                locked: false,
                 pointerMode: true,
                 loupeEnabled: true,
                 loupeZoom: 3.0,
@@ -1594,26 +1697,43 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   }
                 }
 
-                // Draw draggable vertex pins (highlight selected pin)
+                // Draw draggable vertex pins (or locked teal markers when finalized)
                 spts.forEach((p, idx) => {
-                  const isSel = idx === state.selectedPinIdx;
-                  if (isSel) {
+                  if (state.locked) {
                     ctx.beginPath();
-                    ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
-                    ctx.fillStyle = 'rgba(229, 57, 53, 0.28)';
+                    ctx.arc(p.x, p.y, 7.2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#00bfa5';
                     ctx.fill();
-                    ctx.lineWidth = 2.2;
-                    ctx.strokeStyle = '#ff5252';
+                    ctx.lineWidth = 2.4;
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.stroke();
+                  } else {
+                    const isSel = idx === state.selectedPinIdx;
+                    if (isSel) {
+                      ctx.beginPath();
+                      ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+                      ctx.fillStyle = 'rgba(229, 57, 53, 0.28)';
+                      ctx.fill();
+                      ctx.lineWidth = 2.2;
+                      ctx.strokeStyle = '#ff5252';
+                      ctx.stroke();
+                    }
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, isSel ? 9.5 : 8.5, 0, Math.PI * 2);
+                    ctx.fillStyle = isSel ? '#ff5252' : '#ffd54f';
+                    ctx.fill();
+                    ctx.lineWidth = 2.8;
+                    ctx.strokeStyle = isSel ? '#ffffff' : '#0f6b54';
                     ctx.stroke();
                   }
-                  ctx.beginPath();
-                  ctx.arc(p.x, p.y, isSel ? 9.5 : 8.5, 0, Math.PI * 2);
-                  ctx.fillStyle = isSel ? '#ff5252' : '#ffd54f';
-                  ctx.fill();
-                  ctx.lineWidth = 2.8;
-                  ctx.strokeStyle = isSel ? '#ffffff' : '#0f6b54';
-                  ctx.stroke();
                 });
+
+                if (state.locked && spts.length > 0 && includeTextLabels) {
+                  let cx = 0, cy = 0;
+                  spts.forEach(p => { cx += p.x; cy += p.y; });
+                  cx /= spts.length; cy /= spts.length;
+                  drawLabel('🔒 লকড', cx, cy - 16, 'rgba(0, 121, 107, 0.94)', '#ffffff');
+                }
 
                 // Draw user GPS dot
                 if (state.userLoc) {
@@ -1787,7 +1907,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
 
                 if (pointers.size === 1) {
                   dragStart.mv = Math.max(dragStart.mv, Math.hypot(curr.x - dragStart.x, curr.y - dragStart.y));
-                  const canDragPin = draggingPinIdx >= 0 && (!state.pointerMode || state.selectedPinIdx === draggingPinIdx);
+                  const canDragPin = !state.locked && draggingPinIdx >= 0 && (!state.pointerMode || state.selectedPinIdx === draggingPinIdx);
                   if (canDragPin) {
                     state.selectedPinIdx = draggingPinIdx;
                     state.points[draggingPinIdx] = screenToLatLon(curr.x, curr.y);
@@ -1812,12 +1932,23 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 scheduleDraw();
               });
 
+              function notifyLockBlock() {
+                if (window.AndroidMapBridge && window.AndroidMapBridge.onLockedEditBlocked) {
+                  window.AndroidMapBridge.onLockedEditBlocked();
+                }
+              }
+
               function onUp(e) {
                 if (!pointers.has(e.pointerId)) return;
                 const pt = rel(e);
                 const wasLast = pointers.size === 1;
                 pointers.delete(e.pointerId);
                 if (wasLast && dragStart && dragStart.mv < 9 && (Date.now() - dragStart.t) < 480 && e.type === 'pointerup') {
+                  if (state.locked) {
+                    notifyLockBlock();
+                    draggingPinIdx = -1;
+                    return;
+                  }
                   if (draggingPinIdx >= 0) {
                     state.selectedPinIdx = (state.selectedPinIdx === draggingPinIdx) ? -1 : draggingPinIdx;
                   } else {
@@ -1832,7 +1963,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   }
                   notifyBridge();
                   scheduleDraw();
-                } else if (wasLast && draggingPinIdx >= 0) {
+                } else if (wasLast && !state.locked && draggingPinIdx >= 0) {
                   state.selectedPinIdx = draggingPinIdx;
                   notifyBridge();
                   scheduleDraw();
@@ -1878,7 +2009,13 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   zoomAround(dz, rc.clientWidth / 2, rc.clientHeight / 2);
                   scheduleDraw();
                 },
+                setLocked: (locked) => {
+                  state.locked = !!locked;
+                  if (state.locked) state.selectedPinIdx = -1;
+                  scheduleDraw();
+                },
                 addPoint: (lat, lon) => {
+                  if (state.locked) { notifyLockBlock(); return; }
                   if (state.mode === 'circle' && state.points.length >= 2) {
                     state.points[1] = { lat, lon };
                     state.selectedPinIdx = 1;
@@ -1890,6 +2027,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   scheduleDraw();
                 },
                 addCenterPoint: () => {
+                  if (state.locked) { notifyLockBlock(); return; }
                   const ll = screenToLatLon(rc.clientWidth / 2, rc.clientHeight / 2);
                   if (state.mode === 'circle' && state.points.length >= 2) {
                     state.points[1] = ll;
@@ -1902,6 +2040,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   scheduleDraw();
                 },
                 deleteSelectedPin: () => {
+                  if (state.locked) { notifyLockBlock(); return; }
                   if (!state.points.length) return;
                   const idx = (state.selectedPinIdx >= 0 && state.selectedPinIdx < state.points.length)
                     ? state.selectedPinIdx : (state.points.length - 1);
@@ -1911,6 +2050,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   scheduleDraw();
                 },
                 moveSelectedPinToCenter: () => {
+                  if (state.locked) { notifyLockBlock(); return; }
                   if (state.selectedPinIdx < 0 || state.selectedPinIdx >= state.points.length) return;
                   state.points[state.selectedPinIdx] = screenToLatLon(rc.clientWidth / 2, rc.clientHeight / 2);
                   notifyBridge();
@@ -1927,6 +2067,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 nudge: (dxPx, dyPx, targetMode) => {
                   const ws = 256 * Math.pow(2, state.z);
                   if (targetMode === 'pin' && state.points.length > 0) {
+                    if (state.locked) { notifyLockBlock(); return; }
                     const idx = (state.selectedPinIdx >= 0 && state.selectedPinIdx < state.points.length)
                       ? state.selectedPinIdx : (state.points.length - 1);
                     state.selectedPinIdx = idx;
@@ -1949,11 +2090,12 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                     points: state.points
                   });
                 },
-                restoreState: (lat, lon, zoom, mode, pts) => {
+                restoreState: (lat, lon, zoom, mode, pts, locked) => {
                   state.center = ll2m(lat, lon);
                   state.z = Math.min(maxViewZ, zoom || 17);
                   if (mode) state.mode = mode;
                   state.points = Array.isArray(pts) ? pts.map(p => ({ lat: p.lat, lon: p.lon })) : [];
+                  state.locked = !!locked;
                   state.selectedPinIdx = -1;
                   notifyBridge();
                   scheduleDraw();
@@ -1969,12 +2111,14 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   scheduleDraw();
                 },
                 undo: () => {
+                  if (state.locked) { notifyLockBlock(); return; }
                   if (state.points.length) state.points.pop();
                   state.selectedPinIdx = state.points.length - 1;
                   notifyBridge();
                   scheduleDraw();
                 },
                 clearAll: () => {
+                  if (state.locked) { notifyLockBlock(); return; }
                   state.points = [];
                   state.selectedPinIdx = -1;
                   notifyBridge();

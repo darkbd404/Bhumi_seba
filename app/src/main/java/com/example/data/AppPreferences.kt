@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.model.SavedMeasurementRecord
 import com.example.model.SavedSurveyProject
+import com.example.model.SurveyorProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -28,6 +29,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_SAVED_RECORDS = stringPreferencesKey("saved_measurement_records")
         private val KEY_SAVED_PROJECTS = stringPreferencesKey("saved_survey_projects")
         private val KEY_LAST_EXPORT_PATH = stringPreferencesKey("last_export_path")
+        private val KEY_SURVEYOR_PROFILE = stringPreferencesKey("surveyor_profile_json")
     }
 
     val isDarkModeFlow: Flow<Boolean?> = context.dataStore.data.map { prefs ->
@@ -36,6 +38,18 @@ class AppPreferences(private val context: Context) {
 
     val devPhotoUriFlow: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[KEY_DEV_PHOTO_URI]
+    }
+
+    val surveyorProfileFlow: Flow<SurveyorProfile> = context.dataStore.data.map { prefs ->
+        val parsed = prefs[KEY_SURVEYOR_PROFILE]?.let { raw ->
+            runCatching { json.decodeFromString<SurveyorProfile>(raw) }.getOrNull()
+        } ?: SurveyorProfile()
+        val devUri = prefs[KEY_DEV_PHOTO_URI]
+        if (parsed.photoUri.isNullOrBlank() && !devUri.isNullOrBlank()) {
+            parsed.copy(photoUri = devUri)
+        } else {
+            parsed
+        }
     }
 
     val savedRecordsFlow: Flow<List<SavedMeasurementRecord>> = context.dataStore.data.map { prefs ->
@@ -57,6 +71,19 @@ class AppPreferences(private val context: Context) {
     suspend fun setDevPhotoUri(uriString: String) {
         context.dataStore.edit { prefs ->
             prefs[KEY_DEV_PHOTO_URI] = uriString
+            val existing = prefs[KEY_SURVEYOR_PROFILE]?.let { raw ->
+                runCatching { json.decodeFromString<SurveyorProfile>(raw) }.getOrNull()
+            } ?: SurveyorProfile()
+            prefs[KEY_SURVEYOR_PROFILE] = json.encodeToString(existing.copy(photoUri = uriString))
+        }
+    }
+
+    suspend fun saveSurveyorProfile(profile: SurveyorProfile) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SURVEYOR_PROFILE] = json.encodeToString(profile)
+            if (!profile.photoUri.isNullOrBlank()) {
+                prefs[KEY_DEV_PHOTO_URI] = profile.photoUri
+            }
         }
     }
 

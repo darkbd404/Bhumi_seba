@@ -77,7 +77,8 @@ data class MouzaPlot(
     val manualPolygonNormalized: List<Pair<Float, Float>>? = null, // Used when drawn manually
     val polygonNormalized: List<Pair<Float, Float>>? = null, // Editable vector boundary from auto-fill or manual edit
     val centroidNormalized: Pair<Float, Float>? = null,
-    val exactAreaSqFeet: Double? = null // Vector polygon computed SqFt (when available)
+    val exactAreaSqFeet: Double? = null, // Vector polygon computed SqFt (when available)
+    val isLocked: Boolean = false // Prevents accidental editing, resizing, or movement when finalized
 ) {
     fun effectivePolygon(): List<Pair<Float, Float>>? = polygonNormalized ?: manualPolygonNormalized
 
@@ -90,6 +91,7 @@ data class MouzaPlot(
             khatianNumber == other.khatianNumber &&
             pixelCount == other.pixelCount &&
             exactAreaSqFeet == other.exactAreaSqFeet &&
+            isLocked == other.isLocked &&
             polygonNormalized == other.polygonNormalized &&
             manualPolygonNormalized == other.manualPolygonNormalized
     }
@@ -239,7 +241,8 @@ data class SerializedMouzaPlot(
     val khatianNumber: String = "",
     val colorArgb: Long,
     val polygonNormalized: List<SerializablePoint> = emptyList(),
-    val exactAreaSqFeet: Double? = null
+    val exactAreaSqFeet: Double? = null,
+    val isLocked: Boolean = false
 )
 
 @Serializable
@@ -253,6 +256,15 @@ data class KhatianRecord(
 )
 
 const val PC_INSTALL_APP_URL = "https://ais-pre-unuuvzicd3jk2gwzkjmqiu-627685175139.asia-east1.run.app"
+
+@Serializable
+data class SurveyorProfile(
+    val name: String = "Abdus Salam",
+    val phone: String = "01620230864",
+    val email: String = "salam230864@gmail.com",
+    val designation: String = "ডিজিটাল সার্ভেয়ার • ভূমি সেবা ডিজিটাল",
+    val photoUri: String? = null
+)
 
 @Serializable
 data class SavedSurveyProject(
@@ -296,5 +308,6 @@ data class SavedSurveyProject(
     val mapCenterLon: Double = 90.4125,
     val mapZoom: Double = 16.0,
     val mapPoints: List<SerializableLatLon> = emptyList(),
+    val mapPlotLocked: Boolean = false,
     val splitSharesCount: Int = 2
 )

@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -34,9 +35,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Logout
+import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -60,13 +62,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.engine.DesktopAppExporter
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
@@ -79,24 +84,15 @@ fun AnimatedCompassBadge(
     modifier: Modifier = Modifier,
     sizeDp: Int = 46
 ) {
-    val infinite = rememberInfiniteTransition(label = "compassPulse")
-    val angle by infinite.animateFloat(
-        initialValue = -10f,
-        targetValue = 10f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "compassAngle"
-    )
+    val infinite = rememberInfiniteTransition(label = "brandPulse")
     val pulse by infinite.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.04f,
+        initialValue = 0.97f,
+        targetValue = 1.03f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1800),
+            animation = tween(2200),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "compassScale"
+        label = "brandScale"
     )
 
     Box(
@@ -106,32 +102,19 @@ fun AnimatedCompassBadge(
                 scaleX = pulse
                 scaleY = pulse
             }
-            .neuSurface(cornerRadius = (sizeDp / 2).dp, elevation = 5.dp),
+            .neuSurface(cornerRadius = 14.dp, elevation = 5.dp)
+            .padding(2.dp)
+            .clip(RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center
     ) {
-        Box(
+        Image(
+            painter = painterResource(id = R.drawable.ic_launcher_art),
+            contentDescription = stringResource(R.string.app_name),
+            contentScale = ContentScale.Crop,
             modifier = Modifier
-                .size((sizeDp - 10).dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary
-                        )
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Explore,
-                contentDescription = "Survey Compass",
-                tint = Color.White,
-                modifier = Modifier
-                    .size((sizeDp * 0.52f).dp)
-                    .rotate(angle)
-            )
-        }
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+        )
     }
 }
 
@@ -688,13 +671,13 @@ fun PcInstallLinkCard(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "PC ও ওয়েব ইনস্টল লিংক",
+                    text = "ভূমি সেবা ডিজিটাল — PC / ল্যাপটপ অ্যাপ",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "কম্পিউটার বা ল্যাপটপের ব্রাউজারে চালান ও ইনস্টল করুন",
+                    text = "কম্পিউটারের Chrome/Edge-এ লিংকটি খুলে 'Install App' দিন অথবা নিচের অফলাইন PC সফটওয়্যার ফাইল ডাউনলোড করে ডাবল-ক্লিক করুন।",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -723,7 +706,7 @@ fun PcInstallLinkCard(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             OutlinedButton(
                 onClick = {
@@ -738,20 +721,20 @@ fun PcInstallLinkCard(
                 Icon(
                     imageVector = androidx.compose.material.icons.Icons.Rounded.ContentCopy,
                     contentDescription = "Copy Link",
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(15.dp)
                 )
-                Spacer(Modifier.width(5.dp))
-                Text("কপি করুন", maxLines = 1)
+                Spacer(Modifier.width(4.dp))
+                Text("কপি", maxLines = 1)
             }
 
-            Button(
+            OutlinedButton(
                 onClick = {
                     val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Bhumi Survey BD — PC / Web App")
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "ভূমি সেবা ডিজিটাল — PC / Web App")
                         putExtra(
                             android.content.Intent.EXTRA_TEXT,
-                            "Bhumi Survey BD (ডিজিটাল মৌজা ও ভূমি জরিপ) PC/Web-এ চালাতে ও ইনস্টল করতে এই লিংক ব্যবহার করুন:\n$url"
+                            "ভূমি সেবা ডিজিটাল (ডিজিটাল মৌজা ও ভূমি জরিপ) PC/ল্যাপটপে চালাতে ও ইনস্টল করতে এই লিংক Chrome/Edge-এ খুলুন:\n$url"
                         )
                     }
                     context.startActivity(
@@ -766,11 +749,72 @@ fun PcInstallLinkCard(
                 Icon(
                     imageVector = androidx.compose.material.icons.Icons.Rounded.Share,
                     contentDescription = "Share Link",
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(15.dp)
                 )
-                Spacer(Modifier.width(5.dp))
-                Text("শেয়ার করুন", maxLines = 1)
+                Spacer(Modifier.width(4.dp))
+                Text("শেয়ার", maxLines = 1)
             }
+
+            OutlinedButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(url)
+                            )
+                        )
+                    }.onFailure {
+                        onCopySuccess("ব্রাউজার খোলা যায়নি — লিংক কপি করে PC-তে ওপেন করুন")
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("pc_link_open_browser_button"),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Rounded.OpenInBrowser,
+                    contentDescription = "Open in Browser",
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text("খুলুন", maxLines = 1)
+            }
+        }
+
+        Button(
+            onClick = {
+                runCatching {
+                    val res = DesktopAppExporter.saveStandalonePcHtmlApp(context)
+                    onCopySuccess("PC সফটওয়্যার সেভ হয়েছে: ${res.displayPath}")
+                    if (res.uri != null) {
+                        val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/html"
+                            putExtra(android.content.Intent.EXTRA_STREAM, res.uri)
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "BhumiSebaDigital_PC.html — ল্যাপটপ/কম্পিউটার সফটওয়্যার")
+                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(
+                            android.content.Intent.createChooser(sendIntent, "PC-তে পাঠান (WhatsApp/Telegram/Email)")
+                        )
+                    }
+                }.onFailure { err ->
+                    onCopySuccess("PC ফাইল তৈরি ব্যর্থ: ${err.localizedMessage ?: "ত্রুটি"}")
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("pc_download_html_app_button"),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Icon(
+                imageVector = androidx.compose.material.icons.Icons.Rounded.Download,
+                contentDescription = "Save Offline PC Software",
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text("অফলাইন PC সফটওয়্যার (.html) সেভ ও পাঠান", maxLines = 1)
         }
     }
 }

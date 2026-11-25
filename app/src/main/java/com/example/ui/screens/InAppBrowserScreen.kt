@@ -237,7 +237,7 @@ fun InAppBrowserScreen(
                                 setMimeType(mimetype)
                                 addRequestHeader("User-Agent", userAgent)
                                 setTitle(URLUtil.guessFileName(url, contentDisposition, mimetype))
-                                setDescription("Bhumi Survey BD ডাউনলোড")
+                                setDescription("ভূমি সেবা ডিজিটাল ডাউনলোড")
                                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                                 setDestinationInExternalPublicDir(
                                     Environment.DIRECTORY_DOWNLOADS,

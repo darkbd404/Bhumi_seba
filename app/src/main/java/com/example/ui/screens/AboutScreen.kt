@@ -32,13 +32,18 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.model.PC_INSTALL_APP_URL
+import com.example.model.SurveyorProfile
 import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.PcInstallLinkCard
 import com.example.ui.theme.EmeraldPrimary
@@ -82,14 +88,16 @@ private object DeveloperContactActions {
 @Composable
 fun AboutScreen(
     savedPhotoUri: String?,
+    surveyorProfile: SurveyorProfile = SurveyorProfile(),
     onPhotoPicked: (String) -> Unit,
+    onSaveSurveyorProfile: (SurveyorProfile) -> Unit = {},
     onNavigateBack: () -> Unit,
     onOpenUrlInApp: (url: String, title: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
 
-    // Zero-permission Android Photo Picker so Abdus Salam can customize his profile photo anytime
+    // Zero-permission Android Photo Picker so user can customize their profile photo anytime
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -106,7 +114,9 @@ fun AboutScreen(
 
     var visible by remember { mutableStateOf(false) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
+    var showEditProfileDialog by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
+    val activePhotoUri = surveyorProfile.photoUri ?: savedPhotoUri
 
     Box(
         modifier = modifier
@@ -166,17 +176,17 @@ fun AboutScreen(
                             .padding(5.dp)
                             .clip(CircleShape)
                     ) {
-                        if (!savedPhotoUri.isNullOrBlank()) {
+                        if (!activePhotoUri.isNullOrBlank()) {
                             AsyncImage(
-                                model = Uri.parse(savedPhotoUri),
-                                contentDescription = "Abdus Salam",
+                                model = Uri.parse(activePhotoUri),
+                                contentDescription = surveyorProfile.name,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
                             Image(
                                 painter = painterResource(id = R.drawable.img_dev_avatar),
-                                contentDescription = "Abdus Salam",
+                                contentDescription = surveyorProfile.name,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -212,20 +222,20 @@ fun AboutScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "Abdus Salam",
+                        text = surveyorProfile.name.ifBlank { "Abdus Salam" },
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Icon(
                         imageVector = Icons.Rounded.Verified,
-                        contentDescription = "Verified Developer",
+                        contentDescription = "Verified",
                         tint = EmeraldPrimary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
                 Text(
-                    text = "ডিজিটাল ভূমি সেবা ও মৌজা সার্ভে ডেভেলপার",
+                    text = surveyorProfile.designation.ifBlank { "ডিজিটাল সার্ভেয়ার • ভূমি সেবা ডিজিটাল" },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center
@@ -238,17 +248,35 @@ fun AboutScreen(
                     textAlign = TextAlign.Center
                 )
 
-                OutlinedButton(
-                    onClick = {
-                        photoPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
-                    shape = RoundedCornerShape(14.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("নিজের ছবি সেট করুন")
+                    OutlinedButton(
+                        onClick = {
+                            photoPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("ছবি সেট", maxLines = 1)
+                    }
+                    Button(
+                        onClick = { showEditProfileDialog = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("edit_surveyor_profile_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("PNG/PDF তথ্য এডিট", maxLines = 1)
+                    }
                 }
             }
             }
@@ -349,6 +377,79 @@ fun AboutScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 18.dp)
+        )
+    }
+
+    if (showEditProfileDialog) {
+        var nameInput by remember(surveyorProfile) { mutableStateOf(surveyorProfile.name) }
+        var phoneInput by remember(surveyorProfile) { mutableStateOf(surveyorProfile.phone) }
+        var emailInput by remember(surveyorProfile) { mutableStateOf(surveyorProfile.email) }
+        var desigInput by remember(surveyorProfile) { mutableStateOf(surveyorProfile.designation) }
+
+        AlertDialog(
+            onDismissRequest = { showEditProfileDialog = false },
+            title = { Text("PNG / PDF শিট বিবরণ এডিট", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "মৌজা নকশা PNG বা PDF সেভ করার সময় নিচে আপনার ছবি, নাম, মোবাইল ও Gmail প্রিন্ট হবে।",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = nameInput,
+                        onValueChange = { nameInput = it },
+                        label = { Text("নাম (Name)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = phoneInput,
+                        onValueChange = { phoneInput = it },
+                        label = { Text("মোবাইল নম্বর (Phone)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = emailInput,
+                        onValueChange = { emailInput = it },
+                        label = { Text("Gmail / ইমেইল") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = desigInput,
+                        onValueChange = { desigInput = it },
+                        label = { Text("পদবি / বিবরণ") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onSaveSurveyorProfile(
+                            surveyorProfile.copy(
+                                name = nameInput.trim().ifBlank { "Abdus Salam" },
+                                phone = phoneInput.trim().ifBlank { "01620230864" },
+                                email = emailInput.trim().ifBlank { "salam230864@gmail.com" },
+                                designation = desigInput.trim().ifBlank { "ডিজিটাল সার্ভেয়ার • ভূমি সেবা ডিজিটাল" }
+                            )
+                        )
+                        showEditProfileDialog = false
+                        toastMessage = "PNG ও PDF প্রোফাইল আপডেট হয়েছে!"
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                ) {
+                    Text("সংরক্ষণ করুন")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showEditProfileDialog = false }) {
+                    Text("বাতিল")
+                }
+            }
         )
     }
 }
