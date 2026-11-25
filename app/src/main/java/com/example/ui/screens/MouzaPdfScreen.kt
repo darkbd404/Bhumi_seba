@@ -17,9 +17,12 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,6 +90,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,6 +104,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -505,8 +510,12 @@ fun MouzaPdfScreen(
                         )
                     }
 
-                    var draggedVertex by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-                    var draggedDraftIdx by remember { mutableStateOf<Int?>(null) }
+                    val latestState by rememberUpdatedState(state)
+                    val latestPointerMode by rememberUpdatedState(pointerModeEnabled)
+                    val latestFitW by rememberUpdatedState(fitW)
+                    val latestFitH by rememberUpdatedState(fitH)
+                    val latestImgLeft by rememberUpdatedState(imgLeft)
+                    val latestImgTop by rememberUpdatedState(imgTop)
 
                     Box(
                         modifier = Modifier
@@ -542,118 +551,125 @@ fun MouzaPdfScreen(
                                     }
                                 }
                             }
-                            // In EDIT_CORNERS or POLYGON_DRAW mode, allow dragging corner handles or draft points cleanly
-                            .then(
-                                if ((state.activeTool == MouzaSelectionTool.EDIT_CORNERS && state.selectedPlots.isNotEmpty()) ||
-                                    (state.activeTool == MouzaSelectionTool.POLYGON_DRAW && state.manualPolygonDraft.isNotEmpty())
-                                ) {
-                                    Modifier.pointerInput(
-                                        state.activeTool,
-                                        state.selectedPlots,
-                                        state.manualPolygonDraft,
-                                        scale,
-                                        offsetX,
-                                        offsetY,
-                                        fitW,
-                                        fitH
-                                    ) {
-                                        detectDragGestures(
-                                            onDragStart = { start ->
-                                                draggedVertex = null
-                                                draggedDraftIdx = null
-                                                if (state.activeTool == MouzaSelectionTool.POLYGON_DRAW) {
-                                                    var bestIdx: Int? = null
-                                                    var bestDist = 56f
-                                                    state.manualPolygonDraft.forEachIndexed { idx, (nx, ny) ->
-                                                        val d = hypot(toScreenX(nx) - start.x, toScreenY(ny) - start.y)
-                                                        if (d < bestDist) {
-                                                            bestDist = d
-                                                            bestIdx = idx
-                                                        }
-                                                    }
-                                                    draggedDraftIdx = bestIdx
-                                                    if (bestIdx != null) viewModel.selectDraftPoint(bestIdx)
-                                                } else {
-                                                    var best: Pair<Int, Int>? = null
-                                                    var bestDist = 56f
-                                                    state.selectedPlots.forEach { plot ->
-                                                        val poly = plot.effectivePolygon() ?: return@forEach
-                                                        poly.forEachIndexed { idx, (nx, ny) ->
-                                                            val sx = toScreenX(nx)
-                                                            val sy = toScreenY(ny)
-                                                            val d = hypot(sx - start.x, sy - start.y)
-                                                            if (d < bestDist) {
-                                                                bestDist = d
-                                                                best = plot.id to idx
-                                                            }
-                                                        }
-                                                    }
-                                                    draggedVertex = best
-                                                    if (best != null) viewModel.selectVertex(best!!.first, best!!.second)
+                            // Unified multi-touch Pan + Pinch-Zoom + Vertex Drag (never restarts on draft edits!)
+                            .pointerInput(bmp, boxW, boxH) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val curState = latestState
+                                    var activeDraftDrag: Int? = null
+                                    var activeVertexDrag: Pair<Int, Int>? = null
+
+                                    fun curToScreenX(nx: Float): Float =
+                                        ((latestImgLeft + nx * latestFitW) - cx) * scale + cx + offsetX
+                                    fun curToScreenY(ny: Float): Float =
+                                        ((latestImgTop + ny * latestFitH) - cy) * scale + cy + offsetY
+                                    fun curToNormX(sx: Float): Float =
+                                        (((sx - cx - offsetX) / scale + cx) - latestImgLeft) / latestFitW
+                                    fun curToNormY(sy: Float): Float =
+                                        (((sy - cy - offsetY) / scale + cy) - latestImgTop) / latestFitH
+
+                                    if (curState.activeTool == MouzaSelectionTool.EDIT_CORNERS && curState.selectedPlots.isNotEmpty()) {
+                                        var best: Pair<Int, Int>? = null
+                                        var bestDist = 48f
+                                        curState.selectedPlots.forEach { plot ->
+                                            val poly = plot.effectivePolygon() ?: return@forEach
+                                            poly.forEachIndexed { idx, (nx, ny) ->
+                                                val d = hypot(curToScreenX(nx) - down.position.x, curToScreenY(ny) - down.position.y)
+                                                if (d < bestDist) {
+                                                    bestDist = d
+                                                    best = plot.id to idx
                                                 }
-                                            },
-                                            onDrag = { change, dragAmount ->
-                                                change.consume()
-                                                val draftTarget = draggedDraftIdx
-                                                val target = draggedVertex
+                                            }
+                                        }
+                                        activeVertexDrag = best
+                                    } else if (curState.activeTool == MouzaSelectionTool.POLYGON_DRAW && curState.manualPolygonDraft.isNotEmpty()) {
+                                        // Drag draft point if pointer mode is off OR user drags an explicitly selected draft point
+                                        val selIdx = curState.selectedDraftIdx
+                                        if (!latestPointerMode) {
+                                            var bestIdx: Int? = null
+                                            var bestDist = 42f
+                                            curState.manualPolygonDraft.forEachIndexed { idx, (nx, ny) ->
+                                                val d = hypot(curToScreenX(nx) - down.position.x, curToScreenY(ny) - down.position.y)
+                                                if (d < bestDist) {
+                                                    bestDist = d
+                                                    bestIdx = idx
+                                                }
+                                            }
+                                            activeDraftDrag = bestIdx
+                                        } else if (selIdx != null && selIdx in curState.manualPolygonDraft.indices) {
+                                            val (nx, ny) = curState.manualPolygonDraft[selIdx]
+                                            if (hypot(curToScreenX(nx) - down.position.x, curToScreenY(ny) - down.position.y) < 48f) {
+                                                activeDraftDrag = selIdx
+                                            }
+                                        }
+                                    }
+
+                                    var totalMove = 0f
+                                    var wasMultiTouch = false
+                                    val touchSlop = viewConfiguration.touchSlop
+
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val pressed = event.changes.filter { it.pressed }
+                                        if (pressed.isEmpty()) break
+
+                                        if (pressed.size >= 2) {
+                                            wasMultiTouch = true
+                                            activeDraftDrag = null
+                                            activeVertexDrag = null
+                                            val zoom = event.calculateZoom()
+                                            val pan = event.calculatePan()
+                                            val centroid = event.calculateCentroid(useCurrent = false)
+                                            val oldScale = scale
+                                            val newScale = (oldScale * zoom).coerceIn(1f, 1000f)
+                                            if (newScale <= 1.01f) {
+                                                scale = 1f; offsetX = 0f; offsetY = 0f
+                                            } else {
+                                                val ratio = newScale / oldScale
+                                                val nextOffX = (offsetX - (centroid.x - cx)) * ratio + (centroid.x - cx) + pan.x
+                                                val nextOffY = (offsetY - (centroid.y - cy)) * ratio + (centroid.y - cy) + pan.y
+                                                val maxOffX = max(boxW * newScale * 0.75f, boxW * 0.5f)
+                                                val maxOffY = max(boxH * newScale * 0.75f, boxH * 0.5f)
+                                                scale = newScale
+                                                offsetX = nextOffX.coerceIn(-maxOffX, maxOffX)
+                                                offsetY = nextOffY.coerceIn(-maxOffY, maxOffY)
+                                            }
+                                            pressed.forEach { it.consume() }
+                                        } else {
+                                            val c = pressed.first()
+                                            val delta = c.positionChange()
+                                            totalMove += delta.getDistance()
+                                            if (!wasMultiTouch && totalMove > touchSlop) {
                                                 when {
-                                                    draftTarget != null -> {
+                                                    activeDraftDrag != null -> {
                                                         viewModel.updateManualDraftPoint(
-                                                            draftTarget,
-                                                            toNormX(change.position.x),
-                                                            toNormY(change.position.y)
+                                                            activeDraftDrag,
+                                                            curToNormX(c.position.x),
+                                                            curToNormY(c.position.y)
                                                         )
                                                     }
-                                                    target != null -> {
+                                                    activeVertexDrag != null -> {
                                                         viewModel.updatePlotVertex(
-                                                            target.first,
-                                                            target.second,
-                                                            toNormX(change.position.x),
-                                                            toNormY(change.position.y)
+                                                            activeVertexDrag.first,
+                                                            activeVertexDrag.second,
+                                                            curToNormX(c.position.x),
+                                                            curToNormY(c.position.y)
                                                         )
                                                     }
                                                     else -> {
-                                                        offsetX += dragAmount.x
-                                                        offsetY += dragAmount.y
+                                                        val maxOffX = max(boxW * scale * 0.75f, boxW * 0.5f)
+                                                        val maxOffY = max(boxH * scale * 0.75f, boxH * 0.5f)
+                                                        offsetX = (offsetX + delta.x).coerceIn(-maxOffX, maxOffX)
+                                                        offsetY = (offsetY + delta.y).coerceIn(-maxOffY, maxOffY)
                                                     }
                                                 }
-                                            },
-                                            onDragEnd = {
-                                                draggedVertex = null
-                                                draggedDraftIdx = null
-                                            },
-                                            onDragCancel = {
-                                                draggedVertex = null
-                                                draggedDraftIdx = null
+                                                c.consume()
                                             }
-                                        )
-                                    }
-                                } else {
-                                    Modifier
-                                }
-                            )
-                            .pointerInput(bmp, state.activeTool, fitW, fitH) {
-                                detectTransformGestures { centroid, pan, zoom, _ ->
-                                    val oldScale = scale
-                                    val newScale = (oldScale * zoom).coerceIn(1f, 1000f)
-                                    if (newScale <= 1.01f) {
-                                        scale = 1f
-                                        offsetX = 0f
-                                        offsetY = 0f
-                                    } else {
-                                        // Keep zoom centered accurately around the pinch centroid!
-                                        val ratio = newScale / oldScale
-                                        val nextOffX = (offsetX - (centroid.x - cx)) * ratio + (centroid.x - cx) + pan.x
-                                        val nextOffY = (offsetY - (centroid.y - cy)) * ratio + (centroid.y - cy) + pan.y
-                                        val maxOffX = max(boxW * newScale * 0.75f, boxW * 0.5f)
-                                        val maxOffY = max(boxH * newScale * 0.75f, boxH * 0.5f)
-                                        scale = newScale
-                                        offsetX = nextOffX.coerceIn(-maxOffX, maxOffX)
-                                        offsetY = nextOffY.coerceIn(-maxOffY, maxOffY)
+                                        }
                                     }
                                 }
                             }
-                            .pointerInput(bmp, state.activeTool, fitW, fitH, imgLeft, imgTop) {
+                            .pointerInput(bmp, fitW, fitH, imgLeft, imgTop) {
                                 detectTapGestures(
                                     onDoubleTap = { tap ->
                                         if (scale > 2.4f) {
@@ -672,7 +688,8 @@ fun MouzaPdfScreen(
                                         val nx = toNormX(tap.x)
                                         val ny = toNormY(tap.y)
                                         if (nx in 0f..1f && ny in 0f..1f) {
-                                            viewModel.onMapTap(nx, ny)
+                                            val hitNorm = (22.dp.toPx() / (min(fitW, fitH) * scale)).coerceIn(0.0002f, 0.03f)
+                                            viewModel.onMapTap(nx, ny, hitNorm)
                                         }
                                     }
                                 )
@@ -1183,11 +1200,9 @@ fun MouzaPdfScreen(
                                         val nx = toNormX(cx)
                                         val ny = toNormY(cy)
                                         if (nx in 0f..1f && ny in 0f..1f) {
-                                            if (state.activeTool == MouzaSelectionTool.EDIT_CORNERS) {
-                                                viewModel.snapNearestVertexTo(nx, ny)
-                                            } else {
-                                                viewModel.onMapTap(nx, ny)
-                                            }
+                                            viewModel.onPointerPlace(nx, ny)
+                                        } else {
+                                            viewModel.showStatusHint("পয়েন্টারটি ম্যাপের ভেতরে রাখুন")
                                         }
                                     },
                                     modifier = Modifier.testTag("mouza_pointer_select_button"),

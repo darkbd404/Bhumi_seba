@@ -321,15 +321,40 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun onMapTap(normX: Float, normY: Float) {
+    fun onPointerPlace(normX: Float, normY: Float) {
         val state = _uiState.value
         if (state.displayBitmap == null) return
+        when (state.activeTool) {
+            MouzaSelectionTool.PAN_ONLY -> return
+            MouzaSelectionTool.EDIT_CORNERS -> snapNearestVertexTo(normX, normY)
+            MouzaSelectionTool.POLYGON_DRAW -> {
+                _uiState.update {
+                    val next = it.manualPolygonDraft + (normX to normY)
+                    it.copy(
+                        manualPolygonDraft = next,
+                        selectedDraftIdx = null
+                    )
+                }
+            }
+            MouzaSelectionTool.TAPE_MEASURE -> {
+                _uiState.update {
+                    it.copy(tapeDraft = it.tapeDraft + (normX to normY))
+                }
+            }
+            MouzaSelectionTool.AUTO_TAP -> onMapTap(normX, normY)
+        }
+    }
+
+    fun onMapTap(normX: Float, normY: Float, hitRadiusNorm: Float = 0.004f) {
+        val state = _uiState.value
+        if (state.displayBitmap == null) return
+        val maxHitSq = (hitRadiusNorm * hitRadiusNorm).coerceAtLeast(1e-7f)
 
         when (state.activeTool) {
             MouzaSelectionTool.PAN_ONLY -> return
             MouzaSelectionTool.EDIT_CORNERS -> {
                 // First check if user tapped near an existing corner to select it for move/delete
-                val hitVertex = findNearestVertex(state.selectedPlots, normX, normY, maxDistSq = 0.0008f)
+                val hitVertex = findNearestVertex(state.selectedPlots, normX, normY, maxDistSq = maxHitSq * 1.6f)
                 if (hitVertex != null) {
                     _uiState.update {
                         it.copy(
@@ -344,13 +369,14 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 return
             }
             MouzaSelectionTool.POLYGON_DRAW -> {
-                // If user tapped close to an existing draft point, select it for edit/delete instead of duplicating
-                val hitDraft = findNearestDraftIndex(state.manualPolygonDraft, normX, normY, maxDistSq = 0.0005f)
+                // Only select an existing draft point if tapped right on top of its screen dot
+                val hitDraft = findNearestDraftIndex(state.manualPolygonDraft, normX, normY, maxDistSq = maxHitSq)
                 if (hitDraft != null) {
                     _uiState.update {
                         it.copy(
                             selectedDraftIdx = if (it.selectedDraftIdx == hitDraft) null else hitDraft,
-                            statusMessage = "বিন্দু #${hitDraft + 1} সিলেক্ট হয়েছে — ড্র্যাগ বা ডিলিট করুন"
+                            statusMessage = if (it.selectedDraftIdx == hitDraft) null
+                            else "বিন্দু #${hitDraft + 1} সিলেক্ট হয়েছে — ড্র্যাগ বা ডিলিট করুন"
                         )
                     }
                 } else {
@@ -358,7 +384,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                         val next = it.manualPolygonDraft + (normX to normY)
                         it.copy(
                             manualPolygonDraft = next,
-                            selectedDraftIdx = next.lastIndex
+                            selectedDraftIdx = null
                         )
                     }
                 }
@@ -873,6 +899,10 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
 
     fun clearStatusMessage() {
         _uiState.update { it.copy(statusMessage = null) }
+    }
+
+    fun showStatusHint(message: String) {
+        _uiState.update { it.copy(statusMessage = message) }
     }
 
     private fun resolveFileName(uri: Uri): String {

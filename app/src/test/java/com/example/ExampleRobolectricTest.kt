@@ -76,4 +76,31 @@ class ExampleRobolectricTest {
         val centerIdx = 200 * wallIndex.gridWidth + 175
         assertTrue("Dag number interior pixel must be included in plot selection", plot.maskIndices.binarySearch(centerIdx) >= 0)
     }
+
+    @Test
+    fun mouzaPdfViewModel_pointerPlacesMultipleClosePointsAndDeletesSelected() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.example.viewmodel.MouzaPdfViewModel(app)
+
+        // Inject a synthetic rendered bitmap via reflection-free field check or test onPointerPlace after setting bitmap state
+        val stateField = com.example.viewmodel.MouzaPdfViewModel::class.java.getDeclaredField("_uiState")
+        stateField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val flow = stateField.get(vm) as kotlinx.coroutines.flow.MutableStateFlow<com.example.viewmodel.MouzaPdfUiState>
+        val bmp = Bitmap.createBitmap(200, 200, Bitmap.Config.ARGB_8888)
+        flow.value = flow.value.copy(displayBitmap = bmp, pdfPageWidthPts = 1000, pdfPageHeightPts = 1000)
+
+        // Simulate placing 4 corners of a zoomed-in small plot (< 0.01 normalized apart) using Pointer button
+        vm.onPointerPlace(0.450f, 0.450f)
+        vm.onPointerPlace(0.456f, 0.450f)
+        vm.onPointerPlace(0.456f, 0.458f)
+        vm.onPointerPlace(0.450f, 0.458f)
+
+        assertEquals(4, vm.uiState.value.manualPolygonDraft.size)
+
+        // Delete 2nd point and verify 3 points remain
+        vm.selectDraftPoint(1)
+        vm.deleteSelectedOrLastDraftPoint()
+        assertEquals(3, vm.uiState.value.manualPolygonDraft.size)
+    }
 }

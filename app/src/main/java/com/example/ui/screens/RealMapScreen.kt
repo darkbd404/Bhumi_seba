@@ -1386,7 +1386,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 if (pointers.size === 1) {
                   dragStart = { x: pt.x, y: pt.y, t: Date.now(), mv: 0 };
                   draggingPinIdx = -1;
-                  // Check if user grabbed an existing corner vertex pin
+                  // Check if user tapped/grabbed an existing corner vertex pin
                   let bestDist = 26;
                   state.points.forEach((ll, idx) => {
                     const sp = toScreen(ll);
@@ -1407,7 +1407,8 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
 
                 if (pointers.size === 1) {
                   dragStart.mv = Math.max(dragStart.mv, Math.hypot(curr.x - dragStart.x, curr.y - dragStart.y));
-                  if (draggingPinIdx >= 0) {
+                  const canDragPin = draggingPinIdx >= 0 && (!state.pointerMode || state.selectedPinIdx === draggingPinIdx);
+                  if (canDragPin) {
                     state.selectedPinIdx = draggingPinIdx;
                     state.points[draggingPinIdx] = screenToLatLon(curr.x, curr.y);
                     notifyBridge();
@@ -1507,10 +1508,10 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   const ll = screenToLatLon(rc.clientWidth / 2, rc.clientHeight / 2);
                   if (state.mode === 'circle' && state.points.length >= 2) {
                     state.points[1] = ll;
-                    state.selectedPinIdx = 1;
+                    state.selectedPinIdx = -1;
                   } else {
                     state.points.push(ll);
-                    state.selectedPinIdx = state.points.length - 1;
+                    state.selectedPinIdx = -1;
                   }
                   notifyBridge();
                   scheduleDraw();
