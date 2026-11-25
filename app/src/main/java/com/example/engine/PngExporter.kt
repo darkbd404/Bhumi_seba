@@ -500,6 +500,7 @@ object PngExporter {
         summaryHeader: String,
         summaryLine1: String,
         summaryLine2: String,
+        mouzaScale: MouzaScale = MouzaScale.SCALE_16,
         surveyorProfile: SurveyorProfile = SurveyorProfile()
     ): ExportResult = withContext(Dispatchers.IO) {
         val outBitmap = buildRealMapSheetBitmap(
@@ -512,6 +513,7 @@ object PngExporter {
             fallbackBitmap = fallbackBitmap,
             fallbackCropRect = fallbackCropRect,
             summaryHeader = summaryHeader,
+            mouzaScale = mouzaScale,
             surveyorProfile = surveyorProfile
         )
         val fileName = "Map_MouzaSheet_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.png"
@@ -528,6 +530,7 @@ object PngExporter {
         fallbackBitmap: Bitmap?,
         fallbackCropRect: RectF?,
         summaryHeader: String,
+        mouzaScale: MouzaScale = MouzaScale.SCALE_16,
         surveyorProfile: SurveyorProfile = SurveyorProfile()
     ): ExportResult = withContext(Dispatchers.IO) {
         val outBitmap = buildRealMapSheetBitmap(
@@ -540,6 +543,7 @@ object PngExporter {
             fallbackBitmap = fallbackBitmap,
             fallbackCropRect = fallbackCropRect,
             summaryHeader = summaryHeader,
+            mouzaScale = mouzaScale,
             surveyorProfile = surveyorProfile
         )
         val fileName = "Map_MouzaSheet_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.pdf"
@@ -556,6 +560,7 @@ object PngExporter {
         fallbackBitmap: Bitmap?,
         fallbackCropRect: RectF?,
         summaryHeader: String,
+        mouzaScale: MouzaScale,
         surveyorProfile: SurveyorProfile
     ): Bitmap {
         if (pointsLatLon.isEmpty()) {
@@ -567,12 +572,12 @@ object PngExporter {
                 context = context,
                 mapBitmap = rawBmp,
                 sheetTitle = summaryHeader,
-                scaleLabel = layer.titleEn,
+                scaleLabel = "${mouzaScale.ratioLabel} • ${layer.titleEn}",
                 mapSpanFeetWidth = 300.0,
                 totalSqFt = sqFt,
                 totalPerimeterFeet = 0.0,
                 plotRows = emptyList(),
-                methodExplanation = "কিভাবে পরিমাপ হলো: ${layer.titleEn} স্যাটেলাইট ম্যাপ ও WGS-84 হ্যাভারসিন জ্যামিতিক সূত্রে পরিমাপ। ১ শতাংশ = ৪৩৫.৬ বর্গফুট।",
+                methodExplanation = "কিভাবে পরিমাপ হলো: ${layer.titleEn} স্যাটেলাইট ও মৌজা স্কেল (${mouzaScale.labelBn}) অনুপাতে হিসাব। ১ শতাংশ = ৪৩৫.৬ বর্গফুট।",
                 surveyorProfile = surveyorProfile,
                 sheetCode = "BS-SAT-01"
             ).also {
@@ -627,8 +632,8 @@ object PngExporter {
         val spanY = boxMaxY - boxMinY
         val aspect = (spanY / spanX).coerceIn(0.55, 1.55)
 
-        val outW = 1480
-        val outH = (outW * aspect).roundToInt().coerceIn(720, 1720)
+        val outW = 1680
+        val outH = (outW * aspect).roundToInt().coerceIn(760, 1880)
 
         val idealZ = log2(outW / (256.0 * spanX))
         var tileZ = floor(idealZ).toInt().coerceIn(4, layer.maxNativeZoom)
@@ -637,7 +642,7 @@ object PngExporter {
         var txMax = floor(boxMaxX * nTiles).toInt().coerceIn(txMin, nTiles - 1)
         var tyMin = floor(boxMinY * nTiles).toInt().coerceIn(0, nTiles - 1)
         var tyMax = floor(boxMaxY * nTiles).toInt().coerceIn(tyMin, nTiles - 1)
-        while ((txMax - txMin + 1) * (tyMax - tyMin + 1) > 42 && tileZ > 4) {
+        while ((txMax - txMin + 1) * (tyMax - tyMin + 1) > 56 && tileZ > 4) {
             tileZ--
             nTiles = 2.0.pow(tileZ.toDouble()).toInt()
             txMin = floor(boxMinX * nTiles).toInt().coerceIn(0, nTiles - 1)
@@ -656,23 +661,50 @@ object PngExporter {
                     add(tx to ty)
                 }
             }
-        }.take(42)
+        }.take(56)
+
+        fun resolveTileUrl(tmpl: String, z: Int, x: Int, y: Int): String {
+            val shard = ((x + y) and 3).toString()
+            return tmpl
+                .replace("{s}", shard)
+                .replace("{z}", z.toString())
+                .replace("{x}", x.toString())
+                .replace("{y}", y.toString())
+        }
 
         var fetchedCount = 0
         val baseTiles = coroutineScope {
             baseTileCoords.map { (tx, ty) ->
                 async {
-                    val urlStr = layer.tileUrl
-                        .replace("{z}", tileZ.toString())
-                        .replace("{x}", tx.toString())
-                        .replace("{y}", ty.toString())
-                    Triple(tx, ty, downloadTileBitmap(urlStr))
+                    var chosenBmp = downloadTileBitmap(resolveTileUrl(layer.tileUrl, tileZ, tx, ty))
+                    var srcRect: Rect? = null
+                    if (chosenBmp == null && tileZ > 15) {
+                        for (dz in 1..3) {
+                            val pz = tileZ - dz
+                            if (pz < 4) break
+                            val pScale = 1 shl dz
+                            val ptx = tx / pScale
+                            val pty = ty / pScale
+                            val pBmp = downloadTileBitmap(resolveTileUrl(layer.tileUrl, pz, ptx, pty))
+                            if (pBmp != null) {
+                                val subW = pBmp.width / pScale
+                                val subH = pBmp.height / pScale
+                                val sx = (tx % pScale) * subW
+                                val sy = (ty % pScale) * subH
+                                srcRect = Rect(sx, sy, (sx + subW).coerceAtMost(pBmp.width), (sy + subH).coerceAtMost(pBmp.height))
+                                chosenBmp = pBmp
+                                break
+                            }
+                        }
+                    }
+                    Triple(tx, ty, chosenBmp to srcRect)
                 }
             }.awaitAll()
         }
 
-        val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG)
-        for ((tx, ty, bmp) in baseTiles) {
+        val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+        for ((tx, ty, bmpPair) in baseTiles) {
+            val (bmp, srcCrop) = bmpPair
             if (bmp != null) {
                 fetchedCount++
                 val tMinX = tx.toDouble() / nTiles
@@ -685,7 +717,7 @@ object PngExporter {
                     (((tMaxX - boxMinX) / spanX) * outW).toFloat() + 1f,
                     (((tMaxY - boxMinY) / spanY) * outH).toFloat() + 1f
                 )
-                mapLayerCanvas.drawBitmap(bmp, null, dst, tilePaint)
+                mapLayerCanvas.drawBitmap(bmp, srcCrop, dst, tilePaint)
                 bmp.recycle()
             }
         }
@@ -906,35 +938,37 @@ object PngExporter {
             avgLat,
             pointsLatLon.map { it.second }.average()
         )
+        val mouzaInchesPerimeter = totalPerimeterFt / mouzaScale.feetPerInch.coerceAtLeast(1.0)
+        val totalLinks = totalPerimeterFt / 0.66
         val areaStats = LandCalculators.fromSqFeet(sqFeet)
         val rows = listOf(
             SheetPlotRow(
-                label = "জিপিএস অবস্থান: $centerCoord",
+                label = "জিপিএস: $centerCoord",
                 detail = if (isClosedShape) {
                     String.format(
                         Locale.US,
-                        "%.2f শতক • %.2f কাঠা • %.0f Sq.Ft | বাহু: %s",
+                        "%.2f শতক • %.2f কাঠা • %.0f Sq.Ft | নকশা (${mouzaScale.ratioLabel}): %.2f\" (%.0f লিংক)",
                         areaStats.decimal, areaStats.katha, areaStats.sqFeet,
-                        edgeSummaries.joinToString(" × ").ifBlank { "-" }
+                        mouzaInchesPerimeter, totalLinks
                     )
                 } else {
                     String.format(
                         Locale.US,
-                        "মোট দৈর্ঘ্য: %.2f ফুট (%.1f মিটার) • পিন: %dটি",
-                        totalPerimeterFt, totalPerimeterFt * 0.3048, pointsLatLon.size
+                        "দৈর্ঘ্য: %.2f ফু (%.1f লিংক) • নকশা (${mouzaScale.ratioLabel}): %.2f\" • পিন: %dটি",
+                        totalPerimeterFt, totalLinks, mouzaInchesPerimeter, pointsLatLon.size
                     )
                 }
             )
         )
 
         val methodExplanation =
-            "কিভাবে পরিমাপ হলো: WGS-84 (${layer.titleEn}, জুম Z$tileZ) স্যাটেলাইট প্রজেকশনে স্পফেরিকাল পলিগন ও হ্যাভারসিন (Haversine) বাহু-দৈর্ঘ্যে হিসাব। ১ শতাংশ = ৪৩৫.৬ বর্গফুট।"
+            "কিভাবে পরিমাপ হলো: ${layer.titleEn} (Z$tileZ) স্যাটেলাইট ম্যাপ ও মৌজা স্কেল ${mouzaScale.labelBn} (${mouzaScale.ratioLabel}, ১\"=${mouzaScale.feetPerInch.toInt()} ফু) অনুপাতে হিসাব। ১ শতাংশ = ৪৩৫.৬ বর্গফুট।"
 
         return composeClassicMouzaSheet(
             context = context,
             mapBitmap = mapLayerBitmap,
             sheetTitle = summaryHeader.ifBlank { "স্যাটেলাইট মৌজা পরিমাপ শিট" },
-            scaleLabel = "${layer.titleEn} • Zoom $tileZ",
+            scaleLabel = "${mouzaScale.ratioLabel} • ${layer.titleEn} Z$tileZ",
             mapSpanFeetWidth = groundSpanFtW,
             totalSqFt = sqFeet,
             totalPerimeterFeet = totalPerimeterFt,
@@ -1326,7 +1360,7 @@ object PngExporter {
         canvas.drawText("স্কেল: 0 — ${chosenFt.toInt()} ফুট", barLeft, top + 16f, txt)
     }
 
-    private fun drawCircularBitmap(
+    internal fun drawCircularBitmap(
         canvas: Canvas,
         src: Bitmap,
         dst: RectF,
@@ -1361,7 +1395,7 @@ object PngExporter {
         canvas.drawOval(dst, ring)
     }
 
-    private fun loadSurveyorPhotoBitmap(context: Context, photoUri: String?): Bitmap? {
+    internal fun loadSurveyorPhotoBitmap(context: Context, photoUri: String?): Bitmap? {
         if (!photoUri.isNullOrBlank()) {
             runCatching {
                 context.contentResolver.openInputStream(Uri.parse(photoUri))?.use { stream ->
@@ -1374,7 +1408,7 @@ object PngExporter {
         }.getOrNull()
     }
 
-    private fun drawFittedText(
+    internal fun drawFittedText(
         canvas: Canvas,
         text: String,
         x: Float,
@@ -1392,7 +1426,7 @@ object PngExporter {
         paint.textSize = originalSize
     }
 
-    private fun drawWrappedLines(
+    internal fun drawWrappedLines(
         canvas: Canvas,
         text: String,
         x: Float,
@@ -1522,7 +1556,7 @@ object PngExporter {
         saveBitmapToPictures(context, sheet, fileName)
     }
 
-    private fun saveBitmapToPictures(context: Context, bitmap: Bitmap, fileName: String): ExportResult {
+    internal fun saveBitmapToPictures(context: Context, bitmap: Bitmap, fileName: String): ExportResult {
         val w = bitmap.width
         val h = bitmap.height
         val relativePath = "${Environment.DIRECTORY_PICTURES}/BhumiSebaDigital"
@@ -1558,7 +1592,7 @@ object PngExporter {
         }
     }
 
-    private fun saveSheetBitmapAsPdf(context: Context, bitmap: Bitmap, fileName: String): ExportResult {
+    internal fun saveSheetBitmapAsPdf(context: Context, bitmap: Bitmap, fileName: String): ExportResult {
         val w = bitmap.width
         val h = bitmap.height
         val pdfDoc = PdfDocument()

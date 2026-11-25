@@ -31,6 +31,9 @@ data class WebBrowserRoute(
 @Serializable
 data object AboutRoute
 
+@Serializable
+data class CustomKhatianRoute(val savedKhatianId: String? = null)
+
 enum class MouzaScale(
     val labelBn: String,
     val labelEn: String,
@@ -111,20 +114,30 @@ enum class MapLayerOption(
 ) {
     GOOGLE_HYBRID(
         id = "google_hybrid",
-        titleBn = "Google হাইব্রিড HD (স্যাটেলাইট + নাম)",
+        titleBn = "Google হাইব্রিড Ultra-HD (স্যাটেলাইট + নাম)",
         titleEn = "Google Hybrid HD",
-        tileUrl = "https://mt1.google.com/vt/lyrs=y&hl=bn&scale=2&x={x}&y={y}&z={z}",
-        attribution = "Map data © Google",
+        tileUrl = "https://mt{s}.google.com/vt/lyrs=y&hl=bn&scale=2&x={x}&y={y}&z={z}",
+        attribution = "Map data © Google HD",
         maxNativeZoom = 21,
         maxZoom = 23,
         supportsLabelOverlay = false
+    ),
+    GOOGLE_SATELLITE(
+        id = "google_satellite",
+        titleBn = "Google স্যাটেলাইট Ultra-HD (পরিষ্কার জমি)",
+        titleEn = "Google Sat HD",
+        tileUrl = "https://mt{s}.google.com/vt/lyrs=s&scale=2&x={x}&y={y}&z={z}",
+        attribution = "Imagery © Google HD",
+        maxNativeZoom = 21,
+        maxZoom = 23,
+        supportsLabelOverlay = true
     ),
     GOOGLE_STREETS(
         id = "google_streets",
         titleBn = "Google রাস্তা ও এলাকা HD",
         titleEn = "Google Streets HD",
-        tileUrl = "https://mt1.google.com/vt/lyrs=m&hl=bn&scale=2&x={x}&y={y}&z={z}",
-        attribution = "Map data © Google",
+        tileUrl = "https://mt{s}.google.com/vt/lyrs=m&hl=bn&scale=2&x={x}&y={y}&z={z}",
+        attribution = "Map data © Google HD",
         maxNativeZoom = 21,
         maxZoom = 23,
         supportsLabelOverlay = false
@@ -311,3 +324,47 @@ data class SavedSurveyProject(
     val mapPlotLocked: Boolean = false,
     val splitSharesCount: Int = 2
 )
+
+@Serializable
+data class KhatianOwnerEntry(
+    val id: String,
+    val name: String,
+    val fatherOrHusband: String = "",
+    val address: String = "",
+    val shareText: String = "১.০০০",
+    val shareRatio: Double = 1.0
+)
+
+@Serializable
+data class KhatianDagEntry(
+    val id: String,
+    val dagNumber: String,
+    val landClass: String = "নাল",
+    val totalDecimal: Double = 0.0,
+    val thisKhatianShare: Double = 1.0,
+    val thisKhatianDecimal: Double = 0.0,
+    val remarks: String = ""
+)
+
+@Serializable
+data class CustomKhatianDocument(
+    val id: String,
+    val khatianType: String = "আরএস (RS) খতিয়ান",
+    val division: String = "",
+    val district: String = "",
+    val upazila: String = "",
+    val mouzaName: String = "",
+    val jlNumber: String = "",
+    val khatianNumber: String = "",
+    val resaNumber: String = "",
+    val tauziNumber: String = "",
+    val owners: List<KhatianOwnerEntry> = emptyList(),
+    val dags: List<KhatianDagEntry> = emptyList(),
+    val totalKhajna: String = "",
+    val notes: String = "",
+    val referenceDocPath: String? = null,
+    val referenceDocName: String = "",
+    val referenceIsPdf: Boolean = true,
+    val updatedAtMillis: Long = System.currentTimeMillis()
+)
+

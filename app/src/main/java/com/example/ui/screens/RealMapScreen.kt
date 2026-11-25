@@ -57,6 +57,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
+import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
@@ -64,6 +68,7 @@ import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GpsFixed
+import androidx.compose.material.icons.rounded.GridOn
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
@@ -78,6 +83,7 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Straighten
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -92,6 +98,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -124,6 +131,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.engine.LandCalculators
 import com.example.model.MapLayerOption
 import com.example.model.MapMeasureCategory
+import com.example.model.MouzaScale
 import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.KhatianLookupBottomSheet
 import com.example.ui.components.NeuPillChip
@@ -163,6 +171,8 @@ fun RealMapScreen(
 
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var showLayerMenu by remember { mutableStateOf(false) }
+    var showScaleMenu by remember { mutableStateOf(false) }
+    var showOverlayBar by remember { mutableStateOf(false) }
     var mapReady by remember { mutableStateOf(false) }
     var pointerModeEnabled by remember { mutableStateOf(true) }
     var loupeEnabled by remember { mutableStateOf(true) }
@@ -179,6 +189,15 @@ fun RealMapScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { viewModel.openKhatianDocumentUri(it) }
+    }
+
+    val mouzaOverlayLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            viewModel.openMouzaOverlayDocumentUri(it)
+            showOverlayBar = true
+        }
     }
 
     BackHandler(enabled = showSavedProjectsSheet || showSaveProjectDialog || showKhatianSheet) {
@@ -320,6 +339,51 @@ fun RealMapScreen(
         if (mapReady) {
             webViewRef?.evaluateJavascript(
                 "window.bhumiMap && window.bhumiMap.setLocked(${state.isPlotLocked});",
+                null
+            )
+        }
+    }
+    LaunchedEffect(state.selectedMouzaScale, state.showMouzaGrid, mapReady) {
+        if (mapReady) {
+            val s = state.selectedMouzaScale
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.setMouzaScale('${s.ratioLabel}', ${s.feetPerInch}, ${state.showMouzaGrid});",
+                null
+            )
+        }
+    }
+    LaunchedEffect(state.hdSharpMode, mapReady) {
+        if (mapReady) {
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.setHdSharp(${state.hdSharpMode});",
+                null
+            )
+        }
+    }
+    LaunchedEffect(state.mouzaOverlayDataUrl, mapReady) {
+        if (mapReady) {
+            val data = state.mouzaOverlayDataUrl
+            if (data.isNullOrBlank()) {
+                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.clearMouzaOverlay();", null)
+            } else {
+                val jsonUrl = JSONObject.quote(data)
+                webViewRef?.evaluateJavascript(
+                    "window.bhumiMap && window.bhumiMap.setMouzaOverlayImage($jsonUrl, ${state.mouzaOverlayWidthMeters}, ${state.mouzaOverlayOpacity}, ${state.mouzaOverlayRotationDeg}, ${state.mouzaOverlayLocked});",
+                    null
+                )
+            }
+        }
+    }
+    LaunchedEffect(
+        state.mouzaOverlayWidthMeters,
+        state.mouzaOverlayOpacity,
+        state.mouzaOverlayRotationDeg,
+        state.mouzaOverlayLocked,
+        mapReady
+    ) {
+        if (mapReady && !state.mouzaOverlayDataUrl.isNullOrBlank()) {
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.updateMouzaOverlayParams(${state.mouzaOverlayWidthMeters}, ${state.mouzaOverlayOpacity}, ${state.mouzaOverlayRotationDeg}, ${state.mouzaOverlayLocked});",
                 null
             )
         }
@@ -570,6 +634,62 @@ fun RealMapScreen(
                         onClick = { viewModel.toggleLabelsOverlay() }
                     )
                 }
+                Box {
+                    UtilityBarChip(
+                        label = state.selectedMouzaScale.ratioLabel,
+                        icon = Icons.Rounded.Tune,
+                        selected = state.showMouzaGrid || state.mouzaOverlayDataUrl != null,
+                        testTag = "map_mouza_scale_chip",
+                        onClick = { showScaleMenu = true }
+                    )
+                    DropdownMenu(
+                        expanded = showScaleMenu,
+                        onDismissRequest = { showScaleMenu = false }
+                    ) {
+                        MouzaScale.entries.forEach { sc ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "${sc.labelBn} (${sc.ratioLabel})",
+                                        fontWeight = if (sc == state.selectedMouzaScale) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (sc == state.selectedMouzaScale) EmeraldPrimary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = {
+                                    viewModel.selectMouzaScale(sc)
+                                    showScaleMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+                UtilityBarChip(
+                    label = "চেইন গ্রিড",
+                    icon = Icons.Rounded.GridOn,
+                    selected = state.showMouzaGrid,
+                    testTag = "map_mouza_grid_toggle",
+                    onClick = { viewModel.toggleMouzaGrid() }
+                )
+                UtilityBarChip(
+                    label = "নকশা ওভারলে",
+                    icon = Icons.Rounded.AddPhotoAlternate,
+                    selected = showOverlayBar || state.mouzaOverlayDataUrl != null,
+                    testTag = "map_mouza_overlay_toggle",
+                    onClick = {
+                        if (state.mouzaOverlayDataUrl == null) {
+                            mouzaOverlayLauncher.launch(arrayOf("application/pdf", "image/*"))
+                        } else {
+                            showOverlayBar = !showOverlayBar
+                        }
+                    }
+                )
+                UtilityBarChip(
+                    label = "HD শার্প",
+                    icon = Icons.Rounded.AutoFixHigh,
+                    selected = state.hdSharpMode,
+                    testTag = "map_hd_sharp_toggle",
+                    onClick = { viewModel.toggleHdSharpMode() }
+                )
                 UtilityBarChip(
                     label = state.selectedLayer.titleEn,
                     icon = Icons.Rounded.Layers,
@@ -859,6 +979,115 @@ fun RealMapScreen(
                 "পিন #${state.pointCount}"
             }
 
+            // Docked Old Mouza Overlay Alignment Panel (below map, keeps Google Satellite 100% clear)
+            AnimatedVisibility(
+                visible = showOverlayBar && state.mouzaOverlayDataUrl != null,
+                enter = expandVertically(tween(240)) + fadeIn(tween(200)),
+                exit = shrinkVertically(tween(200)) + fadeOut(tween(150)),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neuSurface(cornerRadius = 18.dp, elevation = 6.dp)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "পুরাতন মৌজা ওভারলে (${state.selectedMouzaScale.ratioLabel})",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = EmeraldPrimary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (state.mouzaOverlayPageCount > 1) {
+                                IconButton(
+                                    onClick = { viewModel.selectMouzaOverlayPage(state.mouzaOverlayCurrentPage - 1) },
+                                    enabled = state.mouzaOverlayCurrentPage > 0,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Rounded.ChevronLeft, contentDescription = "Prev Overlay Page", modifier = Modifier.size(18.dp))
+                                }
+                                Text("${state.mouzaOverlayCurrentPage + 1}/${state.mouzaOverlayPageCount}", style = MaterialTheme.typography.labelSmall)
+                                IconButton(
+                                    onClick = { viewModel.selectMouzaOverlayPage(state.mouzaOverlayCurrentPage + 1) },
+                                    enabled = state.mouzaOverlayCurrentPage < state.mouzaOverlayPageCount - 1,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Rounded.ChevronRight, contentDescription = "Next Overlay Page", modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            TextButton(
+                                onClick = { webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.centerMouzaOverlayHere();", null) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("কেন্দ্রে আনুন", style = MaterialTheme.typography.labelSmall)
+                            }
+                            IconButton(
+                                onClick = { viewModel.toggleMouzaOverlayLock() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (state.mouzaOverlayLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                                    contentDescription = "Lock Overlay",
+                                    tint = if (state.mouzaOverlayLocked) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { mouzaOverlayLauncher.launch(arrayOf("application/pdf", "image/*")) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = "Change Mouza Overlay", modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    viewModel.clearMouzaOverlay()
+                                    showOverlayBar = false
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Remove Overlay", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("স্বচ্ছতা", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(46.dp))
+                        Slider(
+                            value = state.mouzaOverlayOpacity,
+                            onValueChange = { viewModel.setMouzaOverlayOpacity(it) },
+                            valueRange = 0.08f..0.95f,
+                            modifier = Modifier.weight(1f).height(24.dp)
+                        )
+                        Text("আকার", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(36.dp))
+                        Slider(
+                            value = state.mouzaOverlayWidthMeters.toFloat(),
+                            onValueChange = { viewModel.setMouzaOverlayWidthMeters(it.toDouble()) },
+                            valueRange = 60f..1800f,
+                            modifier = Modifier.weight(1f).height(24.dp)
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("ঘূর্ণন ${state.mouzaOverlayRotationDeg.toInt()}°", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(62.dp))
+                        Slider(
+                            value = state.mouzaOverlayRotationDeg,
+                            onValueChange = { viewModel.setMouzaOverlayRotation(it) },
+                            valueRange = 0f..360f,
+                            modifier = Modifier.weight(1f).height(24.dp)
+                        )
+                    }
+                }
+            }
+
             AnimatedVisibility(
                 visible = showNudgePad,
                 enter = expandVertically(tween(240)) + fadeIn(tween(200)),
@@ -937,11 +1166,13 @@ fun RealMapScreen(
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold
                             )
+                            val mouzaInchEq = perimeterFeet / state.selectedMouzaScale.feetPerInch.coerceAtLeast(1.0)
+                            val linksEq = perimeterFeet / 0.66
                             Text(
                                 text = String.format(
                                     Locale.US,
-                                    "%.0f বর্গফুট | পরিধি: %.1f ফু (%.1f মি) | পয়েন্ট: %d",
-                                    areaRes.sqFeet, perimeterFeet, state.perimeterMeters, state.pointCount
+                                    "%.0f বর্গফুট | পরিধি: %.1f ফু (%.0f লিংক) | স্কেল %s: %.2f\"",
+                                    areaRes.sqFeet, perimeterFeet, linksEq, state.selectedMouzaScale.ratioLabel, mouzaInchEq
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1423,7 +1654,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
               const rc = document.getElementById('rc');
               const attrEl = document.getElementById('attr');
               const ctx = rc.getContext('2d');
-              const dpr = () => Math.min(window.devicePixelRatio || 1, 3.0);
+              const dpr = () => Math.max(Math.min(window.devicePixelRatio || 1, 3.0), 2.0);
 
               // Mercator projection helpers [0..1]
               function ll2m(lat, lon) {
@@ -1471,7 +1702,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
 
               const state = {
                 center: ll2m(23.8103, 90.4125),
-                z: 16,
+                z: 17,
                 mode: 'area',
                 points: [],
                 selectedPinIdx: -1,
@@ -1480,6 +1711,19 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 loupeEnabled: true,
                 loupeZoom: 3.0,
                 loupeAnim: 1.0,
+                hdSharp: true,
+                mouzaRatio: '1:3,960',
+                mouzaFeetPerInch: 330.0,
+                showMouzaGrid: false,
+                overlay: {
+                  img: null,
+                  loaded: false,
+                  center: null,
+                  widthM: 450,
+                  opacity: 0.48,
+                  rotDeg: 0,
+                  locked: false
+                },
                 userLoc: null
               };
 
@@ -1498,19 +1742,27 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 if (TC.has(k)) return TC.get(k);
                 const entry = { img: new Image(), state: 'loading' };
                 TC.set(k, entry);
-                if (TC.size > 640) {
+                if (TC.size > 900) {
                   const first = TC.keys().next().value;
                   TC.delete(first);
                 }
+                const shard = ((x + y) & 3).toString();
                 entry.img.onload = () => { entry.state = 'ok'; scheduleDraw(); };
-                entry.img.onerror = () => { entry.state = 'err'; };
-                entry.img.src = urlTmpl.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+                entry.img.onerror = () => {
+                  entry.state = 'err';
+                  if (z > 14) {
+                    const pz = Math.max(12, z - 2);
+                    const pScale = 1 << (z - pz);
+                    fetchTile(urlTmpl, keyPrefix, pz, Math.floor(x / pScale), Math.floor(y / pScale));
+                  }
+                };
+                entry.img.src = urlTmpl.replace('{s}', shard).replace('{z}', z).replace('{x}', x).replace('{y}', y);
                 return entry;
               }
 
               function drawTileLayer(urlTmpl, keyPrefix, maxNative) {
                 const w = rc.clientWidth, h = rc.clientHeight;
-                const zt = Math.max(1, Math.min(maxNative, Math.round(state.z + 0.35)));
+                const zt = Math.max(1, Math.min(maxNative, Math.round(state.z + 0.45)));
                 const wsView = 256 * Math.pow(2, state.z);
                 const tilePxOnScreen = 256 * Math.pow(2, state.z - zt);
                 const n = Math.pow(2, zt);
@@ -1532,10 +1784,15 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
 
                     const tile = fetchTile(urlTmpl, keyPrefix, zt, wrapX, ty);
                     if (tile.state === 'ok') {
-                      ctx.drawImage(tile.img, sx, sy, tilePxOnScreen + 0.65, tilePxOnScreen + 0.65);
+                      ctx.drawImage(tile.img, sx, sy, tilePxOnScreen + 0.75, tilePxOnScreen + 0.75);
                     } else {
-                      // Parent zoom fallback so map is never blank while loading or zoomed deep!
-                      for (let dz = 1; dz <= 4 && (zt - dz) >= 1; dz++) {
+                      // Auto pre-fetch crisp parent fallback so zoomed rural plots never vanish!
+                      if (zt >= 18) {
+                        const fz = zt - 2;
+                        const fs = 4;
+                        fetchTile(urlTmpl, keyPrefix, fz, Math.floor(wrapX / fs), Math.floor(ty / fs));
+                      }
+                      for (let dz = 1; dz <= 5 && (zt - dz) >= 1; dz++) {
                         const pz = zt - dz;
                         const pScale = 1 << dz;
                         const ptx = Math.floor(wrapX / pScale);
@@ -1548,13 +1805,64 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                           const subW = iw / pScale, subH = ih / pScale;
                           const subX = (wrapX % pScale) * subW;
                           const subY = (ty % pScale) * subH;
-                          ctx.drawImage(pTile.img, subX, subY, subW, subH, sx, sy, tilePxOnScreen + 0.65, tilePxOnScreen + 0.65);
+                          ctx.drawImage(pTile.img, subX, subY, subW, subH, sx, sy, tilePxOnScreen + 0.75, tilePxOnScreen + 0.75);
                           break;
                         }
                       }
                     }
                   }
                 }
+              }
+
+              function drawMouzaOverlay(w, h) {
+                const ov = state.overlay;
+                if (!ov.img || !ov.loaded || !ov.center) return;
+                const centerLL = m2ll(ov.center.x, ov.center.y);
+                const mpp = 156543.03392 * Math.cos(centerLL.lat * Math.PI / 180) / Math.pow(2, state.z);
+                const ws = 256 * Math.pow(2, state.z);
+                const sx = (ov.center.x - state.center.x) * ws + w / 2;
+                const sy = (ov.center.y - state.center.y) * ws + h / 2;
+                const drawW = ov.widthM / Math.max(0.01, mpp);
+                const drawH = drawW * (ov.img.height / Math.max(1, ov.img.width));
+                ctx.save();
+                ctx.globalAlpha = ov.opacity;
+                ctx.translate(sx, sy);
+                ctx.rotate(ov.rotDeg * Math.PI / 180);
+                ctx.drawImage(ov.img, -drawW / 2, -drawH / 2, drawW, drawH);
+                if (!ov.locked) {
+                  ctx.globalAlpha = 0.85;
+                  ctx.strokeStyle = '#ffd54f';
+                  ctx.lineWidth = 2;
+                  ctx.setLineDash([8, 6]);
+                  ctx.strokeRect(-drawW / 2, -drawH / 2, drawW, drawH);
+                }
+                ctx.restore();
+              }
+
+              function drawMouzaGrid(w, h) {
+                if (!state.showMouzaGrid) return;
+                const centerLL = m2ll(state.center.x, state.center.y);
+                const mpp = 156543.03392 * Math.cos(centerLL.lat * Math.PI / 180) / Math.pow(2, state.z);
+                const fpp = mpp * 3.280839895;
+                // Choose 1 Chain (66 ft) or 1 Mouza Inch (330/165/82.5/66 ft) depending on zoom
+                let stepFt = 66.0;
+                if (stepFt / fpp < 46) stepFt = state.mouzaFeetPerInch;
+                const stepPx = stepFt / fpp;
+                if (stepPx < 24 || stepPx > 900) return;
+
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255, 213, 79, 0.36)';
+                ctx.lineWidth = 1.1;
+                const startX = (w / 2) % stepPx;
+                const startY = (h / 2) % stepPx;
+                for (let x = startX; x < w; x += stepPx) {
+                  ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+                }
+                for (let y = startY; y < h; y += stepPx) {
+                  ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+                }
+                ctx.restore();
+                drawLabel('গ্রিড: ' + stepFt.toFixed(0) + "' (" + state.mouzaRatio + ')', w - 102, 20, 'rgba(15, 107, 84, 0.88)', '#fad165');
               }
 
               function toScreen(pt) {
@@ -1616,11 +1924,19 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
               }
 
               function drawMapContent(w, h, includeTextLabels) {
+                ctx.save();
+                if (state.hdSharp) {
+                  ctx.filter = 'contrast(1.12) saturate(1.10) brightness(1.02)';
+                }
                 drawTileLayer(tileUrl, tileUrl, maxNativeZ);
                 if (showEsriOverlay) {
                   drawTileLayer(ROADS_URL, 'esri_roads', 18);
                   drawTileLayer(PLACES_URL, 'esri_places', 18);
                 }
+                ctx.restore();
+
+                drawMouzaOverlay(w, h);
+                if (includeTextLabels) drawMouzaGrid(w, h);
 
                 const pts = state.points;
                 const spts = pts.map(toScreen);
@@ -2012,6 +2328,49 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 setLocked: (locked) => {
                   state.locked = !!locked;
                   if (state.locked) state.selectedPinIdx = -1;
+                  scheduleDraw();
+                },
+                setMouzaScale: (ratio, fpi, showGrid) => {
+                  state.mouzaRatio = ratio || '1:3,960';
+                  state.mouzaFeetPerInch = fpi || 330.0;
+                  state.showMouzaGrid = !!showGrid;
+                  scheduleDraw();
+                },
+                setHdSharp: (enabled) => {
+                  state.hdSharp = !!enabled;
+                  scheduleDraw();
+                },
+                setMouzaOverlayImage: (dataUrl, widthM, opacity, rotDeg, locked) => {
+                  const img = new Image();
+                  img.onload = () => {
+                    state.overlay.img = img;
+                    state.overlay.loaded = true;
+                    if (!state.overlay.center) {
+                      state.overlay.center = { x: state.center.x, y: state.center.y };
+                    }
+                    state.overlay.widthM = widthM || 450;
+                    state.overlay.opacity = opacity || 0.48;
+                    state.overlay.rotDeg = rotDeg || 0;
+                    state.overlay.locked = !!locked;
+                    scheduleDraw();
+                  };
+                  img.src = dataUrl;
+                },
+                updateMouzaOverlayParams: (widthM, opacity, rotDeg, locked) => {
+                  state.overlay.widthM = widthM || 450;
+                  state.overlay.opacity = opacity || 0.48;
+                  state.overlay.rotDeg = rotDeg || 0;
+                  state.overlay.locked = !!locked;
+                  scheduleDraw();
+                },
+                centerMouzaOverlayHere: () => {
+                  state.overlay.center = { x: state.center.x, y: state.center.y };
+                  scheduleDraw();
+                },
+                clearMouzaOverlay: () => {
+                  state.overlay.img = null;
+                  state.overlay.loaded = false;
+                  state.overlay.center = null;
                   scheduleDraw();
                 },
                 addPoint: (lat, lon) => {

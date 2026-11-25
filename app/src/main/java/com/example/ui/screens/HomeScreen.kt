@@ -99,6 +99,7 @@ fun HomeScreen(
     onOpenRealMap: () -> Unit,
     onOpenServices: () -> Unit,
     onOpenTools: (initialTab: String) -> Unit,
+    onOpenCustomKhatian: () -> Unit = {},
     onOpenAiAssistant: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenUrlInApp: (url: String, title: String) -> Unit,
@@ -356,6 +357,18 @@ fun HomeScreen(
                                 testTag = "card_real_map",
                                 modifier = m,
                                 onClick = onOpenRealMap
+                            )
+                        },
+                        { m ->
+                            NeuFeatureCard(
+                                title = "কাস্টম খতিয়ান তৈরি",
+                                subtitle = "অরিজিনাল দেখে ম্যানুয়ালি খতিয়ান ও PNG/PDF সেভ",
+                                icon = Icons.Rounded.Description,
+                                accentColor = Color(0xFF00796B),
+                                badge = "Khatian",
+                                testTag = "card_custom_khatian",
+                                modifier = m,
+                                onClick = onOpenCustomKhatian
                             )
                         },
                         { m ->

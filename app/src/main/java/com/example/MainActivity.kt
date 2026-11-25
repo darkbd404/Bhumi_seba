@@ -81,6 +81,7 @@ import com.example.data.AppPreferences
 import com.example.firebase.configureAppCheck
 import com.example.model.AboutRoute
 import com.example.model.AiAssistantRoute
+import com.example.model.CustomKhatianRoute
 import com.example.model.HomeRoute
 import com.example.model.MouzaPdfRoute
 import com.example.model.RealMapRoute
@@ -93,6 +94,7 @@ import com.example.model.WebBrowserRoute
 import com.example.ui.components.ExitConfirmationDialog
 import com.example.ui.screens.AboutScreen
 import com.example.ui.screens.AiAssistantScreen
+import com.example.ui.screens.CustomKhatianScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.InAppBrowserScreen
 import com.example.ui.screens.MouzaPdfScreen
@@ -328,6 +330,7 @@ private fun BhumiSurveyApp(
                             onOpenRealMap = { navigateTopLevel(RealMapRoute()) },
                             onOpenServices = { navigateTopLevel(ServicesRoute) },
                             onOpenTools = { tab -> navController.navigate(ToolsRoute(initialTab = tab)) },
+                            onOpenCustomKhatian = { navController.navigate(CustomKhatianRoute()) },
                             onOpenAiAssistant = { navController.navigate(AiAssistantRoute) },
                             onOpenAbout = { navController.navigate(AboutRoute) },
                             onOpenUrlInApp = { url, title ->
@@ -397,6 +400,14 @@ private fun BhumiSurveyApp(
                         InAppBrowserScreen(
                             initialUrl = args.url,
                             initialTitle = args.title,
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable<CustomKhatianRoute> { entry ->
+                        val args = entry.toRoute<CustomKhatianRoute>()
+                        CustomKhatianScreen(
+                            savedKhatianId = args.savedKhatianId,
                             onNavigateBack = { navController.popBackStack() }
                         )
                     }

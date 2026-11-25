@@ -437,6 +437,92 @@ class ExampleRobolectricTest {
         assertTrue(html.contains("ভূমি সেবা ডিজিটাল"))
         assertTrue(html.contains("leaflet"))
     }
+
+    @Test
+    fun realMapViewModel_mouzaScaleGridAndHdSharpModesWork() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.example.viewmodel.RealMapViewModel(app)
+
+        assertEquals(com.example.model.MouzaScale.SCALE_16, vm.uiState.value.selectedMouzaScale)
+        assertTrue(vm.uiState.value.hdSharpMode)
+        assertTrue(!vm.uiState.value.showMouzaGrid)
+
+        vm.selectMouzaScale(com.example.model.MouzaScale.SCALE_32)
+        assertEquals(com.example.model.MouzaScale.SCALE_32, vm.uiState.value.selectedMouzaScale)
+
+        vm.toggleMouzaGrid()
+        assertTrue(vm.uiState.value.showMouzaGrid)
+
+        vm.toggleHdSharpMode()
+        assertTrue(!vm.uiState.value.hdSharpMode)
+
+        vm.setMouzaOverlayOpacity(0.75f)
+        vm.setMouzaOverlayRotation(375f)
+        vm.setMouzaOverlayWidthMeters(600.0)
+        vm.toggleMouzaOverlayLock()
+
+        assertEquals(0.75f, vm.uiState.value.mouzaOverlayOpacity, 0.001f)
+        assertEquals(15f, vm.uiState.value.mouzaOverlayRotationDeg, 0.001f)
+        assertEquals(600.0, vm.uiState.value.mouzaOverlayWidthMeters, 0.001)
+        assertTrue(vm.uiState.value.mouzaOverlayLocked)
+    }
+
+    @Test
+    fun customKhatianViewModel_ownersDagsSaveLoadAndSheetRender() = runTest {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.example.viewmodel.CustomKhatianViewModel(app)
+
+        vm.updateHeaderFields(
+            khatianType = "বিএস (BS) খতিয়ান",
+            division = "ঢাকা",
+            district = "গাজীপুর",
+            upazila = "সদর",
+            mouzaName = "পুবাইল",
+            jlNumber = "৮৫",
+            khatianNumber = "৪১২",
+            totalKhajna = "১২০ টাকা"
+        )
+        vm.addOrUpdateOwner(
+            editId = null,
+            name = "রফিকুল ইসলাম",
+            fatherOrHusband = "মৃত করিম উদ্দিন",
+            address = "পুবাইল",
+            shareText = "৮ আনা",
+            shareRatio = 0.5
+        )
+        vm.addOrUpdateDag(
+            editId = null,
+            dagNumber = "১০৪২",
+            landClass = "নাল",
+            totalDecimal = 40.0,
+            thisKhatianShare = 0.5,
+            explicitThisKhatianDecimal = null,
+            remarks = "হাল"
+        )
+        assertEquals(20.0, vm.totalKhatianDecimal(), 0.001)
+
+        val prefs = com.example.data.AppPreferences(app)
+        val doc = vm.uiState.value.document
+        prefs.saveCustomKhatian(doc)
+        val saved = prefs.getCustomKhatianById(doc.id)
+        assertEquals("৪১২", saved?.khatianNumber)
+        assertEquals(1, saved?.owners?.size)
+        assertEquals(1, saved?.dags?.size)
+
+        vm.createNewBlankKhatian()
+        assertEquals("", vm.uiState.value.document.khatianNumber)
+        if (saved != null) {
+            vm.loadCustomKhatian(saved)
+        }
+
+        val bmp = com.example.engine.KhatianSheetExporter.buildKhatianSheetBitmap(
+            context = app,
+            doc = doc,
+            surveyorProfile = com.example.model.SurveyorProfile()
+        )
+        assertTrue("Expected wide ledger bitmap, got ${bmp.width}x${bmp.height}", bmp.width >= 1800 && bmp.height >= 1200)
+        bmp.recycle()
+    }
 }
 
 

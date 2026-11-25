@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.model.CustomKhatianDocument
 import com.example.model.SavedMeasurementRecord
 import com.example.model.SavedSurveyProject
 import com.example.model.SurveyorProfile
@@ -30,6 +31,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_SAVED_PROJECTS = stringPreferencesKey("saved_survey_projects")
         private val KEY_LAST_EXPORT_PATH = stringPreferencesKey("last_export_path")
         private val KEY_SURVEYOR_PROFILE = stringPreferencesKey("surveyor_profile_json")
+        private val KEY_CUSTOM_KHATIANS = stringPreferencesKey("custom_khatians_json")
     }
 
     val isDarkModeFlow: Flow<Boolean?> = context.dataStore.data.map { prefs ->
@@ -60,6 +62,11 @@ class AppPreferences(private val context: Context) {
     val savedProjectsFlow: Flow<List<SavedSurveyProject>> = context.dataStore.data.map { prefs ->
         val raw = prefs[KEY_SAVED_PROJECTS] ?: return@map emptyList()
         runCatching { json.decodeFromString<List<SavedSurveyProject>>(raw) }.getOrDefault(emptyList())
+    }
+
+    val customKhatiansFlow: Flow<List<CustomKhatianDocument>> = context.dataStore.data.map { prefs ->
+        val raw = prefs[KEY_CUSTOM_KHATIANS] ?: return@map emptyList()
+        runCatching { json.decodeFromString<List<CustomKhatianDocument>>(raw) }.getOrDefault(emptyList())
     }
 
     suspend fun setDarkMode(enabled: Boolean) {
@@ -126,6 +133,29 @@ class AppPreferences(private val context: Context) {
         }
         orphanDocPath?.let { path ->
             runCatching { File(path).delete() }
+        }
+    }
+
+    suspend fun saveCustomKhatian(doc: CustomKhatianDocument) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[KEY_CUSTOM_KHATIANS]?.let {
+                runCatching { json.decodeFromString<List<CustomKhatianDocument>>(it) }.getOrNull()
+            } ?: emptyList()
+            val updated = (listOf(doc) + current.filterNot { it.id == doc.id }).take(60)
+            prefs[KEY_CUSTOM_KHATIANS] = json.encodeToString(updated)
+        }
+    }
+
+    suspend fun getCustomKhatianById(id: String): CustomKhatianDocument? {
+        return customKhatiansFlow.first().firstOrNull { it.id == id }
+    }
+
+    suspend fun deleteCustomKhatian(id: String) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[KEY_CUSTOM_KHATIANS]?.let {
+                runCatching { json.decodeFromString<List<CustomKhatianDocument>>(it) }.getOrNull()
+            } ?: emptyList()
+            prefs[KEY_CUSTOM_KHATIANS] = json.encodeToString(current.filterNot { it.id == id })
         }
     }
 

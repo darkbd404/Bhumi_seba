@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppPreferences
@@ -14,10 +15,12 @@ import com.example.engine.PngExporter
 import com.example.model.KhatianRecord
 import com.example.model.MapLayerOption
 import com.example.model.MapMeasureCategory
+import com.example.model.MouzaScale
 import com.example.model.SavedMeasurementRecord
 import com.example.model.SavedProjectType
 import com.example.model.SavedSurveyProject
 import com.example.model.SerializableLatLon
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +68,19 @@ data class RealMapUiState(
     val khatianRecords: List<KhatianRecord> = emptyList(),
     val activeSearchTarget: Pair<String, String>? = null, // (khatianNo, dagNo)
     val isPlotLocked: Boolean = false,
+    val selectedMouzaScale: MouzaScale = MouzaScale.SCALE_16,
+    val showMouzaGrid: Boolean = false,
+    val hdSharpMode: Boolean = true,
+    val mouzaOverlayDocName: String = "",
+    val mouzaOverlayDataUrl: String? = null,
+    val mouzaOverlayIsPdf: Boolean = false,
+    val mouzaOverlayPageCount: Int = 0,
+    val mouzaOverlayCurrentPage: Int = 0,
+    val mouzaOverlayOpacity: Float = 0.48f,
+    val mouzaOverlayWidthMeters: Double = 450.0,
+    val mouzaOverlayRotationDeg: Float = 0f,
+    val mouzaOverlayLocked: Boolean = false,
+    val isLoadingMouzaOverlay: Boolean = false,
     val statusMessage: String? = null
 )
 
@@ -74,6 +90,8 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
     private val prefs = AppPreferences(appContext)
     private var activeKhatianFile: File? = null
     private var activeKhatianIsPdf: Boolean = true
+    private var activeMouzaOverlayFile: File? = null
+    private var activeMouzaOverlayIsPdf: Boolean = false
 
     private val _uiState = MutableStateFlow(RealMapUiState())
     val uiState: StateFlow<RealMapUiState> = _uiState.asStateFlow()
@@ -94,6 +112,35 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleLabelsOverlay() {
         _uiState.update { it.copy(showLabelsOverlay = !it.showLabelsOverlay) }
+    }
+
+    fun selectMouzaScale(scale: MouzaScale) {
+        _uiState.update {
+            it.copy(
+                selectedMouzaScale = scale,
+                statusMessage = "মৌজা স্কেল: ${scale.labelBn} (${scale.ratioLabel}) — ১\" = ${scale.feetPerInch.toInt()} ফুট"
+            )
+        }
+    }
+
+    fun toggleMouzaGrid() {
+        _uiState.update {
+            val next = !it.showMouzaGrid
+            it.copy(
+                showMouzaGrid = next,
+                statusMessage = if (next) "মৌজা চেইন/স্কেল গ্রিড চালু হয়েছে" else "মৌজা গ্রিড বন্ধ করা হয়েছে"
+            )
+        }
+    }
+
+    fun toggleHdSharpMode() {
+        _uiState.update {
+            val next = !it.hdSharpMode
+            it.copy(
+                hdSharpMode = next,
+                statusMessage = if (next) "Google/Satellite Ultra-HD শার্পনেস চালু" else "স্বাভাবিক রেন্ডারিং মোড"
+            )
+        }
     }
 
     fun selectCategory(category: MapMeasureCategory) {
@@ -187,6 +234,7 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
             itemCount = pointsLatLon.size,
             mapLayerId = state.selectedLayer.id,
             showLabelsOverlay = state.showLabelsOverlay,
+            mouzaScaleName = state.selectedMouzaScale.name,
             mapCategoryId = modeId.ifBlank { state.selectedCategory.id },
             mapCenterLat = centerLat,
             mapCenterLon = centerLon,
@@ -224,6 +272,7 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
     fun restoreMapProject(project: SavedSurveyProject) {
         val layer = MapLayerOption.entries.find { it.id == project.mapLayerId } ?: MapLayerOption.GOOGLE_HYBRID
         val cat = MapMeasureCategory.entries.find { it.id == project.mapCategoryId } ?: MapMeasureCategory.AREA
+        val scale = runCatching { MouzaScale.valueOf(project.mouzaScaleName) }.getOrDefault(MouzaScale.SCALE_16)
         viewModelScope.launch {
             val khatianFile = project.khatianFilePath?.let { File(it) }?.takeIf { it.exists() }
             activeKhatianFile = khatianFile
@@ -249,6 +298,7 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
                     activeProjectId = project.id,
                     selectedLayer = layer,
                     showLabelsOverlay = project.showLabelsOverlay,
+                    selectedMouzaScale = scale,
                     selectedCategory = cat,
                     splitSharesCount = project.splitSharesCount.coerceIn(2, 20),
                     pendingRestoreProject = project,
@@ -381,6 +431,7 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
                         fallbackBitmap = fallbackBitmap,
                         fallbackCropRect = cropRectNormalized,
                         summaryHeader = "ভূমি সেবা ডিজিটাল • ${state.selectedCategory.titleBn}",
+                        mouzaScale = state.selectedMouzaScale,
                         surveyorProfile = profile
                     )
                 } else {
@@ -396,6 +447,7 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
                         summaryHeader = "ভূমি সেবা ডিজিটাল • ${state.selectedCategory.titleBn}",
                         summaryLine1 = line1,
                         summaryLine2 = line2,
+                        mouzaScale = state.selectedMouzaScale,
                         surveyorProfile = profile
                     )
                 }
@@ -562,6 +614,129 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         return "khatian.pdf"
+    }
+
+    fun openMouzaOverlayDocumentUri(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingMouzaOverlay = true, statusMessage = "মৌজা নকশা ওভারলে লোড হচ্ছে...") }
+            try {
+                val displayName = resolveFileName(uri)
+                val mime = appContext.contentResolver.getType(uri)
+                val info = MouzaPdfEngine.copyDocumentToCache(
+                    context = appContext,
+                    uri = uri,
+                    fileName = displayName,
+                    mimeType = mime,
+                    storageDirName = "active_work_docs",
+                    cachePrefix = "active_map_mouza_"
+                )
+                activeMouzaOverlayFile = info.tempFile
+                activeMouzaOverlayIsPdf = info.isPdf
+                val rendered = MouzaPdfEngine.renderBaseDocument(
+                    appContext, info.tempFile, info.isPdf, 0, ultraHd = false
+                )
+                val dataUrl = encodeBitmapToDataUrl(rendered.bitmap)
+                rendered.bitmap.recycle()
+                _uiState.update {
+                    it.copy(
+                        isLoadingMouzaOverlay = false,
+                        mouzaOverlayDocName = info.fileName,
+                        mouzaOverlayDataUrl = dataUrl,
+                        mouzaOverlayIsPdf = info.isPdf,
+                        mouzaOverlayPageCount = info.pageCount,
+                        mouzaOverlayCurrentPage = 0,
+                        mouzaOverlayLocked = false,
+                        statusMessage = "নকশা ওভারলে যুক্ত হয়েছে — স্বচ্ছতা ও আকার সেট করে Google ম্যাপে মিলিয়ে নিন"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoadingMouzaOverlay = false,
+                        statusMessage = "নকশা ওভারলে খোলা যায়নি: ${e.localizedMessage ?: "ত্রুটি"}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectMouzaOverlayPage(pageIndex: Int) {
+        val file = activeMouzaOverlayFile ?: return
+        if (!activeMouzaOverlayIsPdf || pageIndex !in 0 until _uiState.value.mouzaOverlayPageCount) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingMouzaOverlay = true) }
+            runCatching {
+                val rendered = MouzaPdfEngine.renderBaseDocument(appContext, file, true, pageIndex, ultraHd = false)
+                val dataUrl = encodeBitmapToDataUrl(rendered.bitmap)
+                rendered.bitmap.recycle()
+                dataUrl
+            }.onSuccess { dataUrl ->
+                _uiState.update {
+                    it.copy(
+                        isLoadingMouzaOverlay = false,
+                        mouzaOverlayCurrentPage = pageIndex,
+                        mouzaOverlayDataUrl = dataUrl
+                    )
+                }
+            }.onFailure {
+                _uiState.update { it.copy(isLoadingMouzaOverlay = false) }
+            }
+        }
+    }
+
+    fun setMouzaOverlayOpacity(opacity: Float) {
+        _uiState.update { it.copy(mouzaOverlayOpacity = opacity.coerceIn(0.05f, 0.95f)) }
+    }
+
+    fun setMouzaOverlayWidthMeters(widthMeters: Double) {
+        _uiState.update { it.copy(mouzaOverlayWidthMeters = widthMeters.coerceIn(40.0, 4000.0)) }
+    }
+
+    fun setMouzaOverlayRotation(deg: Float) {
+        val wrapped = ((deg % 360f) + 360f) % 360f
+        _uiState.update { it.copy(mouzaOverlayRotationDeg = wrapped) }
+    }
+
+    fun toggleMouzaOverlayLock() {
+        _uiState.update {
+            val next = !it.mouzaOverlayLocked
+            it.copy(
+                mouzaOverlayLocked = next,
+                statusMessage = if (next) "মৌজা নকশা ওভারলে লক করা হয়েছে — এখন পিন বসাতে পারবেন"
+                else "মৌজা নকশা ওভারলে আনলক হয়েছে"
+            )
+        }
+    }
+
+    fun clearMouzaOverlay() {
+        activeMouzaOverlayFile = null
+        _uiState.update {
+            it.copy(
+                mouzaOverlayDocName = "",
+                mouzaOverlayDataUrl = null,
+                mouzaOverlayPageCount = 0,
+                mouzaOverlayCurrentPage = 0,
+                mouzaOverlayLocked = false,
+                statusMessage = "মৌজা নকশা ওভারলে সরানো হয়েছে"
+            )
+        }
+    }
+
+    private suspend fun encodeBitmapToDataUrl(src: Bitmap): String = withContext(Dispatchers.Default) {
+        val maxDim = 1280
+        val scale = minOf(1f, maxDim.toFloat() / maxOf(src.width, src.height))
+        val target = if (scale < 0.98f) {
+            Bitmap.createScaledBitmap(
+                src,
+                (src.width * scale).toInt().coerceAtLeast(16),
+                (src.height * scale).toInt().coerceAtLeast(16),
+                true
+            )
+        } else src
+        val baos = ByteArrayOutputStream()
+        target.compress(Bitmap.CompressFormat.PNG, 90, baos)
+        if (target !== src) target.recycle()
+        "data:image/png;base64," + Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
     }
 
     fun clearStatusMessage() {
