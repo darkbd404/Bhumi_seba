@@ -10,10 +10,23 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,6 +70,7 @@ import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.Edit
@@ -70,6 +84,7 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -90,11 +105,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -124,13 +141,17 @@ import com.example.model.MouzaPlot
 import com.example.model.MouzaScale
 import com.example.model.MouzaSelectionTool
 import com.example.ui.components.BottomSwipeToastBanner
+import com.example.ui.components.KhatianLookupBottomSheet
 import com.example.ui.components.NeuPillChip
 import com.example.ui.components.PrecisionNudgePad
+import com.example.ui.components.UtilityBarChip
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
 import com.example.viewmodel.MouzaPdfViewModel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -162,31 +183,81 @@ fun MouzaPdfScreen(
         uri?.let { viewModel.openDocumentUri(it) }
     }
 
+    val khatianPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { viewModel.openKhatianDocumentUri(it) }
+    }
+
+    val scope = rememberCoroutineScope()
     var scale by remember(state.fileName, state.currentPage) { mutableFloatStateOf(1f) }
     var offsetX by remember(state.fileName, state.currentPage) { mutableFloatStateOf(0f) }
     var offsetY by remember(state.fileName, state.currentPage) { mutableFloatStateOf(0f) }
+    var trackedBoxW by remember(state.fileName, state.currentPage) { mutableFloatStateOf(900f) }
+    var trackedBoxH by remember(state.fileName, state.currentPage) { mutableFloatStateOf(900f) }
+    var trackedFitW by remember(state.fileName, state.currentPage) { mutableFloatStateOf(900f) }
+    var trackedFitH by remember(state.fileName, state.currentPage) { mutableFloatStateOf(900f) }
+
+    LaunchedEffect(state.highlightedPlotId) {
+        if (state.highlightedPlotId != null) {
+            kotlinx.coroutines.delay(5500L)
+            viewModel.clearHighlightedPlot()
+        }
+    }
+
+    fun animateCameraTo(targetScale: Float, targetOffX: Float, targetOffY: Float) {
+        val startScale = scale
+        val startX = offsetX
+        val startY = offsetY
+        scope.launch {
+            val anim = Animatable(0f)
+            anim.animateTo(1f, tween(340, easing = FastOutSlowInEasing)) {
+                val t = value
+                scale = startScale + (targetScale - startScale) * t
+                offsetX = startX + (targetOffX - startX) * t
+                offsetY = startY + (targetOffY - startY) * t
+            }
+        }
+    }
 
     var showScaleMenu by remember { mutableStateOf(false) }
     var showGapMenu by remember { mutableStateOf(false) }
     var showReportSheet by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    var showKhatianSheet by remember { mutableStateOf(false) }
     var showSavedProjectsSheet by remember { mutableStateOf(false) }
     var showSaveProjectDialog by remember { mutableStateOf(false) }
     var pointerModeEnabled by remember { mutableStateOf(true) }
+    var loupeEnabled by remember { mutableStateOf(true) }
+    var loupeZoomLevel by remember { mutableFloatStateOf(3.5f) }
     var showNudgePad by remember { mutableStateOf(false) }
     var nudgeTargetIsPoint by remember { mutableStateOf(true) }
     var nudgeStepLevel by remember { mutableIntStateOf(0) }
     var editingPlot by remember { mutableStateOf<MouzaPlot?>(null) }
     var showCalibrateDialog by remember { mutableStateOf<MouzaPlot?>(null) }
 
+    val loupeAnimScale by animateFloatAsState(
+        targetValue = if (pointerModeEnabled && loupeEnabled) 1f else 0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "mouzaLoupeScale"
+    )
+    val pulseTransition = rememberInfiniteTransition(label = "mouzaPulse")
+    val highlightPulse by pulseTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(850, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "mouzaHighlightPulse"
+    )
+
     BackHandler(
-        enabled = showReportSheet || showFilterSheet || showSavedProjectsSheet ||
+        enabled = showReportSheet || showFilterSheet || showKhatianSheet || showSavedProjectsSheet ||
             showSaveProjectDialog || editingPlot != null || showCalibrateDialog != null
     ) {
         when {
             showSaveProjectDialog -> showSaveProjectDialog = false
             showCalibrateDialog != null -> showCalibrateDialog = null
             editingPlot != null -> editingPlot = null
+            showKhatianSheet -> showKhatianSheet = false
             showSavedProjectsSheet -> showSavedProjectsSheet = false
             showFilterSheet -> showFilterSheet = false
             showReportSheet -> showReportSheet = false
@@ -203,22 +274,22 @@ fun MouzaPdfScreen(
             .background(LocalNeuPalette.current.canvas)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top Controls Bar
+            // Fixed Top Controls Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(40.dp)
                         .testTag("mouza_back_button")
-                        .neuClickable(cornerRadius = 14.dp, elevation = 4.dp, onClick = onNavigateBack),
+                        .neuClickable(cornerRadius = 12.dp, elevation = 4.dp, onClick = onNavigateBack),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", modifier = Modifier.size(20.dp))
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
@@ -229,18 +300,30 @@ fun MouzaPdfScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = if (state.hdReady) "Ultra-HD Ready • ${state.selectedScale.ratioLabel} • 1000x জুম"
+                        text = if (state.hdReady) "HD • ${state.selectedScale.ratioLabel} • 1000x জুম"
                         else if (state.displayBitmap != null) "HD প্রস্তুত হচ্ছে..."
                         else "স্টোরেজ থেকে PDF বা ছবি নিন",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                // Separate Khatian Upload & Search Button
+                IconButton(
+                    onClick = { showKhatianSheet = true },
+                    modifier = Modifier.size(36.dp).testTag("mouza_khatian_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Description,
+                        contentDescription = "Upload Khatian & Search Dag",
+                        tint = if (state.khatianPreviewBitmap != null || state.khatianRecords.isNotEmpty()) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 // Saved Mouza Projects Sheet Trigger
                 IconButton(
                     onClick = { showSavedProjectsSheet = true },
-                    modifier = Modifier.size(38.dp).testTag("mouza_saved_projects_button")
+                    modifier = Modifier.size(36.dp).testTag("mouza_saved_projects_button")
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.FolderOpen,
@@ -249,40 +332,39 @@ fun MouzaPdfScreen(
                     )
                 }
 
-                // Undo / Redo / Clear quick actions when document open
                 if (state.displayBitmap != null) {
                     IconButton(
                         onClick = { viewModel.undoLastPlot() },
                         enabled = state.selectedPlots.isNotEmpty() || state.tapeDraft.isNotEmpty(),
-                        modifier = Modifier.size(38.dp).testTag("mouza_undo_button")
+                        modifier = Modifier.size(34.dp).testTag("mouza_undo_button")
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
+                        Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo", modifier = Modifier.size(19.dp))
                     }
                     IconButton(
                         onClick = { viewModel.redoLastPlot() },
                         enabled = state.canRedo,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(34.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
+                        Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo", modifier = Modifier.size(19.dp))
                     }
                     IconButton(
                         onClick = { viewModel.clearAllPlots() },
                         enabled = state.selectedPlots.isNotEmpty() || state.tapeDraft.isNotEmpty() || state.completedTapes.isNotEmpty(),
-                        modifier = Modifier.size(38.dp).testTag("mouza_clear_button")
+                        modifier = Modifier.size(34.dp).testTag("mouza_clear_button")
                     ) {
-                        Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear", tint = MaterialTheme.colorScheme.error)
+                        Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(19.dp))
                     }
                 }
 
                 Button(
                     onClick = { docPickerLauncher.launch(arrayOf("application/pdf", "image/*")) },
                     modifier = Modifier.testTag("pick_pdf_button"),
-                    shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(if (state.displayBitmap == null) "ফাইল নিন" else "বদলান", maxLines = 1)
+                    Text(if (state.displayBitmap == null) "ফাইল নিন" else "বদলান", maxLines = 1, style = MaterialTheme.typography.labelMedium)
                 }
             }
 
@@ -295,14 +377,14 @@ fun MouzaPdfScreen(
                 )
             }
 
-            // Tool & Scale Strip (matches video & UI.html)
+            // Fixed Top Function Bar 1: Selection Tools & Scale
             if (state.displayBitmap != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(horizontal = 10.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     NeuPillChip(
@@ -413,7 +495,7 @@ fun MouzaPdfScreen(
                             IconButton(
                                 onClick = { viewModel.selectPage(state.currentPage - 1) },
                                 enabled = state.currentPage > 0,
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(Icons.Rounded.ChevronLeft, contentDescription = "Prev Page")
                             }
@@ -424,12 +506,93 @@ fun MouzaPdfScreen(
                             IconButton(
                                 onClick = { viewModel.selectPage(state.currentPage + 1) },
                                 enabled = state.currentPage < state.pageCount - 1,
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(Icons.Rounded.ChevronRight, contentDescription = "Next Page")
                             }
                         }
                     }
+                }
+
+                // Fixed Top Utility Bar 2 (keeps Zoom, Fit, Magnifier, Filter, Khatian & Fine-Nudge toggle OUTSIDE the PDF canvas!)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 10.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UtilityBarChip(
+                        label = String.format(Locale.US, "%.1fx", scale),
+                        icon = null,
+                        selected = scale > 1.05f,
+                        onClick = { animateCameraTo(1f, 0f, 0f) }
+                    )
+                    UtilityBarChip(
+                        label = "-",
+                        icon = Icons.Rounded.Remove,
+                        selected = false,
+                        onClick = {
+                            val next = (scale / 1.6f).coerceIn(1f, 1000f)
+                            if (next <= 1.02f) animateCameraTo(1f, 0f, 0f)
+                            else animateCameraTo(next, offsetX, offsetY)
+                        }
+                    )
+                    UtilityBarChip(
+                        label = "+",
+                        icon = Icons.Rounded.Add,
+                        selected = false,
+                        onClick = {
+                            animateCameraTo((scale * 1.6f).coerceIn(1f, 1000f), offsetX, offsetY)
+                        }
+                    )
+                    UtilityBarChip(
+                        label = "ফিট",
+                        icon = Icons.Rounded.ZoomOutMap,
+                        selected = false,
+                        onClick = { animateCameraTo(1f, 0f, 0f) }
+                    )
+                    UtilityBarChip(
+                        label = if (!loupeEnabled) "লুপ বন্ধ" else "লুপ ${loupeZoomLevel}x",
+                        icon = Icons.Rounded.ZoomIn,
+                        selected = loupeEnabled && pointerModeEnabled,
+                        testTag = "mouza_loupe_toggle",
+                        onClick = {
+                            if (!pointerModeEnabled) {
+                                pointerModeEnabled = true
+                                loupeEnabled = true
+                            } else if (!loupeEnabled) {
+                                loupeEnabled = true
+                                loupeZoomLevel = 2.5f
+                            } else if (loupeZoomLevel < 3.4f) {
+                                loupeZoomLevel = 3.5f
+                            } else if (loupeZoomLevel < 4.9f) {
+                                loupeZoomLevel = 5.0f
+                            } else {
+                                loupeEnabled = false
+                            }
+                        }
+                    )
+                    UtilityBarChip(
+                        label = "ফিল্টার",
+                        icon = Icons.Rounded.FilterBAndW,
+                        selected = state.filterPreset != MouzaFilterPreset.NORMAL,
+                        onClick = { showFilterSheet = true }
+                    )
+                    UtilityBarChip(
+                        label = "খতিয়ান",
+                        icon = Icons.Rounded.Description,
+                        selected = state.khatianRecords.isNotEmpty() || state.khatianPreviewBitmap != null,
+                        onClick = { showKhatianSheet = true }
+                    )
+                    UtilityBarChip(
+                        label = "সূক্ষ্ম মুভ",
+                        icon = Icons.Rounded.OpenWith,
+                        selected = showNudgePad,
+                        testTag = "mouza_nudge_toggle",
+                        onClick = { showNudgePad = !showNudgePad }
+                    )
                 }
             }
 
@@ -517,12 +680,19 @@ fun MouzaPdfScreen(
                     val cx = boxW / 2f
                     val cy = boxH / 2f
 
+                    SideEffect {
+                        trackedBoxW = boxW
+                        trackedBoxH = boxH
+                        trackedFitW = fitW
+                        trackedFitH = fitH
+                    }
+
                     fun toScreenX(nx: Float): Float = ((imgLeft + nx * fitW) - cx) * scale + cx + offsetX
                     fun toScreenY(ny: Float): Float = ((imgTop + ny * fitH) - cy) * scale + cy + offsetY
                     fun toNormX(sx: Float): Float = (((sx - cx - offsetX) / scale + cx) - imgLeft) / fitW
                     fun toNormY(sy: Float): Float = (((sy - cy - offsetY) / scale + cy) - imgTop) / fitH
 
-                    // Focus on a plot requested from the Report sheet
+                    // Focus smoothly with animation on a plot requested from Khatian or Report sheet
                     LaunchedEffect(state.focusPlotRequest) {
                         val fp = state.focusPlotRequest ?: return@LaunchedEffect
                         val poly = fp.effectivePolygon()
@@ -536,9 +706,11 @@ fun MouzaPdfScreen(
                             val targetScale = min(boxW / (pw * 1.6f), boxH / (ph * 1.6f)).coerceIn(1.5f, 80f)
                             val targetCenterNx = (minNx + maxNx) / 2f
                             val targetCenterNy = (minNy + maxNy) / 2f
-                            scale = targetScale
-                            offsetX = -((imgLeft + targetCenterNx * fitW) - cx) * targetScale
-                            offsetY = -((imgTop + targetCenterNy * fitH) - cy) * targetScale
+                            animateCameraTo(
+                                targetScale = targetScale,
+                                targetOffX = -((imgLeft + targetCenterNx * fitW) - cx) * targetScale,
+                                targetOffY = -((imgTop + targetCenterNy * fitH) - cy) * targetScale
+                            )
                         }
                         viewModel.consumeFocusPlot()
                     }
@@ -723,15 +895,15 @@ fun MouzaPdfScreen(
                                 detectTapGestures(
                                     onDoubleTap = { tap ->
                                         if (scale > 2.4f) {
-                                            scale = 1f
-                                            offsetX = 0f
-                                            offsetY = 0f
+                                            animateCameraTo(1f, 0f, 0f)
                                         } else {
                                             val targetScale = 4f
                                             val ratio = targetScale / scale
-                                            offsetX = (offsetX - (tap.x - cx)) * ratio + (tap.x - cx)
-                                            offsetY = (offsetY - (tap.y - cy)) * ratio + (tap.y - cy)
-                                            scale = targetScale
+                                            animateCameraTo(
+                                                targetScale,
+                                                (offsetX - (tap.x - cx)) * ratio + (tap.x - cx),
+                                                (offsetY - (tap.y - cy)) * ratio + (tap.y - cy)
+                                            )
                                         }
                                     },
                                     onTap = { tap ->
@@ -845,8 +1017,16 @@ fun MouzaPdfScreen(
                                         }
                                         close()
                                     }
-                                    drawPath(path, color = plot.color.copy(alpha = 0.30f))
-                                    drawPath(path, color = plot.color, style = Stroke(width = 4.5f))
+                                    val isHighlighted = state.highlightedPlotId == plot.id
+                                    drawPath(
+                                        path,
+                                        color = plot.color.copy(alpha = if (isHighlighted) 0.25f + 0.22f * highlightPulse else 0.30f)
+                                    )
+                                    drawPath(
+                                        path,
+                                        color = if (isHighlighted) Color(0xFFFFD54F) else plot.color,
+                                        style = Stroke(width = if (isHighlighted) 6.5f else 4.5f)
+                                    )
 
                                     val centroidPt = plot.centroidNormalized?.let {
                                         Offset(toScreenX(it.first), toScreenY(it.second))
@@ -1013,7 +1193,7 @@ fun MouzaPdfScreen(
                                 }
                             }
 
-                            // 6. Enlarged Precision Crosshair Pointer + Live 3.2x Zoom Loupe (when enabled)
+                            // 6. Enlarged Precision Crosshair Pointer + Smooth Animated Magnifying Loupe
                             if (pointerModeEnabled) {
                                 val center = Offset(size.width / 2f, size.height / 2f)
                                 val radius = 44f
@@ -1043,364 +1223,333 @@ fun MouzaPdfScreen(
                                 drawCircle(Color.White, radius = 7f, center = center)
                                 drawCircle(Color(0xFFE53935), radius = 4.2f, center = center)
 
-                                // Live 3.2x Magnifying Loupe at top-center showing the exact zoomed target under crosshair
-                                val loupeR = 54.dp.toPx()
-                                val loupeX = size.width / 2f
-                                val loupeY = (loupeR + 12.dp.toPx()).coerceAtMost(center.y - radius - 14f)
-                                if (loupeY > loupeR) {
-                                    val mag = 3.2f
-                                    drawIntoCanvas { canvas ->
-                                        val native = canvas.nativeCanvas
-                                        val clipPath = android.graphics.Path().apply {
-                                            addCircle(loupeX, loupeY, loupeR, android.graphics.Path.Direction.CW)
-                                        }
-                                        native.save()
-                                        native.clipPath(clipPath)
-                                        native.drawColor(android.graphics.Color.WHITE)
+                                // Animated Live Magnifying Loupe at top-center
+                                if (loupeAnimScale > 0.05f) {
+                                    val loupeR = 54.dp.toPx() * loupeAnimScale
+                                    val loupeX = size.width / 2f
+                                    val loupeY = (loupeR + 10.dp.toPx()).coerceAtMost(center.y - radius - 12f)
+                                    if (loupeY > loupeR) {
+                                        val mag = loupeZoomLevel
+                                        drawIntoCanvas { canvas ->
+                                            val native = canvas.nativeCanvas
+                                            val clipPath = android.graphics.Path().apply {
+                                                addCircle(loupeX, loupeY, loupeR, android.graphics.Path.Direction.CW)
+                                            }
+                                            native.save()
+                                            native.clipPath(clipPath)
+                                            native.drawColor(android.graphics.Color.WHITE)
 
-                                        native.translate(loupeX, loupeY)
-                                        native.scale(mag, mag)
-                                        native.translate(-center.x, -center.y)
+                                            native.translate(loupeX, loupeY)
+                                            native.scale(mag, mag)
+                                            native.translate(-center.x, -center.y)
 
-                                        val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
-                                            colorFilter = colorMatrixFilter
-                                        }
-                                        val hdTile = state.viewportTile
-                                        val crossNx = toNormX(center.x)
-                                        val crossNy = toNormY(center.y)
-                                        val useHd = hdTile != null && scale >= 2.2f && !hdTile.bitmap.isRecycled &&
-                                            crossNx in hdTile.normLeft..hdTile.normRight &&
-                                            crossNy in hdTile.normTop..hdTile.normBottom
-                                        if (useHd && hdTile != null) {
-                                            val tileDst = RectF(
-                                                toScreenX(hdTile.normLeft),
-                                                toScreenY(hdTile.normTop),
-                                                toScreenX(hdTile.normRight),
-                                                toScreenY(hdTile.normBottom)
-                                            )
-                                            native.drawBitmap(
-                                                hdTile.bitmap,
-                                                Rect(0, 0, hdTile.bitmap.width, hdTile.bitmap.height),
-                                                tileDst,
-                                                bitmapPaint
-                                            )
-                                        } else {
-                                            val halfNormW = (loupeR / (fitW * scale * mag)).coerceAtLeast(0.01f)
-                                            val halfNormH = (loupeR / (fitH * scale * mag)).coerceAtLeast(0.01f)
-                                            val cL = (crossNx - halfNormW * 1.4f).coerceIn(0f, 0.99f)
-                                            val cT = (crossNy - halfNormH * 1.4f).coerceIn(0f, 0.99f)
-                                            val cR = (crossNx + halfNormW * 1.4f).coerceIn(cL + 0.005f, 1f)
-                                            val cB = (crossNy + halfNormH * 1.4f).coerceIn(cT + 0.005f, 1f)
-                                            val srcR = Rect(
-                                                (cL * bmp.width).toInt().coerceIn(0, bmp.width - 1),
-                                                (cT * bmp.height).toInt().coerceIn(0, bmp.height - 1),
-                                                (cR * bmp.width).roundToInt().coerceIn(1, bmp.width),
-                                                (cB * bmp.height).roundToInt().coerceIn(1, bmp.height)
-                                            )
-                                            val dstR = RectF(
-                                                toScreenX(cL),
-                                                toScreenY(cT),
-                                                toScreenX(cR),
-                                                toScreenY(cB)
-                                            )
-                                            native.drawBitmap(bmp, srcR, dstR, bitmapPaint)
-                                        }
+                                            val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+                                                colorFilter = colorMatrixFilter
+                                            }
+                                            val hdTile = state.viewportTile
+                                            val crossNx = toNormX(center.x)
+                                            val crossNy = toNormY(center.y)
+                                            val useHd = hdTile != null && scale >= 2.2f && !hdTile.bitmap.isRecycled &&
+                                                crossNx in hdTile.normLeft..hdTile.normRight &&
+                                                crossNy in hdTile.normTop..hdTile.normBottom
+                                            if (useHd && hdTile != null) {
+                                                val tileDst = RectF(
+                                                    toScreenX(hdTile.normLeft),
+                                                    toScreenY(hdTile.normTop),
+                                                    toScreenX(hdTile.normRight),
+                                                    toScreenY(hdTile.normBottom)
+                                                )
+                                                native.drawBitmap(
+                                                    hdTile.bitmap,
+                                                    Rect(0, 0, hdTile.bitmap.width, hdTile.bitmap.height),
+                                                    tileDst,
+                                                    bitmapPaint
+                                                )
+                                            } else {
+                                                val halfNormW = (loupeR / (fitW * scale * mag)).coerceAtLeast(0.01f)
+                                                val halfNormH = (loupeR / (fitH * scale * mag)).coerceAtLeast(0.01f)
+                                                val cL = (crossNx - halfNormW * 1.4f).coerceIn(0f, 0.99f)
+                                                val cT = (crossNy - halfNormH * 1.4f).coerceIn(0f, 0.99f)
+                                                val cR = (crossNx + halfNormW * 1.4f).coerceIn(cL + 0.005f, 1f)
+                                                val cB = (crossNy + halfNormH * 1.4f).coerceIn(cT + 0.005f, 1f)
+                                                val srcR = Rect(
+                                                    (cL * bmp.width).toInt().coerceIn(0, bmp.width - 1),
+                                                    (cT * bmp.height).toInt().coerceIn(0, bmp.height - 1),
+                                                    (cR * bmp.width).roundToInt().coerceIn(1, bmp.width),
+                                                    (cB * bmp.height).roundToInt().coerceIn(1, bmp.height)
+                                                )
+                                                val dstR = RectF(
+                                                    toScreenX(cL),
+                                                    toScreenY(cT),
+                                                    toScreenX(cR),
+                                                    toScreenY(cB)
+                                                )
+                                                native.drawBitmap(bmp, srcR, dstR, bitmapPaint)
+                                            }
 
-                                        // Also render polygon & draft lines inside the 3.2x magnifying loupe
-                                        val loupePolyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                                            color = android.graphics.Color.parseColor("#0F6B54")
-                                            style = Paint.Style.STROKE
-                                            strokeWidth = 2.2f
-                                        }
-                                        state.selectedPlots.forEach { plot ->
-                                            val poly = plot.effectivePolygon() ?: return@forEach
-                                            if (poly.size >= 3) {
-                                                val pPath = android.graphics.Path()
-                                                poly.forEachIndexed { idx, (nx, ny) ->
+                                            val loupePolyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                                color = android.graphics.Color.parseColor("#0F6B54")
+                                                style = Paint.Style.STROKE
+                                                strokeWidth = 2.2f
+                                            }
+                                            state.selectedPlots.forEach { plot ->
+                                                val poly = plot.effectivePolygon() ?: return@forEach
+                                                if (poly.size >= 3) {
+                                                    val pPath = android.graphics.Path()
+                                                    poly.forEachIndexed { idx, (nx, ny) ->
+                                                        val px = toScreenX(nx)
+                                                        val py = toScreenY(ny)
+                                                        if (idx == 0) pPath.moveTo(px, py) else pPath.lineTo(px, py)
+                                                    }
+                                                    pPath.close()
+                                                    loupePolyPaint.color = plot.color.toArgb()
+                                                    native.drawPath(pPath, loupePolyPaint)
+                                                }
+                                            }
+                                            if (draft.size >= 2) {
+                                                val dPath = android.graphics.Path()
+                                                draft.forEachIndexed { idx, (nx, ny) ->
                                                     val px = toScreenX(nx)
                                                     val py = toScreenY(ny)
-                                                    if (idx == 0) pPath.moveTo(px, py) else pPath.lineTo(px, py)
+                                                    if (idx == 0) dPath.moveTo(px, py) else dPath.lineTo(px, py)
                                                 }
-                                                pPath.close()
-                                                loupePolyPaint.color = plot.color.toArgb()
-                                                native.drawPath(pPath, loupePolyPaint)
+                                                loupePolyPaint.color = android.graphics.Color.parseColor("#0F6B54")
+                                                native.drawPath(dPath, loupePolyPaint)
                                             }
+                                            native.restore()
                                         }
-                                        if (draft.size >= 2) {
-                                            val dPath = android.graphics.Path()
-                                            draft.forEachIndexed { idx, (nx, ny) ->
-                                                val px = toScreenX(nx)
-                                                val py = toScreenY(ny)
-                                                if (idx == 0) dPath.moveTo(px, py) else dPath.lineTo(px, py)
-                                            }
-                                            loupePolyPaint.color = android.graphics.Color.parseColor("#0F6B54")
-                                            native.drawPath(dPath, loupePolyPaint)
-                                        }
-                                        native.restore()
-                                    }
 
-                                    // Magnifier lens ring + inner fine crosshair
-                                    val lensCenter = Offset(loupeX, loupeY)
-                                    drawCircle(
-                                        color = Color(0xFF0F6B54),
-                                        radius = loupeR,
-                                        center = lensCenter,
-                                        style = Stroke(width = 4.dp.toPx())
-                                    )
-                                    drawCircle(
-                                        color = Color.White,
-                                        radius = loupeR + 2.dp.toPx(),
-                                        center = lensCenter,
-                                        style = Stroke(width = 2.dp.toPx())
-                                    )
-                                    val lArm = 16.dp.toPx()
-                                    val lGap = 4.dp.toPx()
-                                    drawLine(Color(0xFFE53935), Offset(loupeX - lArm, loupeY), Offset(loupeX - lGap, loupeY), strokeWidth = 2.4f)
-                                    drawLine(Color(0xFFE53935), Offset(loupeX + lGap, loupeY), Offset(loupeX + lArm, loupeY), strokeWidth = 2.4f)
-                                    drawLine(Color(0xFFE53935), Offset(loupeX, loupeY - lArm), Offset(loupeX, loupeY - lGap), strokeWidth = 2.4f)
-                                    drawLine(Color(0xFFE53935), Offset(loupeX, loupeY + lGap), Offset(loupeX, loupeY + lArm), strokeWidth = 2.4f)
-                                    drawCircle(Color(0xFFE53935), radius = 3.2f, center = lensCenter)
-                                }
-                            }
-                        }
-
-                        // Zoom Percentage Indicator Badge (Top Left)
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .padding(10.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xBB16222B))
-                                .padding(horizontal = 9.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = String.format(Locale.US, "%.1fx / 1000x", scale),
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-
-                        // Right-side Floating FAB Stack (Zoom +, Zoom -, Fit, Pointer, Filter)
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            CanvasFab(
-                                icon = Icons.Rounded.Add,
-                                desc = "Zoom In",
-                                onClick = { scale = (scale * 1.6f).coerceIn(1f, 1000f) }
-                            )
-                            CanvasFab(
-                                icon = Icons.Rounded.Remove,
-                                desc = "Zoom Out",
-                                onClick = {
-                                    val next = (scale / 1.6f).coerceIn(1f, 1000f)
-                                    scale = next
-                                    if (next <= 1.02f) {
-                                        scale = 1f; offsetX = 0f; offsetY = 0f
-                                    }
-                                }
-                            )
-                            CanvasFab(
-                                icon = Icons.Rounded.ZoomOutMap,
-                                desc = "Fit Screen",
-                                onClick = { scale = 1f; offsetX = 0f; offsetY = 0f }
-                            )
-                            CanvasFab(
-                                icon = Icons.Rounded.GpsFixed,
-                                desc = "Toggle Precision Pointer",
-                                tint = if (pointerModeEnabled) Color(0xFFFFD54F) else Color.White,
-                                onClick = { pointerModeEnabled = !pointerModeEnabled }
-                            )
-                            CanvasFab(
-                                icon = Icons.Rounded.OpenWith,
-                                desc = "Fine Nudge Controller",
-                                tint = if (showNudgePad) Color(0xFFFFD54F) else Color.White,
-                                onClick = { showNudgePad = !showNudgePad }
-                            )
-                            CanvasFab(
-                                icon = Icons.Rounded.FilterBAndW,
-                                desc = "Enhance Map Filters",
-                                tint = if (state.filterPreset != MouzaFilterPreset.NORMAL) Color(0xFFFFD54F) else Color.White,
-                                onClick = { showFilterSheet = true }
-                            )
-                        }
-
-                        // Precision Crosshair Action Bar (includes Delete Point when editing/drawing)
-                        val hasPolyDraft = state.activeTool == MouzaSelectionTool.POLYGON_DRAW && state.manualPolygonDraft.isNotEmpty()
-                        val hasEditPlots = state.activeTool == MouzaSelectionTool.EDIT_CORNERS && state.selectedPlots.isNotEmpty()
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = pointerModeEnabled && state.activeTool != MouzaSelectionTool.PAN_ONLY,
-                            enter = fadeIn() + scaleIn(initialScale = 0.9f),
-                            exit = fadeOut() + scaleOut(targetScale = 0.9f),
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = if (hasPolyDraft) 70.dp else 10.dp)
-                        ) {
-                            val ptrBtnLabel = when (state.activeTool) {
-                                MouzaSelectionTool.POLYGON_DRAW -> "পয়েন্টারে কোণা বসান"
-                                MouzaSelectionTool.AUTO_TAP -> "পয়েন্টারে দাগ সিলেক্ট"
-                                MouzaSelectionTool.EDIT_CORNERS -> "কোণা এখানে আনুন"
-                                MouzaSelectionTool.TAPE_MEASURE -> "পয়েন্টারে মাপ বিন্দু"
-                                MouzaSelectionTool.PAN_ONLY -> ""
-                            }
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Button(
-                                    onClick = {
-                                        val nx = toNormX(cx)
-                                        val ny = toNormY(cy)
-                                        if (nx in 0f..1f && ny in 0f..1f) {
-                                            viewModel.onPointerPlace(nx, ny)
-                                        } else {
-                                            viewModel.showStatusHint("পয়েন্টারটি ম্যাপের ভেতরে রাখুন")
-                                        }
-                                    },
-                                    modifier = Modifier.testTag("mouza_pointer_select_button"),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE0F6B54)),
-                                    shape = RoundedCornerShape(18.dp),
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
-                                ) {
-                                    Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(ptrBtnLabel, fontWeight = FontWeight.Bold, maxLines = 1)
-                                }
-
-                                if (hasEditPlots) {
-                                    Button(
-                                        onClick = {
-                                            viewModel.deleteSelectedOrNearestVertex(toNormX(cx), toNormY(cy))
-                                        },
-                                        modifier = Modifier.testTag("mouza_delete_vertex_button"),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xEEC62828)),
-                                        shape = RoundedCornerShape(18.dp),
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
-                                    ) {
-                                        Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("বিন্দু ডিলিট", fontWeight = FontWeight.Bold, maxLines = 1)
-                                    }
-                                }
-                            }
-                        }
-
-                        // Manual Polygon Draft Action Pill (Edit / Delete selected point / Undo / Finish)
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = hasPolyDraft,
-                            enter = fadeIn() + scaleIn(initialScale = 0.92f),
-                            exit = fadeOut() + scaleOut(targetScale = 0.92f),
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Color(0xEE16222B))
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "বিন্দু: ${state.manualPolygonDraft.size}",
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                                TextButton(
-                                    onClick = { viewModel.deleteSelectedOrLastDraftPoint() },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text("বিন্দু ডিলিট", color = Color(0xFFFF8A80))
-                                }
-                                TextButton(
-                                    onClick = { viewModel.clearManualDraft() },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                                ) {
-                                    Text("সব মুছুন", color = Color(0xFFFFD54F))
-                                }
-                                Button(
-                                    onClick = { viewModel.finishManualPolygon() },
-                                    enabled = state.manualPolygonDraft.size >= 3,
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("সম্পন্ন")
-                                }
-                            }
-                        }
-
-                        // Separate Fine-Tune Nudge D-Pad Controller (for nudging selected point OR crosshair slightly)
-                        val hasAnyNudgePoint = when (state.activeTool) {
-                            MouzaSelectionTool.POLYGON_DRAW -> state.manualPolygonDraft.isNotEmpty()
-                            MouzaSelectionTool.EDIT_CORNERS -> state.selectedPlots.any { !it.effectivePolygon().isNullOrEmpty() }
-                            MouzaSelectionTool.TAPE_MEASURE -> state.tapeDraft.isNotEmpty()
-                            else -> false
-                        }
-                        val effectiveTargetPoint = nudgeTargetIsPoint && hasAnyNudgePoint
-                        val activePointLbl = if (!effectiveTargetPoint) {
-                            "ক্রসহেয়ার"
-                        } else {
-                            when (state.activeTool) {
-                                MouzaSelectionTool.POLYGON_DRAW -> {
-                                    val idx = state.selectedDraftIdx?.takeIf { it in state.manualPolygonDraft.indices }
-                                        ?: state.manualPolygonDraft.lastIndex
-                                    "বিন্দু #${idx + 1}"
-                                }
-                                MouzaSelectionTool.EDIT_CORNERS -> {
-                                    val sv = state.selectedVertex
-                                    if (sv != null) "কোণা #${sv.second + 1}" else "কোণা #1"
-                                }
-                                MouzaSelectionTool.TAPE_MEASURE -> {
-                                    val idx = state.selectedTapeIdx?.takeIf { it in state.tapeDraft.indices }
-                                        ?: state.tapeDraft.lastIndex
-                                    "ফিতা #${idx + 1}"
-                                }
-                                else -> "ক্রসহেয়ার"
-                            }
-                        }
-
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = showNudgePad,
-                            enter = fadeIn() + scaleIn(initialScale = 0.9f),
-                            exit = fadeOut() + scaleOut(targetScale = 0.9f),
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(start = 10.dp, bottom = if (hasPolyDraft) 72.dp else 64.dp)
-                        ) {
-                            PrecisionNudgePad(
-                                targetIsPoint = effectiveTargetPoint,
-                                hasAnyPoint = hasAnyNudgePoint,
-                                activePointLabel = activePointLbl,
-                                stepLevel = nudgeStepLevel,
-                                onStepLevelChange = { nudgeStepLevel = it },
-                                onToggleTargetMode = { nudgeTargetIsPoint = it },
-                                onCyclePoint = { delta ->
-                                    nudgeTargetIsPoint = true
-                                    viewModel.cycleActivePoint(delta)
-                                },
-                                onNudge = { dxPx, dyPx ->
-                                    if (effectiveTargetPoint) {
-                                        viewModel.nudgeActivePoint(
-                                            deltaNormX = dxPx / (fitW * scale),
-                                            deltaNormY = dyPx / (fitH * scale)
+                                        val lensCenter = Offset(loupeX, loupeY)
+                                        drawCircle(
+                                            color = Color(0xFF0F6B54).copy(alpha = 0.28f),
+                                            radius = loupeR + 6.dp.toPx(),
+                                            center = lensCenter,
+                                            style = Stroke(width = 4.dp.toPx())
                                         )
-                                    } else {
-                                        val maxOffX = max(boxW * scale * 0.75f, boxW * 0.5f)
-                                        val maxOffY = max(boxH * scale * 0.75f, boxH * 0.5f)
-                                        offsetX = (offsetX - dxPx).coerceIn(-maxOffX, maxOffX)
-                                        offsetY = (offsetY - dyPx).coerceIn(-maxOffY, maxOffY)
+                                        drawCircle(
+                                            color = Color(0xFF0F6B54),
+                                            radius = loupeR,
+                                            center = lensCenter,
+                                            style = Stroke(width = 3.5.dp.toPx())
+                                        )
+                                        drawCircle(
+                                            color = Color.White,
+                                            radius = loupeR + 2.dp.toPx(),
+                                            center = lensCenter,
+                                            style = Stroke(width = 1.8.dp.toPx())
+                                        )
+                                        val lArm = 16.dp.toPx() * loupeAnimScale
+                                        val lGap = 4.dp.toPx() * loupeAnimScale
+                                        drawLine(Color(0xFFE53935), Offset(loupeX - lArm, loupeY), Offset(loupeX - lGap, loupeY), strokeWidth = 2.4f)
+                                        drawLine(Color(0xFFE53935), Offset(loupeX + lGap, loupeY), Offset(loupeX + lArm, loupeY), strokeWidth = 2.4f)
+                                        drawLine(Color(0xFFE53935), Offset(loupeX, loupeY - lArm), Offset(loupeX, loupeY - lGap), strokeWidth = 2.4f)
+                                        drawLine(Color(0xFFE53935), Offset(loupeX, loupeY + lGap), Offset(loupeX, loupeY + lArm), strokeWidth = 2.4f)
+                                        drawCircle(Color(0xFFE53935), radius = 3.2f * loupeAnimScale, center = lensCenter)
                                     }
-                                },
-                                onClose = { showNudgePad = false }
-                            )
+                                }
+                            }
                         }
                     }
+                }
+            }
+
+            // Dedicated Docked Controls BELOW the PDF Canvas (keeps the entire Mouza PDF clear!)
+            if (state.displayBitmap != null) {
+                val hasPolyDraft = state.activeTool == MouzaSelectionTool.POLYGON_DRAW && state.manualPolygonDraft.isNotEmpty()
+                val hasEditPlots = state.activeTool == MouzaSelectionTool.EDIT_CORNERS && state.selectedPlots.isNotEmpty()
+                val hasAnyNudgePoint = when (state.activeTool) {
+                    MouzaSelectionTool.POLYGON_DRAW -> state.manualPolygonDraft.isNotEmpty()
+                    MouzaSelectionTool.EDIT_CORNERS -> state.selectedPlots.any { !it.effectivePolygon().isNullOrEmpty() }
+                    MouzaSelectionTool.TAPE_MEASURE -> state.tapeDraft.isNotEmpty()
+                    else -> false
+                }
+                val effectiveTargetPoint = nudgeTargetIsPoint && hasAnyNudgePoint
+                val activePointLbl = if (!effectiveTargetPoint) {
+                    "ক্রসহেয়ার"
+                } else {
+                    when (state.activeTool) {
+                        MouzaSelectionTool.POLYGON_DRAW -> {
+                            val idx = state.selectedDraftIdx?.takeIf { it in state.manualPolygonDraft.indices }
+                                ?: state.manualPolygonDraft.lastIndex
+                            "বিন্দু #${idx + 1}"
+                        }
+                        MouzaSelectionTool.EDIT_CORNERS -> {
+                            val sv = state.selectedVertex
+                            if (sv != null) "কোণা #${sv.second + 1}" else "কোণা #1"
+                        }
+                        MouzaSelectionTool.TAPE_MEASURE -> {
+                            val idx = state.selectedTapeIdx?.takeIf { it in state.tapeDraft.indices }
+                                ?: state.tapeDraft.lastIndex
+                            "ফিতা #${idx + 1}"
+                        }
+                        else -> "ক্রসহেয়ার"
+                    }
+                }
+
+                // Active Khatian Target Banner (when user tapped a Dag from Khatian sheet)
+                AnimatedVisibility(
+                    visible = state.activeSearchTarget != null,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    state.activeSearchTarget?.let { (kh, dag) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 2.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(EmeraldPrimary.copy(alpha = 0.14f))
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "খুঁজছেন: খতিয়ান ${kh.ifBlank { "-" }} • দাগ $dag (নকশায় সিলেক্ট করুন)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = EmeraldPrimary,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { viewModel.clearActiveSearchTarget() },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Clear Search Target", modifier = Modifier.size(16.dp), tint = EmeraldPrimary)
+                            }
+                        }
+                    }
+                }
+
+                // Exact normalized coordinates under screen center crosshair
+                fun centerNormX(): Float = 0.5f - (offsetX / (trackedFitW.coerceAtLeast(1f) * scale))
+                fun centerNormY(): Float = 0.5f - (offsetY / (trackedFitH.coerceAtLeast(1f) * scale))
+
+                // Docked Contextual Action Strip below map
+                val showActionRow = (pointerModeEnabled && state.activeTool != MouzaSelectionTool.PAN_ONLY) || hasPolyDraft || hasEditPlots
+                AnimatedVisibility(
+                    visible = showActionRow,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (pointerModeEnabled && state.activeTool != MouzaSelectionTool.PAN_ONLY) {
+                            val ptrBtnLabel = when (state.activeTool) {
+                                MouzaSelectionTool.POLYGON_DRAW -> "কোণা বসান"
+                                MouzaSelectionTool.AUTO_TAP -> "দাগ সিলেক্ট"
+                                MouzaSelectionTool.EDIT_CORNERS -> "কোণা এখানে আনুন"
+                                MouzaSelectionTool.TAPE_MEASURE -> "মাপ বিন্দু"
+                                MouzaSelectionTool.PAN_ONLY -> ""
+                            }
+                            Button(
+                                onClick = {
+                                    val nx = centerNormX()
+                                    val ny = centerNormY()
+                                    if (nx in 0f..1f && ny in 0f..1f) {
+                                        viewModel.onPointerPlace(nx, ny)
+                                    } else {
+                                        viewModel.showStatusHint("পয়েন্টারটি ম্যাপের ভেতরে রাখুন")
+                                    }
+                                },
+                                modifier = Modifier.testTag("mouza_pointer_select_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
+                            ) {
+                                Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(5.dp))
+                                Text(ptrBtnLabel, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
+                        }
+
+                        if (hasEditPlots) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.deleteSelectedOrNearestVertex(
+                                        centerNormX().coerceIn(0f, 1f),
+                                        centerNormY().coerceIn(0f, 1f)
+                                    )
+                                },
+                                modifier = Modifier.testTag("mouza_delete_vertex_button"),
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp)
+                            ) {
+                                Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.error)
+                                Spacer(Modifier.width(4.dp))
+                                Text("কোণা ডিলিট", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
+                        }
+
+                        if (hasPolyDraft) {
+                            OutlinedButton(
+                                onClick = { viewModel.deleteSelectedOrLastDraftPoint() },
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp)
+                            ) {
+                                Text("বিন্দু ডিলিট (${state.manualPolygonDraft.size})", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.clearManualDraft() },
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp)
+                            ) {
+                                Text("মুছুন", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
+                            Button(
+                                onClick = { viewModel.finishManualPolygon() },
+                                enabled = state.manualPolygonDraft.size >= 3,
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
+                            ) {
+                                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("সম্পন্ন", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+
+                // Docked Fine-Tune Nudge D-Pad Controller (placed cleanly BELOW the map so map stays 100% unobstructed)
+                AnimatedVisibility(
+                    visible = showNudgePad,
+                    enter = expandVertically(tween(240)) + fadeIn(tween(200)),
+                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150)),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                ) {
+                    PrecisionNudgePad(
+                        targetIsPoint = effectiveTargetPoint,
+                        hasAnyPoint = hasAnyNudgePoint,
+                        activePointLabel = activePointLbl,
+                        stepLevel = nudgeStepLevel,
+                        onStepLevelChange = { nudgeStepLevel = it },
+                        onToggleTargetMode = { nudgeTargetIsPoint = it },
+                        onCyclePoint = { delta ->
+                            nudgeTargetIsPoint = true
+                            viewModel.cycleActivePoint(delta)
+                        },
+                        onNudge = { dxPx, dyPx ->
+                            if (effectiveTargetPoint) {
+                                viewModel.nudgeActivePoint(
+                                    deltaNormX = dxPx / (trackedFitW.coerceAtLeast(1f) * scale),
+                                    deltaNormY = dyPx / (trackedFitH.coerceAtLeast(1f) * scale)
+                                )
+                            } else {
+                                val maxOffX = max(trackedBoxW * scale * 0.75f, trackedBoxW * 0.5f)
+                                val maxOffY = max(trackedBoxH * scale * 0.75f, trackedBoxH * 0.5f)
+                                offsetX = (offsetX - dxPx).coerceIn(-maxOffX, maxOffX)
+                                offsetY = (offsetY - dyPx).coerceIn(-maxOffY, maxOffY)
+                            }
+                        },
+                        onClose = { showNudgePad = false }
+                    )
                 }
             }
 
@@ -1931,6 +2080,30 @@ fun MouzaPdfScreen(
                 Spacer(Modifier.height(14.dp))
             }
         }
+    }
+
+    // Separate Khatian Upload & Dag-Number Lookup Sheet
+    if (showKhatianSheet) {
+        KhatianLookupBottomSheet(
+            khatianDocName = state.khatianDocName,
+            khatianPreviewBitmap = state.khatianPreviewBitmap,
+            khatianPageCount = state.khatianPageCount,
+            khatianCurrentPage = state.khatianCurrentPage,
+            isLoadingKhatian = state.isLoadingKhatian,
+            khatianRecords = state.khatianRecords,
+            taggedPlots = state.selectedPlots,
+            onUploadKhatianClick = { khatianPickerLauncher.launch(arrayOf("application/pdf", "image/*")) },
+            onSelectKhatianPage = { viewModel.selectKhatianPage(it) },
+            onAddKhatianRecord = { kh, dags, owner, area ->
+                viewModel.addKhatianRecord(kh, dags, owner, area)
+            },
+            onDeleteKhatianRecord = { viewModel.deleteKhatianRecord(it) },
+            onSelectDagForMap = { kh, dag -> viewModel.findOrTargetDagFromKhatian(kh, dag) },
+            onFocusExistingPlot = { plot ->
+                viewModel.requestFocusPlot(plot)
+            },
+            onDismiss = { showKhatianSheet = false }
+        )
     }
 
     // Edit Dag & Khatian Tag Dialog

@@ -7,6 +7,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlin.math.absoluteValue
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,11 +70,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.model.PC_INSTALL_APP_URL
 import com.example.model.SavedMeasurementRecord
 import com.example.model.SavedProjectType
 import com.example.model.SavedSurveyProject
 import com.example.ui.components.AnimatedCompassBadge
+import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.NeuFeatureCard
+import com.example.ui.components.PcInstallLinkCard
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.SurveyGold
@@ -103,6 +108,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     var visible by remember { mutableStateOf(false) }
+    var toastMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { visible = true }
 
     BoxWithConstraints(
@@ -197,11 +203,11 @@ fun HomeScreen(
 
             LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
                 if (!pagerState.isScrollInProgress) {
-                    delay(3400L)
+                    delay(5000L)
                     val nextPage = (pagerState.currentPage + 1) % bannerImages.size
                     pagerState.animateScrollToPage(
                         page = nextPage,
-                        animationSpec = tween(durationMillis = 560, easing = FastOutSlowInEasing)
+                        animationSpec = tween(durationMillis = 720, easing = FastOutSlowInEasing)
                     )
                 }
             }
@@ -225,11 +231,20 @@ fun HomeScreen(
                             state = pagerState,
                             modifier = Modifier.fillMaxSize()
                         ) { page ->
+                            val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+                                .absoluteValue.coerceIn(0f, 1f)
                             Image(
                                 painter = painterResource(id = bannerImages[page]),
                                 contentDescription = "Bangladesh Land Survey Banner ${page + 1}",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        val s = 1f - 0.05f * pageOffset
+                                        scaleX = s
+                                        scaleY = s
+                                        alpha = 1f - 0.25f * pageOffset
+                                    }
                             )
                         }
                     }
@@ -489,8 +504,24 @@ fun HomeScreen(
             }
         }
 
+        // PC / Web Install & Share Link Card
+        item {
+            PcInstallLinkCard(
+                url = PC_INSTALL_APP_URL,
+                onCopySuccess = { msg -> toastMessage = msg }
+            )
+        }
+
         item { Spacer(Modifier.height(12.dp)) }
     }
+
+        BottomSwipeToastBanner(
+            message = toastMessage,
+            onDismiss = { toastMessage = null },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+        )
     }
 }
 

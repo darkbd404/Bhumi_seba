@@ -3,11 +3,15 @@ package com.example.viewmodel
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.RectF
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppPreferences
 import com.example.engine.LandCalculators
+import com.example.engine.MouzaPdfEngine
 import com.example.engine.PngExporter
+import com.example.model.KhatianRecord
 import com.example.model.MapLayerOption
 import com.example.model.MapMeasureCategory
 import com.example.model.SavedMeasurementRecord
@@ -22,6 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -50,6 +55,14 @@ data class RealMapUiState(
     val activeProjectId: String? = null,
     val savedProjects: List<SavedSurveyProject> = emptyList(),
     val pendingRestoreProject: SavedSurveyProject? = null,
+    val khatianDocName: String = "",
+    val khatianIsPdf: Boolean = true,
+    val khatianPageCount: Int = 0,
+    val khatianCurrentPage: Int = 0,
+    val khatianPreviewBitmap: Bitmap? = null,
+    val isLoadingKhatian: Boolean = false,
+    val khatianRecords: List<KhatianRecord> = emptyList(),
+    val activeSearchTarget: Pair<String, String>? = null, // (khatianNo, dagNo)
     val statusMessage: String? = null
 )
 
@@ -57,6 +70,8 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
 
     private val appContext = application.applicationContext
     private val prefs = AppPreferences(appContext)
+    private var activeKhatianFile: File? = null
+    private var activeKhatianIsPdf: Boolean = true
 
     private val _uiState = MutableStateFlow(RealMapUiState())
     val uiState: StateFlow<RealMapUiState> = _uiState.asStateFlow()
@@ -145,7 +160,11 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
             mapCenterLon = centerLon,
             mapZoom = zoom,
             mapPoints = pointsLatLon.map { SerializableLatLon(it.first, it.second) },
-            splitSharesCount = state.splitSharesCount
+            splitSharesCount = state.splitSharesCount,
+            khatianFilePath = activeKhatianFile?.takeIf { it.exists() }?.absolutePath,
+            khatianFileName = state.khatianDocName,
+            khatianIsPdf = activeKhatianIsPdf,
+            khatianRecords = state.khatianRecords
         )
         viewModelScope.launch {
             prefs.saveSurveyProject(project)
@@ -172,16 +191,43 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
     fun restoreMapProject(project: SavedSurveyProject) {
         val layer = MapLayerOption.entries.find { it.id == project.mapLayerId } ?: MapLayerOption.GOOGLE_HYBRID
         val cat = MapMeasureCategory.entries.find { it.id == project.mapCategoryId } ?: MapMeasureCategory.AREA
-        _uiState.update {
-            it.copy(
-                activeProjectId = project.id,
-                selectedLayer = layer,
-                showLabelsOverlay = project.showLabelsOverlay,
-                selectedCategory = cat,
-                splitSharesCount = project.splitSharesCount.coerceIn(2, 20),
-                pendingRestoreProject = project,
-                statusMessage = "রিস্টোর হয়েছে: ${project.title}"
-            )
+        viewModelScope.launch {
+            val khatianFile = project.khatianFilePath?.let { File(it) }?.takeIf { it.exists() }
+            activeKhatianFile = khatianFile
+            activeKhatianIsPdf = project.khatianIsPdf
+            var restoredKhatianBmp: Bitmap? = null
+            var restoredKhatianPages = 0
+            if (khatianFile != null) {
+                runCatching {
+                    restoredKhatianPages = if (project.khatianIsPdf) {
+                        withContext(Dispatchers.IO) {
+                            android.os.ParcelFileDescriptor.open(khatianFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                                android.graphics.pdf.PdfRenderer(pfd).use { it.pageCount }
+                            }
+                        }
+                    } else 1
+                    restoredKhatianBmp = MouzaPdfEngine.renderBaseDocument(
+                        appContext, khatianFile, project.khatianIsPdf, 0, ultraHd = false
+                    ).bitmap
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    activeProjectId = project.id,
+                    selectedLayer = layer,
+                    showLabelsOverlay = project.showLabelsOverlay,
+                    selectedCategory = cat,
+                    splitSharesCount = project.splitSharesCount.coerceIn(2, 20),
+                    pendingRestoreProject = project,
+                    khatianDocName = project.khatianFileName,
+                    khatianIsPdf = project.khatianIsPdf,
+                    khatianPageCount = restoredKhatianPages,
+                    khatianCurrentPage = 0,
+                    khatianPreviewBitmap = restoredKhatianBmp,
+                    khatianRecords = project.khatianRecords,
+                    statusMessage = "রিস্টোর হয়েছে: ${project.title}"
+                )
+            }
         }
     }
 
@@ -337,6 +383,122 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
         fallbackBitmap = fullMapBitmap,
         cropRectNormalized = cropRectNormalized
     )
+
+    fun openKhatianDocumentUri(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingKhatian = true, statusMessage = "খতিয়ান আপলোড হচ্ছে...") }
+            try {
+                val displayName = resolveFileName(uri)
+                val mime = appContext.contentResolver.getType(uri)
+                val info = MouzaPdfEngine.copyDocumentToCache(appContext, uri, displayName, mime)
+                val savedDir = File(appContext.filesDir, "saved_khatian_docs").apply { mkdirs() }
+                val destFile = withContext(Dispatchers.IO) {
+                    val ext = info.tempFile.extension.ifBlank { if (info.isPdf) "pdf" else "png" }
+                    val target = File(savedDir, "khatian_map_${System.currentTimeMillis()}.$ext")
+                    info.tempFile.copyTo(target, overwrite = true)
+                    target
+                }
+                activeKhatianFile = destFile
+                activeKhatianIsPdf = info.isPdf
+                val preview = MouzaPdfEngine.renderBaseDocument(appContext, destFile, info.isPdf, 0, ultraHd = true)
+                _uiState.update {
+                    it.copy(
+                        isLoadingKhatian = false,
+                        khatianDocName = info.fileName,
+                        khatianIsPdf = info.isPdf,
+                        khatianPageCount = info.pageCount,
+                        khatianCurrentPage = 0,
+                        khatianPreviewBitmap = preview.bitmap,
+                        statusMessage = "খতিয়ান আপলোড সম্পন্ন — দাগ নং যোগ করে ম্যাপে মাপুন"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoadingKhatian = false,
+                        statusMessage = "খতিয়ান খোলা যায়নি: ${e.localizedMessage ?: "ত্রুটি"}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectKhatianPage(pageIndex: Int) {
+        val file = activeKhatianFile ?: return
+        if (!activeKhatianIsPdf || pageIndex !in 0 until _uiState.value.khatianPageCount) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingKhatian = true) }
+            runCatching {
+                MouzaPdfEngine.renderBaseDocument(appContext, file, true, pageIndex, ultraHd = true)
+            }.onSuccess { rendered ->
+                _uiState.update {
+                    it.copy(
+                        isLoadingKhatian = false,
+                        khatianCurrentPage = pageIndex,
+                        khatianPreviewBitmap = rendered.bitmap
+                    )
+                }
+            }.onFailure {
+                _uiState.update { it.copy(isLoadingKhatian = false) }
+            }
+        }
+    }
+
+    fun addKhatianRecord(
+        khatianNumber: String,
+        dagNumbersCsv: String,
+        ownerName: String,
+        areaSummary: String
+    ) {
+        val dags = dagNumbersCsv
+            .split(",", " ", "।", ";", "\n")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        val rec = KhatianRecord(
+            id = "khat_map_${System.currentTimeMillis()}",
+            khatianNumber = khatianNumber.trim(),
+            dagNumbers = dags,
+            ownerName = ownerName.trim(),
+            areaSummary = areaSummary.trim(),
+            pageIndex = _uiState.value.khatianCurrentPage
+        )
+        _uiState.update {
+            it.copy(
+                khatianRecords = listOf(rec) + it.khatianRecords,
+                statusMessage = "খতিয়ান নোট যুক্ত হয়েছে"
+            )
+        }
+    }
+
+    fun deleteKhatianRecord(id: String) {
+        _uiState.update {
+            it.copy(khatianRecords = it.khatianRecords.filterNot { r -> r.id == id })
+        }
+    }
+
+    fun setActiveKhatianTarget(khatianNo: String, dagNo: String) {
+        _uiState.update {
+            it.copy(
+                activeSearchTarget = khatianNo.trim() to dagNo.trim(),
+                statusMessage = "লক্ষ্য সেট হয়েছে: খতিয়ান ${khatianNo.ifBlank { "-" }} • দাগ $dagNo"
+            )
+        }
+    }
+
+    fun clearActiveSearchTarget() {
+        _uiState.update { it.copy(activeSearchTarget = null) }
+    }
+
+    private fun resolveFileName(uri: Uri): String {
+        appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && cursor.moveToFirst()) {
+                return cursor.getString(idx) ?: "khatian.pdf"
+            }
+        }
+        return "khatian.pdf"
+    }
 
     fun clearStatusMessage() {
         _uiState.update { it.copy(statusMessage = null) }

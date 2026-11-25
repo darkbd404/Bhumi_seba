@@ -24,10 +24,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,12 +57,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Pentagon
@@ -70,6 +75,7 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Straighten
+import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -89,6 +95,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -115,8 +122,10 @@ import com.example.engine.LandCalculators
 import com.example.model.MapLayerOption
 import com.example.model.MapMeasureCategory
 import com.example.ui.components.BottomSwipeToastBanner
+import com.example.ui.components.KhatianLookupBottomSheet
 import com.example.ui.components.NeuPillChip
 import com.example.ui.components.PrecisionNudgePad
+import com.example.ui.components.UtilityBarChip
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.neuClickable
@@ -153,16 +162,26 @@ fun RealMapScreen(
     var showLayerMenu by remember { mutableStateOf(false) }
     var mapReady by remember { mutableStateOf(false) }
     var pointerModeEnabled by remember { mutableStateOf(true) }
+    var loupeEnabled by remember { mutableStateOf(true) }
+    var loupeZoomLevel by remember { mutableDoubleStateOf(3.0) }
     var showNudgePad by remember { mutableStateOf(false) }
     var nudgeTargetIsPoint by remember { mutableStateOf(true) }
     var nudgeStepLevel by remember { mutableIntStateOf(0) }
+    var showKhatianSheet by remember { mutableStateOf(false) }
     var showSavedProjectsSheet by remember { mutableStateOf(false) }
     var showSaveProjectDialog by remember { mutableStateOf(false) }
     var localToastMessage by remember { mutableStateOf<String?>(null) }
 
-    BackHandler(enabled = showSavedProjectsSheet || showSaveProjectDialog) {
+    val khatianPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { viewModel.openKhatianDocumentUri(it) }
+    }
+
+    BackHandler(enabled = showSavedProjectsSheet || showSaveProjectDialog || showKhatianSheet) {
         when {
             showSaveProjectDialog -> showSaveProjectDialog = false
+            showKhatianSheet -> showKhatianSheet = false
             showSavedProjectsSheet -> showSavedProjectsSheet = false
         }
     }
@@ -286,6 +305,14 @@ fun RealMapScreen(
             )
         }
     }
+    LaunchedEffect(pointerModeEnabled, loupeEnabled, loupeZoomLevel, mapReady) {
+        if (mapReady) {
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.setLoupeConfig(${pointerModeEnabled && loupeEnabled}, $loupeZoomLevel);",
+                null
+            )
+        }
+    }
     LaunchedEffect(state.pendingRestoreProject, mapReady) {
         val proj = state.pendingRestoreProject ?: return@LaunchedEffect
         if (mapReady) {
@@ -355,6 +382,21 @@ fun RealMapScreen(
                         .weight(1f)
                         .testTag("map_search_input")
                 )
+
+                // Separate Khatian Upload & Search Button
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .testTag("map_khatian_button")
+                        .neuClickable(cornerRadius = 14.dp, elevation = 4.dp, onClick = { showKhatianSheet = true }),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Description,
+                        contentDescription = "Upload Khatian & Search Dag",
+                        tint = if (state.khatianPreviewBitmap != null || state.khatianRecords.isNotEmpty()) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 // Saved Map Projects Button
                 Box(
@@ -465,12 +507,92 @@ fun RealMapScreen(
                 }
             }
 
-            // Zero-CDN Self-Contained Interactive Mercator Tile Engine WebView
+            // Fixed Top Utility Bar 2 (keeps Zoom, Loupe, Roads/Labels, Khatian, Layer, Fine-Nudge OUTSIDE the map!)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                UtilityBarChip(
+                    label = "-",
+                    icon = Icons.Rounded.Remove,
+                    selected = false,
+                    onClick = {
+                        webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.zoomBy(-1);", null)
+                    }
+                )
+                UtilityBarChip(
+                    label = "+",
+                    icon = Icons.Rounded.Add,
+                    selected = false,
+                    onClick = {
+                        webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.zoomBy(1);", null)
+                    }
+                )
+                UtilityBarChip(
+                    label = if (!loupeEnabled) "লুপ বন্ধ" else "লুপ ${loupeZoomLevel}x",
+                    icon = Icons.Rounded.ZoomIn,
+                    selected = loupeEnabled && pointerModeEnabled,
+                    testTag = "map_loupe_toggle",
+                    onClick = {
+                        if (!pointerModeEnabled) {
+                            pointerModeEnabled = true
+                            loupeEnabled = true
+                        } else if (!loupeEnabled) {
+                            loupeEnabled = true
+                            loupeZoomLevel = 3.0
+                        } else if (loupeZoomLevel < 4.4) {
+                            loupeZoomLevel = 4.5
+                        } else {
+                            loupeEnabled = false
+                        }
+                    }
+                )
+                if (state.selectedLayer.supportsLabelOverlay) {
+                    UtilityBarChip(
+                        label = if (state.showLabelsOverlay) "নাম চালু" else "নাম বন্ধ",
+                        icon = Icons.Rounded.Map,
+                        selected = state.showLabelsOverlay,
+                        onClick = { viewModel.toggleLabelsOverlay() }
+                    )
+                }
+                UtilityBarChip(
+                    label = state.selectedLayer.titleEn,
+                    icon = Icons.Rounded.Layers,
+                    selected = false,
+                    onClick = { showLayerMenu = true }
+                )
+                UtilityBarChip(
+                    label = "খতিয়ান",
+                    icon = Icons.Rounded.Description,
+                    selected = state.khatianRecords.isNotEmpty() || state.khatianPreviewBitmap != null,
+                    onClick = { showKhatianSheet = true }
+                )
+                UtilityBarChip(
+                    label = "সূক্ষ্ম মুভ",
+                    icon = Icons.Rounded.OpenWith,
+                    selected = showNudgePad,
+                    testTag = "map_nudge_toggle",
+                    onClick = { showNudgePad = !showNudgePad }
+                )
+                UtilityBarChip(
+                    label = "GPS",
+                    icon = Icons.Rounded.MyLocation,
+                    selected = false,
+                    testTag = "map_gps_button",
+                    onClick = { requestOrUseLocation(addPointIfWalking = false) }
+                )
+            }
+
+            // Unobstructed Zero-CDN Self-Contained Interactive Mercator Tile Engine WebView
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
                     .neuSurface(cornerRadius = 22.dp, elevation = 6.dp)
                     .clip(RoundedCornerShape(22.dp))
             ) {
@@ -524,147 +646,6 @@ fun RealMapScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Active Layer Pill Badge + Road/Area Labels Toggle
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xCC16222B))
-                            .clickable { showLayerMenu = true }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Text(
-                            text = "লেয়ার: ${state.selectedLayer.titleEn}",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-
-                    if (state.selectedLayer.supportsLabelOverlay) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (state.showLabelsOverlay) Color(0xDD0F6B54) else Color(0xCC37474F)
-                                )
-                                .clickable { viewModel.toggleLabelsOverlay() }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                text = if (state.showLabelsOverlay) "✓ রাস্তা ও এলাকার নাম" else "রাস্তা/এলাকার নাম: বন্ধ",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    }
-                }
-
-                // Right-side Zoom + / - & My GPS Location FABs
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalAlignment = Alignment.End
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xCC16222B))
-                            .clickable {
-                                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.zoomBy(1);", null)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = "Zoom In", tint = Color.White, modifier = Modifier.size(20.dp))
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xCC16222B))
-                            .clickable {
-                                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.zoomBy(-1);", null)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.Remove, contentDescription = "Zoom Out", tint = Color.White, modifier = Modifier.size(20.dp))
-                    }
-
-                    if (state.selectedCategory == MapMeasureCategory.GPS_WALK) {
-                        Button(
-                            onClick = {
-                                if (!state.isGpsWalkActive) {
-                                    viewModel.setGpsWalkActive(true)
-                                }
-                                requestOrUseLocation(addPointIfWalking = true)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("GPS পয়েন্ট যোগ")
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(if (pointerModeEnabled) Color(0xEE0F6B54) else Color(0xCC16222B))
-                            .clickable { pointerModeEnabled = !pointerModeEnabled },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.GpsFixed,
-                            contentDescription = "Toggle Precision Pointer",
-                            tint = if (pointerModeEnabled) Color(0xFFFFD54F) else Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(if (showNudgePad) Color(0xEE0F6B54) else Color(0xCC16222B))
-                            .clickable { showNudgePad = !showNudgePad },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.OpenWith,
-                            contentDescription = "Fine Nudge Controller",
-                            tint = if (showNudgePad) Color(0xFFFFD54F) else Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .testTag("map_gps_button")
-                            .clip(CircleShape)
-                            .background(Color(0xEE0F6B54))
-                            .clickable { requestOrUseLocation(addPointIfWalking = false) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.MyLocation,
-                            contentDescription = "My Location",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-
                 // Precision Large Center Crosshair Pointer (non-blocking overlay)
                 if (pointerModeEnabled) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
@@ -700,81 +681,144 @@ fun RealMapScreen(
                         drawCircle(Color.White, radius = 6.5f, center = center)
                         drawCircle(Color(0xFFE53935), radius = 3.6f, center = center)
                     }
+                }
+            }
 
+            // Active Khatian Target Banner (outside map)
+            AnimatedVisibility(
+                visible = state.activeSearchTarget != null,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                state.activeSearchTarget?.let { (kh, dag) ->
                     Row(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 12.dp, start = 12.dp, end = 64.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 2.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(EmeraldPrimary.copy(alpha = 0.14f))
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Text(
+                            text = "লক্ষ্য: খতিয়ান ${kh.ifBlank { "-" }} • দাগ $dag (ম্যাপে পিন বসিয়ে সেভ করুন)",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = EmeraldPrimary,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = { viewModel.clearActiveSearchTarget() },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Clear Search Target", modifier = Modifier.size(16.dp), tint = EmeraldPrimary)
+                        }
+                    }
+                }
+            }
+
+            // Docked Contextual Action Row BELOW map (keeps satellite map clear!)
+            val showMapActionRow = pointerModeEnabled || state.selectedCategory == MapMeasureCategory.GPS_WALK || state.selectedPinIdx >= 0
+            AnimatedVisibility(
+                visible = showMapActionRow,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 10.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (pointerModeEnabled) {
                         Button(
                             onClick = {
                                 webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.addCenterPoint();", null)
                             },
                             modifier = Modifier.testTag("map_pointer_add_button"),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE0F6B54)),
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
                         ) {
-                            Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("পয়েন্টারে পিন বসান", fontWeight = FontWeight.Bold, maxLines = 1)
+                            Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text("পয়েন্টারে পিন বসান", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
                         }
+                    }
 
-                        AnimatedVisibility(visible = state.selectedPinIdx >= 0) {
-                            Button(
-                                onClick = {
-                                    webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.moveSelectedPinToCenter();", null)
-                                },
-                                modifier = Modifier.testTag("map_move_pin_button"),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE1565C0)),
-                                shape = RoundedCornerShape(18.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-                            ) {
-                                Text("পিন #${state.selectedPinIdx + 1} সরান", fontWeight = FontWeight.SemiBold, maxLines = 1)
-                            }
+                    if (state.selectedPinIdx >= 0) {
+                        Button(
+                            onClick = {
+                                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.moveSelectedPinToCenter();", null)
+                            },
+                            modifier = Modifier.testTag("map_move_pin_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 7.dp)
+                        ) {
+                            Text("পিন #${state.selectedPinIdx + 1} এখানে আনুন", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                        }
+                    }
+
+                    if (state.selectedCategory == MapMeasureCategory.GPS_WALK) {
+                        Button(
+                            onClick = {
+                                if (!state.isGpsWalkActive) {
+                                    viewModel.setGpsWalkActive(true)
+                                }
+                                requestOrUseLocation(addPointIfWalking = true)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 7.dp)
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("GPS পয়েন্ট যোগ", style = MaterialTheme.typography.labelMedium, maxLines = 1)
                         }
                     }
                 }
+            }
 
-                // Separate Fine-Tune Nudge D-Pad Controller (for nudging selected pin OR crosshair slightly)
-                val mapHasPoints = state.pointCount > 0
-                val mapTargetPoint = nudgeTargetIsPoint && mapHasPoints
-                val mapNudgeLabel = if (!mapTargetPoint) {
-                    "ক্রসহেয়ার"
-                } else if (state.selectedPinIdx >= 0) {
-                    "পিন #${state.selectedPinIdx + 1}"
-                } else {
-                    "পিন #${state.pointCount}"
-                }
+            // Docked Fine-Tune Nudge D-Pad Controller (placed cleanly BELOW the map so map stays 100% clear)
+            val mapHasPoints = state.pointCount > 0
+            val mapTargetPoint = nudgeTargetIsPoint && mapHasPoints
+            val mapNudgeLabel = if (!mapTargetPoint) {
+                "ক্রসহেয়ার"
+            } else if (state.selectedPinIdx >= 0) {
+                "পিন #${state.selectedPinIdx + 1}"
+            } else {
+                "পিন #${state.pointCount}"
+            }
 
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = showNudgePad,
-                    enter = fadeIn() + scaleIn(initialScale = 0.9f),
-                    exit = fadeOut() + scaleOut(targetScale = 0.9f),
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = 10.dp, bottom = if (pointerModeEnabled) 66.dp else 14.dp)
-                ) {
-                    PrecisionNudgePad(
-                        targetIsPoint = mapTargetPoint,
-                        hasAnyPoint = mapHasPoints,
-                        activePointLabel = mapNudgeLabel,
-                        stepLevel = nudgeStepLevel,
-                        onStepLevelChange = { nudgeStepLevel = it },
-                        onToggleTargetMode = { nudgeTargetIsPoint = it },
-                        onCyclePoint = { delta ->
-                            nudgeTargetIsPoint = true
-                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.cycleSelectedPin($delta);", null)
-                        },
-                        onNudge = { dxPx, dyPx ->
-                            val tMode = if (mapTargetPoint) "pin" else "pointer"
-                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.nudge($dxPx, $dyPx, '$tMode');", null)
-                        },
-                        onClose = { showNudgePad = false }
-                    )
-                }
+            AnimatedVisibility(
+                visible = showNudgePad,
+                enter = expandVertically(tween(240)) + fadeIn(tween(200)),
+                exit = shrinkVertically(tween(200)) + fadeOut(tween(150)),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+            ) {
+                PrecisionNudgePad(
+                    targetIsPoint = mapTargetPoint,
+                    hasAnyPoint = mapHasPoints,
+                    activePointLabel = mapNudgeLabel,
+                    stepLevel = nudgeStepLevel,
+                    onStepLevelChange = { nudgeStepLevel = it },
+                    onToggleTargetMode = { nudgeTargetIsPoint = it },
+                    onCyclePoint = { delta ->
+                        nudgeTargetIsPoint = true
+                        webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.cycleSelectedPin($delta);", null)
+                    },
+                    onNudge = { dxPx, dyPx ->
+                        val tMode = if (mapTargetPoint) "pin" else "pointer"
+                        webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.nudge($dxPx, $dyPx, '$tMode');", null)
+                    },
+                    onClose = { showNudgePad = false }
+                )
             }
 
             // Bottom Live Measurement & Selected-Only PNG Export Panel
@@ -1112,6 +1156,26 @@ fun RealMapScreen(
             }
         }
     }
+
+    // Separate Khatian Upload & Dag-Number Lookup Sheet
+    if (showKhatianSheet) {
+        KhatianLookupBottomSheet(
+            khatianDocName = state.khatianDocName,
+            khatianPreviewBitmap = state.khatianPreviewBitmap,
+            khatianPageCount = state.khatianPageCount,
+            khatianCurrentPage = state.khatianCurrentPage,
+            isLoadingKhatian = state.isLoadingKhatian,
+            khatianRecords = state.khatianRecords,
+            onUploadKhatianClick = { khatianPickerLauncher.launch(arrayOf("application/pdf", "image/*")) },
+            onSelectKhatianPage = { viewModel.selectKhatianPage(it) },
+            onAddKhatianRecord = { kh, dags, owner, area ->
+                viewModel.addKhatianRecord(kh, dags, owner, area)
+            },
+            onDeleteKhatianRecord = { viewModel.deleteKhatianRecord(it) },
+            onSelectDagForMap = { kh, dag -> viewModel.setActiveKhatianTarget(kh, dag) },
+            onDismiss = { showKhatianSheet = false }
+        )
+    }
 }
 
 private data class FullMapStatePayload(
@@ -1310,6 +1374,9 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 points: [],
                 selectedPinIdx: -1,
                 pointerMode: true,
+                loupeEnabled: true,
+                loupeZoom: 3.0,
+                loupeAnim: 1.0,
                 userLoc: null
               };
 
@@ -1581,13 +1648,21 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
 
                 drawMapContent(w, h, true);
 
-                // Live 3.0x Circular Magnifying Loupe showing HD zoomed imagery under pointer
-                if (state.pointerMode && w > 180 && h > 220) {
+                // Animated Live Circular Magnifying Loupe showing HD zoomed imagery under pointer
+                const targetLoupe = (state.pointerMode && state.loupeEnabled && w > 180 && h > 220) ? 1.0 : 0.0;
+                if (Math.abs(state.loupeAnim - targetLoupe) > 0.015) {
+                  state.loupeAnim += (targetLoupe - state.loupeAnim) * 0.28;
+                  scheduleDraw();
+                } else {
+                  state.loupeAnim = targetLoupe;
+                }
+                if (state.loupeAnim > 0.05 && w > 180 && h > 220) {
                   const lx = w / 2;
-                  const lr = 54;
-                  const ly = Math.min(92, Math.max(68, lr + 18));
-                  const zoomFactor = 3.0;
+                  const lr = 54 * state.loupeAnim;
+                  const ly = Math.min(86, Math.max(66, 54 + 16));
+                  const zoomFactor = state.loupeZoom || 3.0;
                   ctx.save();
+                  ctx.globalAlpha = Math.min(1, state.loupeAnim * 1.1);
                   ctx.beginPath();
                   ctx.arc(lx, ly, lr, 0, Math.PI * 2);
                   ctx.clip();
@@ -1601,6 +1676,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
 
                   // Crisp inner reticle inside loupe
                   ctx.save();
+                  ctx.globalAlpha = Math.min(1, state.loupeAnim * 1.1);
                   ctx.strokeStyle = 'rgba(229, 57, 53, 0.92)';
                   ctx.lineWidth = 1.6;
                   ctx.beginPath();
@@ -1610,7 +1686,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   ctx.moveTo(lx, ly + 7); ctx.lineTo(lx, ly + lr - 8);
                   ctx.stroke();
                   ctx.beginPath();
-                  ctx.arc(lx, ly, 3.2, 0, Math.PI * 2);
+                  ctx.arc(lx, ly, 3.2 * state.loupeAnim, 0, Math.PI * 2);
                   ctx.fillStyle = '#e53935';
                   ctx.fill();
 
@@ -1626,17 +1702,19 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
                   ctx.stroke();
 
-                  ctx.font = 'bold 10px sans-serif';
-                  const tag = '3x জুম';
-                  const tw = ctx.measureText(tag).width + 10;
-                  ctx.fillStyle = 'rgba(15, 107, 84, 0.92)';
-                  ctx.beginPath();
-                  ctx.roundRect(lx - tw / 2, ly + lr - 13, tw, 16, 8);
-                  ctx.fill();
-                  ctx.fillStyle = '#ffffff';
-                  ctx.textAlign = 'center';
-                  ctx.textBaseline = 'middle';
-                  ctx.fillText(tag, lx, ly + lr - 5);
+                  if (state.loupeAnim > 0.65) {
+                    ctx.font = 'bold 10px sans-serif';
+                    const tag = zoomFactor.toFixed(1) + 'x জুম';
+                    const tw = ctx.measureText(tag).width + 10;
+                    ctx.fillStyle = 'rgba(15, 107, 84, 0.92)';
+                    ctx.beginPath();
+                    ctx.roundRect(lx - tw / 2, ly + lr - 13, tw, 16, 8);
+                    ctx.fill();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(tag, lx, ly + lr - 5);
+                  }
                   ctx.restore();
                 }
 
@@ -1776,6 +1854,11 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 resize: () => scheduleDraw(),
                 setPointerMode: (enabled) => {
                   state.pointerMode = !!enabled;
+                  scheduleDraw();
+                },
+                setLoupeConfig: (enabled, zoom) => {
+                  state.loupeEnabled = !!enabled;
+                  if (zoom && zoom > 1.0) state.loupeZoom = zoom;
                   scheduleDraw();
                 },
                 setTileLayer: (url, attr, nativeMax, viewMax, overlay) => {

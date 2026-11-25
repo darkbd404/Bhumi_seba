@@ -13,6 +13,7 @@ import com.example.engine.PlotWallIndex
 import com.example.engine.PngExporter
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import com.example.model.KhatianRecord
 import com.example.model.MouzaFilterPreset
 import com.example.model.MouzaPlot
 import com.example.model.MouzaScale
@@ -63,6 +64,15 @@ data class MouzaPdfUiState(
     val selectedTapeIdx: Int? = null,
     val completedTapes: List<List<Pair<Float, Float>>> = emptyList(),
     val khatianTitle: String = "",
+    val khatianDocName: String = "",
+    val khatianIsPdf: Boolean = true,
+    val khatianPageCount: Int = 0,
+    val khatianCurrentPage: Int = 0,
+    val khatianPreviewBitmap: Bitmap? = null,
+    val isLoadingKhatian: Boolean = false,
+    val khatianRecords: List<KhatianRecord> = emptyList(),
+    val activeSearchTarget: Pair<String, String>? = null, // (khatianNo, dagNo)
+    val highlightedPlotId: Int? = null,
     val filterPreset: MouzaFilterPreset = MouzaFilterPreset.NORMAL,
     val brightness: Float = 1f,
     val contrast: Float = 1f,
@@ -84,6 +94,8 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
 
     private var activeDocFile: File? = null
     private var activeIsPdf: Boolean = true
+    private var activeKhatianFile: File? = null
+    private var activeKhatianIsPdf: Boolean = true
     private var nextPlotId = 1
     private var renderJob: Job? = null
     private var viewportTileJob: Job? = null
@@ -448,13 +460,26 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                         is MouzaPdfEngine.AutoFillResult.Success -> {
                             nextPlotId++
                             redoStack.clear()
-                            val updated = state.selectedPlots + res.plot
+                            val target = state.activeSearchTarget
+                            val taggedPlot = if (target != null) {
+                                res.plot.copy(
+                                    khatianNumber = target.first.ifBlank { res.plot.khatianNumber },
+                                    dagNumber = target.second.ifBlank { res.plot.dagNumber }
+                                )
+                            } else res.plot
+                            val updated = state.selectedPlots + taggedPlot
                             _uiState.update {
                                 it.copy(
                                     isAutoFilling = false,
                                     selectedPlots = updated,
+                                    activeSearchTarget = null,
+                                    highlightedPlotId = taggedPlot.id,
                                     canRedo = false,
-                                    statusMessage = "দাগ #${res.plot.plotIndex} সিলেক্ট হয়েছে (প্রয়োজনে 'পয়েন্ট এডিট'-এ কোণা ঠিক করুন)"
+                                    statusMessage = if (target != null) {
+                                        "খতিয়ান ${target.first} • দাগ ${target.second} প্লট যুক্ত হয়েছে!"
+                                    } else {
+                                        "দাগ #${taggedPlot.plotIndex} সিলেক্ট হয়েছে (প্রয়োজনে 'পয়েন্ট এডিট'-এ কোণা ঠিক করুন)"
+                                    }
                                 )
                             }
                         }
@@ -698,6 +723,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         val sqFt = MouzaPdfEngine.computePolygonAreaSqFeet(
             draft, state.pdfPageWidthPts, state.pdfPageHeightPts, state.selectedScale, state.calibrationMultiplier
         )
+        val target = state.activeSearchTarget
         val plot = MouzaPdfEngine.buildManualPolygonPlot(
             normalizedPoints = draft,
             gridWidth = gw,
@@ -705,7 +731,11 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             plotId = nextPlotId,
             plotIndex = state.selectedPlots.size + 1,
             color = color
-        ).copy(exactAreaSqFeet = sqFt)
+        ).copy(
+            exactAreaSqFeet = sqFt,
+            khatianNumber = target?.first ?: "",
+            dagNumber = target?.second ?: ""
+        )
         nextPlotId++
         redoStack.clear()
         val updated = state.selectedPlots + plot
@@ -714,8 +744,14 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 manualPolygonDraft = emptyList(),
                 selectedDraftIdx = null,
                 selectedPlots = updated,
+                activeSearchTarget = null,
+                highlightedPlotId = plot.id,
                 canRedo = false,
-                statusMessage = "ম্যানুয়াল দাগ #${plot.plotIndex} যুক্ত হয়েছে"
+                statusMessage = if (target != null) {
+                    "খতিয়ান ${target.first} • দাগ ${target.second} যুক্ত হয়েছে"
+                } else {
+                    "ম্যানুয়াল দাগ #${plot.plotIndex} যুক্ত হয়েছে"
+                }
             )
         }
     }
@@ -1075,7 +1111,11 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                     savedPlots = serializedPlots,
                     manualPolygonDraft = state.manualPolygonDraft.map { SerializablePoint(it.first, it.second) },
                     completedTapes = state.completedTapes.map { line -> line.map { SerializablePoint(it.first, it.second) } },
-                    tapeDraft = state.tapeDraft.map { SerializablePoint(it.first, it.second) }
+                    tapeDraft = state.tapeDraft.map { SerializablePoint(it.first, it.second) },
+                    khatianFilePath = activeKhatianFile?.takeIf { it.exists() }?.absolutePath,
+                    khatianFileName = state.khatianDocName,
+                    khatianIsPdf = activeKhatianIsPdf,
+                    khatianRecords = state.khatianRecords
                 )
 
                 prefs.saveSurveyProject(project)
@@ -1170,6 +1210,26 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 }
                 nextPlotId = (restoredPlots.maxOfOrNull { it.id } ?: 0) + 1
 
+                val khatianFile = project.khatianFilePath?.let { File(it) }?.takeIf { it.exists() }
+                activeKhatianFile = khatianFile
+                activeKhatianIsPdf = project.khatianIsPdf
+                var restoredKhatianBmp: Bitmap? = null
+                var restoredKhatianPages = 0
+                if (khatianFile != null) {
+                    runCatching {
+                        restoredKhatianPages = if (project.khatianIsPdf) {
+                            withContext(Dispatchers.IO) {
+                                android.os.ParcelFileDescriptor.open(khatianFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                                    android.graphics.pdf.PdfRenderer(pfd).use { it.pageCount }
+                                }
+                            }
+                        } else 1
+                        restoredKhatianBmp = MouzaPdfEngine.renderBaseDocument(
+                            appContext, khatianFile, project.khatianIsPdf, 0, ultraHd = false
+                        ).bitmap
+                    }
+                }
+
                 _uiState.update {
                     it.copy(
                         isLoadingPdf = false,
@@ -1190,6 +1250,12 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                         brightness = project.brightness,
                         contrast = project.contrast,
                         khatianTitle = project.khatianTitle,
+                        khatianDocName = project.khatianFileName,
+                        khatianIsPdf = project.khatianIsPdf,
+                        khatianPageCount = restoredKhatianPages,
+                        khatianCurrentPage = 0,
+                        khatianPreviewBitmap = restoredKhatianBmp,
+                        khatianRecords = project.khatianRecords,
                         selectedPlots = restoredPlots,
                         manualPolygonDraft = project.manualPolygonDraft.map { it.x to it.y },
                         selectedDraftIdx = null,
@@ -1218,6 +1284,142 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 _uiState.update { it.copy(activeProjectId = null) }
             }
         }
+    }
+
+    fun openKhatianDocumentUri(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingKhatian = true, statusMessage = "খতিয়ান ফাইল আপলোড হচ্ছে...") }
+            try {
+                val displayName = resolveFileName(uri)
+                val mime = appContext.contentResolver.getType(uri)
+                val info = MouzaPdfEngine.copyDocumentToCache(appContext, uri, displayName, mime)
+                val savedDir = File(appContext.filesDir, "saved_khatian_docs").apply { mkdirs() }
+                val destFile = withContext(Dispatchers.IO) {
+                    val ext = info.tempFile.extension.ifBlank { if (info.isPdf) "pdf" else "png" }
+                    val target = File(savedDir, "khatian_${System.currentTimeMillis()}.$ext")
+                    info.tempFile.copyTo(target, overwrite = true)
+                    target
+                }
+                activeKhatianFile = destFile
+                activeKhatianIsPdf = info.isPdf
+                val preview = MouzaPdfEngine.renderBaseDocument(appContext, destFile, info.isPdf, 0, ultraHd = true)
+                _uiState.update {
+                    it.copy(
+                        isLoadingKhatian = false,
+                        khatianDocName = info.fileName,
+                        khatianIsPdf = info.isPdf,
+                        khatianPageCount = info.pageCount,
+                        khatianCurrentPage = 0,
+                        khatianPreviewBitmap = preview.bitmap,
+                        khatianTitle = it.khatianTitle.ifBlank { info.fileName.substringBeforeLast('.') },
+                        statusMessage = "খতিয়ান আপলোড সম্পন্ন — এখন দাগ নং যোগ করে ম্যাপে খুঁজুন"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoadingKhatian = false,
+                        statusMessage = "খতিয়ান খোলা যায়নি: ${e.localizedMessage ?: "ত্রুটি"}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectKhatianPage(pageIndex: Int) {
+        val file = activeKhatianFile ?: return
+        if (!activeKhatianIsPdf || pageIndex !in 0 until _uiState.value.khatianPageCount) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingKhatian = true) }
+            runCatching {
+                MouzaPdfEngine.renderBaseDocument(appContext, file, true, pageIndex, ultraHd = true)
+            }.onSuccess { rendered ->
+                _uiState.update {
+                    it.copy(
+                        isLoadingKhatian = false,
+                        khatianCurrentPage = pageIndex,
+                        khatianPreviewBitmap = rendered.bitmap
+                    )
+                }
+            }.onFailure {
+                _uiState.update { it.copy(isLoadingKhatian = false) }
+            }
+        }
+    }
+
+    fun addKhatianRecord(
+        khatianNumber: String,
+        dagNumbersCsv: String,
+        ownerName: String,
+        areaSummary: String
+    ) {
+        val dags = dagNumbersCsv
+            .split(",", " ", "।", ";", "\n")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        val rec = KhatianRecord(
+            id = "khat_${System.currentTimeMillis()}",
+            khatianNumber = khatianNumber.trim(),
+            dagNumbers = dags,
+            ownerName = ownerName.trim(),
+            areaSummary = areaSummary.trim(),
+            pageIndex = _uiState.value.khatianCurrentPage
+        )
+        _uiState.update {
+            it.copy(
+                khatianRecords = listOf(rec) + it.khatianRecords,
+                khatianTitle = it.khatianTitle.ifBlank {
+                    buildString {
+                        if (khatianNumber.isNotBlank()) append("খতিয়ান ${khatianNumber.trim()}")
+                        if (ownerName.isNotBlank()) {
+                            if (isNotEmpty()) append(" • ")
+                            append(ownerName.trim())
+                        }
+                    }
+                },
+                statusMessage = "খতিয়ান নোট যুক্ত হয়েছে — দাগ নং ক্লিক করে ম্যাপে খুঁজুন"
+            )
+        }
+    }
+
+    fun deleteKhatianRecord(id: String) {
+        _uiState.update {
+            it.copy(khatianRecords = it.khatianRecords.filterNot { r -> r.id == id })
+        }
+    }
+
+    fun findOrTargetDagFromKhatian(khatianNo: String, dagNo: String) {
+        val state = _uiState.value
+        val matched = state.selectedPlots.firstOrNull { p ->
+            (dagNo.isNotBlank() && p.dagNumber.equals(dagNo.trim(), ignoreCase = true)) ||
+                (dagNo.isBlank() && khatianNo.isNotBlank() && p.khatianNumber.equals(khatianNo.trim(), ignoreCase = true))
+        }
+        if (matched != null) {
+            _uiState.update {
+                it.copy(
+                    focusPlotRequest = matched,
+                    highlightedPlotId = matched.id,
+                    activeSearchTarget = null,
+                    statusMessage = "ম্যাচিং দাগ ${matched.dagNumber.ifBlank { "#${matched.plotIndex}" }} জুম করা হয়েছে!"
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    activeSearchTarget = khatianNo.trim() to dagNo.trim(),
+                    statusMessage = "খুঁজছেন: খতিয়ান ${khatianNo.ifBlank { "-" }} • দাগ $dagNo — নকশায় প্লট সিলেক্ট করলেই ট্যাগ হবে"
+                )
+            }
+        }
+    }
+
+    fun clearActiveSearchTarget() {
+        _uiState.update { it.copy(activeSearchTarget = null) }
+    }
+
+    fun clearHighlightedPlot() {
+        _uiState.update { it.copy(highlightedPlotId = null) }
     }
 
     private fun resolveFileName(uri: Uri): String {

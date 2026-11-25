@@ -60,6 +60,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.model.PC_INSTALL_APP_URL
+import com.example.ui.components.BottomSwipeToastBanner
+import com.example.ui.components.PcInstallLinkCard
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.SurveyGold
@@ -102,6 +105,7 @@ fun AboutScreen(
     }
 
     var visible by remember { mutableStateOf(false) }
+    var toastMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { visible = true }
 
     Box(
@@ -329,8 +333,23 @@ fun AboutScreen(
             }
         }
 
+        item {
+            PcInstallLinkCard(
+                url = PC_INSTALL_APP_URL,
+                onCopySuccess = { msg -> toastMessage = msg }
+            )
+        }
+
         item { Spacer(Modifier.height(14.dp)) }
         }
+
+        BottomSwipeToastBanner(
+            message = toastMessage,
+            onDismiss = { toastMessage = null },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 18.dp)
+        )
     }
 }
 

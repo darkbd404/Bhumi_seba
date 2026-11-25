@@ -243,6 +243,18 @@ data class SerializedMouzaPlot(
 )
 
 @Serializable
+data class KhatianRecord(
+    val id: String,
+    val khatianNumber: String,
+    val dagNumbers: List<String> = emptyList(),
+    val ownerName: String = "",
+    val areaSummary: String = "",
+    val pageIndex: Int = 0
+)
+
+const val PC_INSTALL_APP_URL = "https://ais-pre-unuuvzicd3jk2gwzkjmqiu-627685175139.asia-east1.run.app"
+
+@Serializable
 data class SavedSurveyProject(
     val id: String,
     val title: String,
@@ -271,6 +283,11 @@ data class SavedSurveyProject(
     val manualPolygonDraft: List<SerializablePoint> = emptyList(),
     val completedTapes: List<List<SerializablePoint>> = emptyList(),
     val tapeDraft: List<SerializablePoint> = emptyList(),
+    // Separate Khatian Document + Dag-Khatian index
+    val khatianFilePath: String? = null,
+    val khatianFileName: String = "",
+    val khatianIsPdf: Boolean = true,
+    val khatianRecords: List<KhatianRecord> = emptyList(),
     // Real Map state
     val mapLayerId: String = MapLayerOption.GOOGLE_HYBRID.id,
     val showLabelsOverlay: Boolean = true,

@@ -157,4 +157,74 @@ class ExampleRobolectricTest {
         prefs.deleteSurveyProject("test_proj_1")
         assertEquals(null, prefs.getSurveyProjectById("test_proj_1"))
     }
+
+    @Test
+    fun mouzaPdfViewModel_khatianDagLookupAndAutoTaggingWorks() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.example.viewmodel.MouzaPdfViewModel(app)
+        val stateField = com.example.viewmodel.MouzaPdfViewModel::class.java.getDeclaredField("_uiState")
+        stateField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val flow = stateField.get(vm) as kotlinx.coroutines.flow.MutableStateFlow<com.example.viewmodel.MouzaPdfUiState>
+        val bmp = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+        flow.value = flow.value.copy(displayBitmap = bmp, pdfPageWidthPts = 1000, pdfPageHeightPts = 1000)
+
+        vm.addKhatianRecord(
+            khatianNumber = "১২৮",
+            dagNumbersCsv = "৪৫২, ৪৫৩",
+            ownerName = "আবুল কালাম",
+            areaSummary = "২৭.৯ শতাংশ"
+        )
+        assertEquals(1, vm.uiState.value.khatianRecords.size)
+        assertEquals(listOf("৪৫২", "৪৫৩"), vm.uiState.value.khatianRecords.first().dagNumbers)
+
+        // Targeting an untagged Dag sets activeSearchTarget
+        vm.findOrTargetDagFromKhatian("১২৮", "৪৫২")
+        assertEquals("১২৮" to "৪৫২", vm.uiState.value.activeSearchTarget)
+
+        // Drawing manual polygon auto-tags it with Khatian & Dag
+        vm.onPointerPlace(0.10f, 0.10f)
+        vm.onPointerPlace(0.30f, 0.10f)
+        vm.onPointerPlace(0.30f, 0.30f)
+        vm.finishManualPolygon()
+
+        assertEquals(1, vm.uiState.value.selectedPlots.size)
+        val tagged = vm.uiState.value.selectedPlots.first()
+        assertEquals("১২৮", tagged.khatianNumber)
+        assertEquals("৪৫২", tagged.dagNumber)
+        assertEquals(null, vm.uiState.value.activeSearchTarget)
+
+        // Targeting already tagged Dag focuses & highlights the plot
+        vm.findOrTargetDagFromKhatian("১২৮", "৪৫২")
+        assertEquals(tagged.id, vm.uiState.value.highlightedPlotId)
+        assertEquals(tagged.id, vm.uiState.value.focusPlotRequest?.id)
+    }
+
+    @Test
+    fun mouzaPdfViewModel_microStepNudgeChangesPointGraduallyWithoutJumping() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.example.viewmodel.MouzaPdfViewModel(app)
+        val stateField = com.example.viewmodel.MouzaPdfViewModel::class.java.getDeclaredField("_uiState")
+        stateField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val flow = stateField.get(vm) as kotlinx.coroutines.flow.MutableStateFlow<com.example.viewmodel.MouzaPdfUiState>
+        val bmp = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+        flow.value = flow.value.copy(displayBitmap = bmp, pdfPageWidthPts = 1000, pdfPageHeightPts = 1000)
+
+        vm.onPointerPlace(0.10f, 0.10f)
+        vm.onPointerPlace(0.25f, 0.10f)
+        vm.onPointerPlace(0.25f, 0.25f)
+        vm.finishManualPolygon()
+
+        val initialSqFt = vm.totalSelectedSqFeet()
+        val microDeltaX = 0.22f / 900f // 1% step level (0.22px on 900px fit width)
+        vm.cycleActivePoint(1)
+        vm.nudgeActivePoint(microDeltaX, 0f)
+        val nextSqFt = vm.totalSelectedSqFeet()
+        val deltaDecimal = kotlin.math.abs(nextSqFt - initialSqFt) / 435.6
+
+        // Must change area smoothly by much less than 0.25 decimal per click
+        assertTrue("Expected gradual decimal change < 0.25, was $deltaDecimal", deltaDecimal < 0.25)
+    }
 }
+

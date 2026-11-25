@@ -32,9 +32,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Logout
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -412,47 +415,47 @@ fun PrecisionNudgePad(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Level 0 = ultra-fine 1% precision (0.22 screen px) so e.g. 27.11 -> 27.90 moves smoothly unit-by-unit
     val stepPx = when (stepLevel) {
-        0 -> 1.6f
-        2 -> 14.0f
-        else -> 5.0f
+        0 -> 0.22f
+        1 -> 1.0f
+        2 -> 4.0f
+        else -> 12.0f
     }
     val stepLabel = when (stepLevel) {
-        0 -> "সূক্ষ্ম"
-        2 -> "বেশি"
-        else -> "মাঝারি"
+        0 -> "১% (০.২px)"
+        1 -> "সূক্ষ্ম (১px)"
+        2 -> "মাঝারি (৪px)"
+        else -> "বেশি (১২px)"
     }
 
     Column(
         modifier = modifier
-            .width(178.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xE8132028))
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xF215232C))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Header: target mode switch + close
+        // Row 1: Target Switch (পয়েন্টার / বিন্দু) + Point Cycler + Step Precision Selector + Close
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 modifier = Modifier
-                    .weight(1f)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0x33FFFFFF))
+                    .background(Color(0x28FFFFFF))
                     .padding(2.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (!targetIsPoint) Color(0xFF0F6B54) else Color.Transparent)
                         .clickable { onToggleTargetMode(false) }
-                        .padding(vertical = 4.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -464,13 +467,12 @@ fun PrecisionNudgePad(
                 }
                 Box(
                     modifier = Modifier
-                        .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (targetIsPoint && hasAnyPoint) Color(0xFFE08A00) else Color.Transparent
                         )
                         .clickable(enabled = hasAnyPoint) { onToggleTargetMode(true) }
-                        .padding(vertical = 4.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -481,12 +483,71 @@ fun PrecisionNudgePad(
                     )
                 }
             }
-            Spacer(Modifier.width(4.dp))
+
+            if (hasAnyPoint) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0x28FFFFFF))
+                            .clickable { onCyclePoint(-1) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("‹", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        text = activePointLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (targetIsPoint) Color(0xFFFFD54F) else Color(0xFF80CBC4),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 6.dp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0x28FFFFFF))
+                            .clickable { onCyclePoint(1) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("›", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+
+            // Step precision cycle pill
             Box(
                 modifier = Modifier
-                    .size(24.dp)
+                    .testTag("nudge_step_toggle")
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF1E3A46))
+                    .clickable { onStepLevelChange((stepLevel + 1) % 4) }
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stepLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFFE082),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
                     .clip(CircleShape)
-                    .background(Color(0x33FFFFFF))
+                    .background(Color(0x28FFFFFF))
                     .clickable(onClick = onClose),
                 contentAlignment = Alignment.Center
             ) {
@@ -499,93 +560,39 @@ fun PrecisionNudgePad(
             }
         }
 
-        // Point switcher (< বিন্দু #2 >) when points exist
-        if (hasAnyPoint) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0x28FFFFFF))
-                        .clickable { onCyclePoint(-1) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("‹", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-                Text(
-                    text = activePointLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (targetIsPoint) Color(0xFFFFD54F) else Color(0xFF80CBC4),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0x28FFFFFF))
-                        .clickable { onCyclePoint(1) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("›", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        // 4-way D-Pad (Supports quick tap AND continuous hold)
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        // Row 2: Dedicated horizontal D-Pad strip (placed below the map so the map stays 100% clear)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             NudgeDirButton(
-                symbol = "▲",
+                symbol = "◀ বাম",
+                desc = "Move Left",
+                testTag = "nudge_left_btn",
+                modifier = Modifier.weight(1f),
+                onTrigger = { onNudge(-stepPx, 0f) }
+            )
+            NudgeDirButton(
+                symbol = "▲ উপর",
                 desc = "Move Up",
                 testTag = "nudge_up_btn",
+                modifier = Modifier.weight(1f),
                 onTrigger = { onNudge(0f, -stepPx) }
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                NudgeDirButton(
-                    symbol = "◀",
-                    desc = "Move Left",
-                    testTag = "nudge_left_btn",
-                    onTrigger = { onNudge(-stepPx, 0f) }
-                )
-                // Center step-size toggle button
-                Box(
-                    modifier = Modifier
-                        .size(width = 50.dp, height = 38.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF1E3540))
-                        .clickable { onStepLevelChange((stepLevel + 1) % 3) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stepLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFFFFE082),
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                }
-                NudgeDirButton(
-                    symbol = "▶",
-                    desc = "Move Right",
-                    testTag = "nudge_right_btn",
-                    onTrigger = { onNudge(stepPx, 0f) }
-                )
-            }
             NudgeDirButton(
-                symbol = "▼",
+                symbol = "▼ নিচ",
                 desc = "Move Down",
                 testTag = "nudge_down_btn",
+                modifier = Modifier.weight(1f),
                 onTrigger = { onNudge(0f, stepPx) }
+            )
+            NudgeDirButton(
+                symbol = "ডান ▶",
+                desc = "Move Right",
+                testTag = "nudge_right_btn",
+                modifier = Modifier.weight(1f),
+                onTrigger = { onNudge(stepPx, 0f) }
             )
         }
     }
@@ -596,15 +603,16 @@ private fun NudgeDirButton(
     symbol: String,
     desc: String,
     testTag: String,
+    modifier: Modifier = Modifier,
     onTrigger: () -> Unit
 ) {
     val latestTrigger by androidx.compose.runtime.rememberUpdatedState(onTrigger)
     Box(
-        modifier = Modifier
-            .size(width = 44.dp, height = 38.dp)
+        modifier = modifier
+            .height(38.dp)
             .testTag(testTag)
             .clip(RoundedCornerShape(10.dp))
-            .background(Color(0x38FFFFFF))
+            .background(Color(0x36FFFFFF))
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -613,7 +621,7 @@ private fun NudgeDirButton(
                         down.consume()
                         latestTrigger()
                         var elapsed = 0L
-                        var nextFire = 260L
+                        var nextFire = 280L
                         while (true) {
                             val res = withTimeoutOrNull(45L) { awaitPointerEvent() }
                             if (res != null) {
@@ -624,7 +632,7 @@ private fun NudgeDirButton(
                                 elapsed += 45L
                                 if (elapsed >= nextFire) {
                                     latestTrigger()
-                                    nextFire += 65L
+                                    nextFire += 75L
                                 }
                             }
                         }
@@ -636,9 +644,173 @@ private fun NudgeDirButton(
         Text(
             text = symbol,
             color = Color.White,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
         )
     }
 }
 
+@Composable
+fun PcInstallLinkCard(
+    url: String,
+    onCopySuccess: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .neuSurface(cornerRadius = 22.dp, elevation = 6.dp)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF1A73E8).copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Rounded.Computer,
+                    contentDescription = "PC Install Link",
+                    tint = Color(0xFF1A73E8),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "PC ও ওয়েব ইনস্টল লিংক",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "কম্পিউটার বা ল্যাপটপের ব্রাউজারে চালান ও ইনস্টল করুন",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(LocalNeuPalette.current.canvas)
+                .clickable {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(url))
+                    onCopySuccess("PC ইনস্টল লিংক কপি হয়েছে!")
+                }
+                .padding(horizontal = 12.dp, vertical = 9.dp)
+        ) {
+            Text(
+                text = url,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(url))
+                    onCopySuccess("PC ইনস্টল লিংক কপি হয়েছে!")
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("pc_link_copy_button"),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Rounded.ContentCopy,
+                    contentDescription = "Copy Link",
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(5.dp))
+                Text("কপি করুন", maxLines = 1)
+            }
+
+            Button(
+                onClick = {
+                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Bhumi Survey BD — PC / Web App")
+                        putExtra(
+                            android.content.Intent.EXTRA_TEXT,
+                            "Bhumi Survey BD (ডিজিটাল মৌজা ও ভূমি জরিপ) PC/Web-এ চালাতে ও ইনস্টল করতে এই লিংক ব্যবহার করুন:\n$url"
+                        )
+                    }
+                    context.startActivity(
+                        android.content.Intent.createChooser(shareIntent, "PC ইনস্টল লিংক শেয়ার করুন")
+                    )
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("pc_link_share_button"),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Rounded.Share,
+                    contentDescription = "Share Link",
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(5.dp))
+                Text("শেয়ার করুন", maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+fun UtilityBarChip(
+    label: String,
+    icon: ImageVector?,
+    selected: Boolean,
+    testTag: String? = null,
+    onClick: () -> Unit
+) {
+    val palette = LocalNeuPalette.current
+    Row(
+        modifier = Modifier
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (selected) Color(0xFF0F6B54)
+                else palette.surface.copy(alpha = 0.92f)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (selected) Color.White else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(15.dp)
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1
+        )
+    }
+}
