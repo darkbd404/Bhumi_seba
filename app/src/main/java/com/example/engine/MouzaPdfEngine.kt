@@ -283,7 +283,8 @@ object MouzaPdfEngine {
         val normLeft: Float,
         val normTop: Float,
         val normRight: Float,
-        val normBottom: Float
+        val normBottom: Float,
+        val zoomScale: Float = 1f
     )
 
     sealed class AutoFillResult {
@@ -394,9 +395,9 @@ object MouzaPdfEngine {
                 val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
                 val isLowRam = am?.isLowRamDevice == true
                 val targetMaxDim = if (ultraHd) {
-                    if (isLowRam) 2400 else 3200
+                    if (isLowRam) 1800 else 2400
                 } else {
-                    1200
+                    1400
                 }
 
                 val aspect = pagePtsW.toFloat() / pagePtsH.toFloat().coerceAtLeast(1f)
@@ -416,7 +417,7 @@ object MouzaPdfEngine {
                     bitmap,
                     null,
                     null,
-                    if (ultraHd) PdfRenderer.Page.RENDER_MODE_FOR_PRINT else PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
+                    PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
                 )
 
                 page.close()
@@ -507,7 +508,7 @@ object MouzaPdfEngine {
                         postTranslate(-nl * pageW, -nt * pageH)
                         postScale(uniformScale, uniformScale)
                     }
-                    page.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                    page.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     page.close()
                     renderer.close()
                     pfd.close()
@@ -534,23 +535,38 @@ object MouzaPdfEngine {
                     sample *= 2
                 }
 
-                val decoder = BitmapRegionDecoder.newInstance(docFile.absolutePath, false)
                 val decodeOpts = BitmapFactory.Options().apply {
                     inSampleSize = sample
                     inPreferredConfig = Bitmap.Config.ARGB_8888
                 }
-                val region = decoder?.decodeRegion(Rect(rx0, ry0, rx1, ry1), decodeOpts)
-                decoder?.recycle()
-                if (region == null) return@runCatching null
+                val region = runCatching {
+                    val decoder = BitmapRegionDecoder.newInstance(docFile.absolutePath, false)
+                    val bmp = decoder?.decodeRegion(Rect(rx0, ry0, rx1, ry1), decodeOpts)
+                    decoder?.recycle()
+                    bmp
+                }.getOrNull() ?: run {
+                    val full = BitmapFactory.decodeFile(docFile.absolutePath, decodeOpts) ?: return@runCatching null
+                    val sx0 = (rx0 / sample).coerceIn(0, full.width - 2)
+                    val sy0 = (ry0 / sample).coerceIn(0, full.height - 2)
+                    val sx1 = (rx1 / sample).coerceIn(sx0 + 2, full.width)
+                    val sy1 = (ry1 / sample).coerceIn(sy0 + 2, full.height)
+                    val sub = Bitmap.createBitmap(full, sx0, sy0, sx1 - sx0, sy1 - sy0)
+                    if (sub != full) full.recycle()
+                    sub
+                }
 
-                val scaled = if (region.width != outW || region.height != outH) {
-                    val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+                val uniformScale = min(outW.toFloat() / region.width, outH.toFloat() / region.height).coerceAtMost(2.5f)
+                val finalW = (region.width * uniformScale).roundToInt().coerceIn(64, outW)
+                val finalH = (region.height * uniformScale).roundToInt().coerceIn(64, outH)
+
+                val scaled = if (region.width != finalW || region.height != finalH) {
+                    val out = Bitmap.createBitmap(finalW, finalH, Bitmap.Config.ARGB_8888)
                     val c = Canvas(out)
                     c.drawColor(Color.WHITE)
                     c.drawBitmap(
                         region,
                         Rect(0, 0, region.width, region.height),
-                        RectF(0f, 0f, outW.toFloat(), outH.toFloat()),
+                        RectF(0f, 0f, finalW.toFloat(), finalH.toFloat()),
                         Paint(Paint.FILTER_BITMAP_FLAG)
                     )
                     region.recycle()

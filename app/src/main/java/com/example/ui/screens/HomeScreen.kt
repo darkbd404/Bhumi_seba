@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -377,11 +378,11 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     NeuFeatureCard(
-                        title = "AI ভূমি সহায়ক",
-                        subtitle = "আইন, নামজারি ও নিকটস্থ ভূমি অফিস খুঁজুন",
-                        icon = Icons.Rounded.AutoAwesome,
-                        accentColor = Color(0xFF7B3FE4),
-                        badge = "Gemini",
+                        title = "গুগল ভূমি সার্চ",
+                        subtitle = "যেকোনো বিষয় লিখে চ্যাটেই গুগল রেজাল্ট দেখুন",
+                        icon = Icons.Rounded.Search,
+                        accentColor = Color(0xFF1A73E8),
+                        badge = "Google",
                         testTag = "card_ai_assistant",
                         modifier = Modifier.weight(1f),
                         onClick = onOpenAiAssistant

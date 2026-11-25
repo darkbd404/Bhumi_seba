@@ -141,8 +141,10 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(searchResults = emptyList()) }
     }
 
-    fun exportSelectedMapPng(
-        fullMapBitmap: Bitmap,
+    fun exportSelectedMapPlotPng(
+        pointsLatLon: List<Pair<Double, Double>>,
+        mode: String,
+        fallbackBitmap: Bitmap?,
         cropRectNormalized: RectF?
     ) {
         val state = _uiState.value
@@ -151,7 +153,7 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
         val perimeterFeet = state.perimeterMeters * 3.280839895
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isExporting = true, statusMessage = "ম্যাপের সিলেক্টেড এরিয়া PNG সেভ হচ্ছে...") }
+            _uiState.update { it.copy(isExporting = true, statusMessage = "ম্যাপের সিলেক্টেড অংশ HD PNG সেভ হচ্ছে...") }
             try {
                 val line1 = if (state.areaSqMeters > 0.0) {
                     String.format(
@@ -172,10 +174,15 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
                     area.sqFeet, perimeterFeet, state.perimeterMeters, state.selectedLayer.titleEn
                 )
 
-                val res = PngExporter.exportSelectedMapRegionPng(
+                val res = PngExporter.exportSelectedMapPlotPng(
                     context = appContext,
-                    fullMapBitmap = fullMapBitmap,
-                    cropRectNormalized = cropRectNormalized,
+                    pointsLatLon = pointsLatLon,
+                    mode = mode,
+                    layer = state.selectedLayer,
+                    showLabelsOverlay = state.showLabelsOverlay,
+                    areaSqMeters = state.areaSqMeters,
+                    fallbackBitmap = fallbackBitmap,
+                    fallbackCropRect = cropRectNormalized,
                     summaryHeader = "Bhumi Survey BD • ${state.selectedCategory.titleBn}",
                     summaryLine1 = line1,
                     summaryLine2 = line2
@@ -211,6 +218,16 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
             }
         }
     }
+
+    fun exportSelectedMapPng(
+        fullMapBitmap: Bitmap,
+        cropRectNormalized: RectF?
+    ) = exportSelectedMapPlotPng(
+        pointsLatLon = emptyList(),
+        mode = _uiState.value.selectedCategory.id,
+        fallbackBitmap = fullMapBitmap,
+        cropRectNormalized = cropRectNormalized
+    )
 
     fun clearStatusMessage() {
         _uiState.update { it.copy(statusMessage = null) }

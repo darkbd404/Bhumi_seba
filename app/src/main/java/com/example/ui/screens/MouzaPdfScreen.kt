@@ -51,6 +51,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterBAndW
+import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Remove
@@ -142,6 +143,7 @@ fun MouzaPdfScreen(
     var showGapMenu by remember { mutableStateOf(false) }
     var showReportSheet by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    var pointerModeEnabled by remember { mutableStateOf(true) }
     var editingPlot by remember { mutableStateOf<MouzaPlot?>(null) }
     var showCalibrateDialog by remember { mutableStateOf<MouzaPlot?>(null) }
 
@@ -226,7 +228,7 @@ fun MouzaPdfScreen(
                 }
             }
 
-            if (state.isLoadingPdf || state.isRenderingHd || state.isAutoFilling) {
+            if (state.isLoadingPdf || state.isAutoFilling) {
                 LinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -245,6 +247,13 @@ fun MouzaPdfScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    NeuPillChip(
+                        text = "পয়েন্টার",
+                        selected = pointerModeEnabled,
+                        icon = Icons.Rounded.GpsFixed,
+                        testTag = "tool_pointer_toggle",
+                        onClick = { pointerModeEnabled = !pointerModeEnabled }
+                    )
                     NeuPillChip(
                         text = "অটো ফিল",
                         selected = state.activeTool == MouzaSelectionTool.AUTO_TAP,
@@ -642,9 +651,9 @@ fun MouzaPdfScreen(
                                     native.drawBitmap(bmp, srcR, dstR, bitmapPaint)
                                 }
 
-                                // 2. Overlay crisp native-resolution Viewport HD Tile when zoomed in!
+                                // 2. Overlay crisp native-resolution Viewport HD Tile when zoomed in (>= 2.2x)
                                 val hdTile = state.viewportTile
-                                if (hdTile != null && scale > 1.15f && !hdTile.bitmap.isRecycled) {
+                                if (hdTile != null && scale >= 2.2f && !hdTile.bitmap.isRecycled) {
                                     val tileDst = RectF(
                                         toScreenX(hdTile.normLeft),
                                         toScreenY(hdTile.normTop),
@@ -816,6 +825,37 @@ fun MouzaPdfScreen(
                                     drawPath(path, color = EmeraldPrimary, style = Stroke(width = 4.5f))
                                 }
                             }
+                            // 6. Precision Center Crosshair Pointer (when enabled)
+                            if (pointerModeEnabled) {
+                                val center = Offset(size.width / 2f, size.height / 2f)
+                                drawCircle(
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    radius = 30f,
+                                    center = center,
+                                    style = Stroke(width = 5f)
+                                )
+                                drawCircle(
+                                    color = Color(0xFFE53935),
+                                    radius = 30f,
+                                    center = center,
+                                    style = Stroke(width = 2.5f)
+                                )
+                                val gap = 10f
+                                val arm = 42f
+                                // White halo behind crosshair ticks
+                                drawLine(Color.White, Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 5f)
+                                drawLine(Color.White, Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 5f)
+                                drawLine(Color.White, Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 5f)
+                                drawLine(Color.White, Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 5f)
+                                // Crisp red/emerald crosshair ticks
+                                drawLine(Color(0xFFE53935), Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 2.5f)
+                                drawLine(Color(0xFFE53935), Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 2.5f)
+                                drawLine(Color(0xFFE53935), Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 2.5f)
+                                drawLine(Color(0xFFE53935), Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 2.5f)
+                                // Center pinpoint dot
+                                drawCircle(Color.White, radius = 5.5f, center = center)
+                                drawCircle(Color(0xFFE53935), radius = 3.2f, center = center)
+                            }
                         }
 
                         // Zoom Percentage Indicator Badge (Top Left)
@@ -834,7 +874,7 @@ fun MouzaPdfScreen(
                             )
                         }
 
-                        // Right-side Floating FAB Stack (Zoom +, Zoom -, Fit, Filter — matching reference video & UI.html)
+                        // Right-side Floating FAB Stack (Zoom +, Zoom -, Fit, Pointer, Filter)
                         Column(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
@@ -864,11 +904,53 @@ fun MouzaPdfScreen(
                                 onClick = { scale = 1f; offsetX = 0f; offsetY = 0f }
                             )
                             CanvasFab(
+                                icon = Icons.Rounded.GpsFixed,
+                                desc = "Toggle Precision Pointer",
+                                tint = if (pointerModeEnabled) Color(0xFFFFD54F) else Color.White,
+                                onClick = { pointerModeEnabled = !pointerModeEnabled }
+                            )
+                            CanvasFab(
                                 icon = Icons.Rounded.FilterBAndW,
                                 desc = "Enhance Map Filters",
                                 tint = if (state.filterPreset != MouzaFilterPreset.NORMAL) Color(0xFFFFD54F) else Color.White,
                                 onClick = { showFilterSheet = true }
                             )
+                        }
+
+                        // Precision Crosshair Action Button (never overlaps manual polygon draft bar)
+                        if (pointerModeEnabled && state.activeTool != MouzaSelectionTool.PAN_ONLY) {
+                            val hasPolyDraft = state.activeTool == MouzaSelectionTool.POLYGON_DRAW && state.manualPolygonDraft.isNotEmpty()
+                            val ptrBtnLabel = when (state.activeTool) {
+                                MouzaSelectionTool.AUTO_TAP -> "পয়েন্টারে দাগ সিলেক্ট"
+                                MouzaSelectionTool.EDIT_CORNERS -> "কোণা এখানে আনুন"
+                                MouzaSelectionTool.TAPE_MEASURE -> "পয়েন্টারে মাপ বিন্দু"
+                                MouzaSelectionTool.POLYGON_DRAW -> "পয়েন্টারে কোণা বসান"
+                                MouzaSelectionTool.PAN_ONLY -> ""
+                            }
+                            Button(
+                                onClick = {
+                                    val nx = toNormX(cx)
+                                    val ny = toNormY(cy)
+                                    if (nx in 0f..1f && ny in 0f..1f) {
+                                        if (state.activeTool == MouzaSelectionTool.EDIT_CORNERS) {
+                                            viewModel.snapNearestVertexTo(nx, ny)
+                                        } else {
+                                            viewModel.onMapTap(nx, ny)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = if (hasPolyDraft) 70.dp else 10.dp)
+                                    .testTag("mouza_pointer_select_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE0F6B54)),
+                                shape = RoundedCornerShape(18.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                            ) {
+                                Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(ptrBtnLabel, fontWeight = FontWeight.Bold, maxLines = 1)
+                            }
                         }
 
                         // Manual Polygon Draft Action Pill

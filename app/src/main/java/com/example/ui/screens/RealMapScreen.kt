@@ -2,11 +2,17 @@ package com.example.ui.screens
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.RectF
+import android.os.Build
+import android.os.Handler
 import android.os.Looper
+import android.view.PixelCopy
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -17,6 +23,7 @@ import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -43,6 +50,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Pentagon
@@ -73,7 +81,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -120,6 +130,7 @@ fun RealMapScreen(
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var showLayerMenu by remember { mutableStateOf(false) }
     var mapReady by remember { mutableStateOf(false) }
+    var pointerModeEnabled by remember { mutableStateOf(true) }
     var localToastMessage by remember { mutableStateOf<String?>(null) }
 
     val fusedClient = remember { LocationServices.getFusedLocationProviderClient(context) }
@@ -345,7 +356,7 @@ fun RealMapScreen(
                 }
             }
 
-            // Measurement Category Chips
+            // Measurement Category Chips + Precision Pointer Toggle
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -353,6 +364,13 @@ fun RealMapScreen(
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                NeuPillChip(
+                    text = "পয়েন্টার",
+                    selected = pointerModeEnabled,
+                    icon = Icons.Rounded.GpsFixed,
+                    testTag = "map_pointer_toggle",
+                    onClick = { pointerModeEnabled = !pointerModeEnabled }
+                )
                 MapMeasureCategory.entries.forEach { cat ->
                     val icon = when (cat) {
                         MapMeasureCategory.AREA -> Icons.Rounded.Pentagon
@@ -518,6 +536,22 @@ fun RealMapScreen(
 
                     Box(
                         modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (pointerModeEnabled) Color(0xEE0F6B54) else Color(0xCC16222B))
+                            .clickable { pointerModeEnabled = !pointerModeEnabled },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.GpsFixed,
+                            contentDescription = "Toggle Precision Pointer",
+                            tint = if (pointerModeEnabled) Color(0xFFFFD54F) else Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
                             .size(44.dp)
                             .testTag("map_gps_button")
                             .clip(CircleShape)
@@ -531,6 +565,54 @@ fun RealMapScreen(
                             tint = Color.White,
                             modifier = Modifier.size(22.dp)
                         )
+                    }
+                }
+
+                // Precision Center Crosshair Pointer (non-blocking overlay)
+                if (pointerModeEnabled) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.85f),
+                            radius = 30f,
+                            center = center,
+                            style = Stroke(width = 5f)
+                        )
+                        drawCircle(
+                            color = Color(0xFFFFD54F),
+                            radius = 30f,
+                            center = center,
+                            style = Stroke(width = 2.5f)
+                        )
+                        val gap = 10f
+                        val arm = 42f
+                        drawLine(Color.Black.copy(alpha = 0.7f), Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 5f)
+                        drawLine(Color.Black.copy(alpha = 0.7f), Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 5f)
+                        drawLine(Color.Black.copy(alpha = 0.7f), Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 5f)
+                        drawLine(Color.Black.copy(alpha = 0.7f), Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 5f)
+                        drawLine(Color(0xFFFFD54F), Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 2.5f)
+                        drawLine(Color(0xFFFFD54F), Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 2.5f)
+                        drawLine(Color(0xFFFFD54F), Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 2.5f)
+                        drawLine(Color(0xFFFFD54F), Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 2.5f)
+                        drawCircle(Color.White, radius = 5.5f, center = center)
+                        drawCircle(Color(0xFFE53935), radius = 3.2f, center = center)
+                    }
+
+                    Button(
+                        onClick = {
+                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.addCenterPoint();", null)
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 12.dp)
+                            .testTag("map_pointer_add_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE0F6B54)),
+                        shape = RoundedCornerShape(18.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("পয়েন্টারে পিন বসান", fontWeight = FontWeight.Bold, maxLines = 1)
                     }
                 }
             }
@@ -663,17 +745,17 @@ fun RealMapScreen(
                             val wv = webViewRef ?: return@Button
                             scope.launch {
                                 wv.evaluateJavascript("window.bhumiMap && window.bhumiMap.fitSelectedBounds();", null)
-                                delay(380)
-                                wv.evaluateJavascript("window.bhumiMap && window.bhumiMap.getSelectedCropRect();") { rawJson ->
-                                    val cropNorm = parseCropRect(rawJson)
-                                    val bmp = Bitmap.createBitmap(
-                                        wv.width.coerceAtLeast(100),
-                                        wv.height.coerceAtLeast(100),
-                                        Bitmap.Config.ARGB_8888
-                                    )
-                                    val c = Canvas(bmp)
-                                    wv.draw(c)
-                                    viewModel.exportSelectedMapPng(bmp, cropNorm)
+                                delay(420)
+                                wv.evaluateJavascript("window.bhumiMap && window.bhumiMap.getExportPayload();") { rawPayload ->
+                                    val parsed = parseExportPayload(rawPayload)
+                                    captureWebViewBitmap(context, wv) { fallbackBmp ->
+                                        viewModel.exportSelectedMapPlotPng(
+                                            pointsLatLon = parsed.points,
+                                            mode = parsed.mode,
+                                            fallbackBitmap = fallbackBmp,
+                                            cropRectNormalized = parsed.cropRect
+                                        )
+                                    }
                                 }
                             }
                         },
@@ -708,18 +790,82 @@ fun RealMapScreen(
     }
 }
 
-private fun parseCropRect(rawJsResult: String?): RectF? {
-    if (rawJsResult.isNullOrBlank() || rawJsResult == "null") return null
+private data class MapExportPayload(
+    val mode: String,
+    val points: List<Pair<Double, Double>>,
+    val cropRect: RectF?
+)
+
+private fun parseExportPayload(rawJsResult: String?): MapExportPayload {
+    if (rawJsResult.isNullOrBlank() || rawJsResult == "null") {
+        return MapExportPayload("area", emptyList(), null)
+    }
     return runCatching {
         val cleaned = rawJsResult.trim().removeSurrounding("\"").replace("\\\"", "\"")
         val json = JSONObject(cleaned)
-        RectF(
-            json.getDouble("left").toFloat(),
-            json.getDouble("top").toFloat(),
-            json.getDouble("right").toFloat(),
-            json.getDouble("bottom").toFloat()
-        )
-    }.getOrNull()
+        val mode = json.optString("mode", "area")
+        val ptsArr = json.optJSONArray("points")
+        val pts = mutableListOf<Pair<Double, Double>>()
+        if (ptsArr != null) {
+            for (i in 0 until ptsArr.length()) {
+                val obj = ptsArr.getJSONObject(i)
+                pts.add(obj.getDouble("lat") to obj.getDouble("lon"))
+            }
+        }
+        val cr = json.optJSONObject("cropRect")?.let { c ->
+            RectF(
+                c.getDouble("left").toFloat(),
+                c.getDouble("top").toFloat(),
+                c.getDouble("right").toFloat(),
+                c.getDouble("bottom").toFloat()
+            )
+        }
+        MapExportPayload(mode, pts, cr)
+    }.getOrElse { MapExportPayload("area", emptyList(), null) }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+private fun captureWebViewBitmap(
+    context: Context,
+    webView: WebView,
+    onResult: (Bitmap?) -> Unit
+) {
+    val w = webView.width.coerceAtLeast(100)
+    val h = webView.height.coerceAtLeast(100)
+    val activity = context.findActivity()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null && webView.isAttachedToWindow) {
+        val loc = IntArray(2)
+        webView.getLocationInWindow(loc)
+        val rect = android.graphics.Rect(loc[0], loc[1], loc[0] + w, loc[1] + h)
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        try {
+            PixelCopy.request(
+                activity.window,
+                rect,
+                bmp,
+                { copyResult ->
+                    if (copyResult == PixelCopy.SUCCESS) {
+                        onResult(bmp)
+                    } else {
+                        bmp.recycle()
+                        onResult(null)
+                    }
+                },
+                Handler(Looper.getMainLooper())
+            )
+            return
+        } catch (_: Exception) {
+            bmp.recycle()
+        }
+    }
+    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    webView.draw(Canvas(bmp))
+    onResult(bmp)
 }
 
 /**
@@ -1192,6 +1338,13 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   notifyBridge();
                   scheduleDraw();
                 },
+                addCenterPoint: () => {
+                  const ll = screenToLatLon(rc.clientWidth / 2, rc.clientHeight / 2);
+                  if (state.mode === 'circle' && state.points.length >= 2) state.points[1] = ll;
+                  else state.points.push(ll);
+                  notifyBridge();
+                  scheduleDraw();
+                },
                 flyTo: (lat, lon, zoom, showPin) => {
                   state.center = ll2m(lat, lon);
                   state.z = Math.min(maxViewZ, zoom || 17);
@@ -1239,6 +1392,29 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                     top: Math.max(0, minY / h),
                     right: Math.min(1, maxX / w),
                     bottom: Math.min(1, maxY / h)
+                  });
+                },
+                getExportPayload: () => {
+                  const spts = state.points.map(toScreen);
+                  const w = rc.clientWidth || 1, h = rc.clientHeight || 1;
+                  const pad = 42;
+                  let cropRect = null;
+                  if (spts.length) {
+                    const minX = Math.min(...spts.map(p => p.x)) - pad;
+                    const minY = Math.min(...spts.map(p => p.y)) - pad;
+                    const maxX = Math.max(...spts.map(p => p.x)) + pad;
+                    const maxY = Math.max(...spts.map(p => p.y)) + pad;
+                    cropRect = {
+                      left: Math.max(0, minX / w),
+                      top: Math.max(0, minY / h),
+                      right: Math.min(1, maxX / w),
+                      bottom: Math.min(1, maxY / h)
+                    };
+                  }
+                  return JSON.stringify({
+                    mode: state.mode,
+                    points: state.points,
+                    cropRect: cropRect
                   });
                 }
               };

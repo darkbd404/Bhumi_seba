@@ -115,8 +115,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                         pageCount = info.pageCount,
                         currentPage = 0,
                         pdfPageWidthPts = info.baseWidthPts,
-                        pdfPageHeightPts = info.baseHeightPts,
-                        isLoadingPdf = false
+                        pdfPageHeightPts = info.baseHeightPts
                     )
                 }
                 loadPageInternal(0)
@@ -141,6 +140,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         renderJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
+                    isLoadingPdf = true,
                     currentPage = pageIndex,
                     selectedPlots = emptyList(),
                     canRedo = false,
@@ -158,32 +158,23 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun loadPageInternal(pageIndex: Int) {
         val file = activeDocFile ?: return
-        val preview = MouzaPdfEngine.renderBaseDocument(appContext, file, activeIsPdf, pageIndex, ultraHd = false)
+        val base = MouzaPdfEngine.renderBaseDocument(appContext, file, activeIsPdf, pageIndex, ultraHd = true)
         _uiState.update {
             it.copy(
-                displayBitmap = preview.bitmap,
-                pdfPageWidthPts = preview.pdfPageWidthPts,
-                pdfPageHeightPts = preview.pdfPageHeightPts,
-                hdReady = false,
-                isRenderingHd = true
-            )
-        }
-
-        val hd = MouzaPdfEngine.renderBaseDocument(appContext, file, activeIsPdf, pageIndex, ultraHd = true)
-        _uiState.update {
-            it.copy(
-                displayBitmap = hd.bitmap,
-                pdfPageWidthPts = hd.pdfPageWidthPts,
-                pdfPageHeightPts = hd.pdfPageHeightPts,
+                displayBitmap = base.bitmap,
+                pdfPageWidthPts = base.pdfPageWidthPts,
+                pdfPageHeightPts = base.pdfPageHeightPts,
                 hdReady = true,
                 isRenderingHd = false,
-                statusMessage = "Ultra-HD ম্যাপ প্রস্তুত — দাগের ভেতরে ট্যাপ করুন"
+                isLoadingPdf = false,
+                statusMessage = "ম্যাপ প্রস্তুত — দাগের ভেতরে ট্যাপ করুন অথবা পয়েন্টার ব্যবহার করুন"
             )
         }
     }
 
     /**
-     * Triggered after zoom/pan stops or slows down to re-render the visible viewport region at true native HD (up to 1000x zoom).
+     * Silently sharpens the visible viewport at high zoom (> 2.2x) with 30% padded caching
+     * so small pans/taps never trigger constant re-loading.
      */
     fun requestViewportHdRender(
         zoomScale: Float,
@@ -195,7 +186,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         viewportHeightPx: Int
     ) {
         val file = activeDocFile ?: return
-        if (zoomScale <= 1.15f) {
+        if (zoomScale < 2.2f) {
             viewportTileJob?.cancel()
             if (_uiState.value.viewportTile != null) {
                 _uiState.update { it.copy(viewportTile = null) }
@@ -203,26 +194,44 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             return
         }
 
+        // Skip re-rendering if existing cached tile already covers the viewport at comparable zoom
+        val existing = _uiState.value.viewportTile
+        if (existing != null && !existing.bitmap.isRecycled) {
+            val coversRect = normLeft >= existing.normLeft &&
+                normRight <= existing.normRight &&
+                normTop >= existing.normTop &&
+                normBottom <= existing.normBottom
+            val zoomMatches = zoomScale in (existing.zoomScale * 0.65f)..(existing.zoomScale * 1.65f)
+            if (coversRect && zoomMatches) {
+                return
+            }
+        }
+
+        val spanW = (normRight - normLeft).coerceAtLeast(0.0005f)
+        val spanH = (normBottom - normTop).coerceAtLeast(0.0005f)
+        val padL = (normLeft - spanW * 0.30f).coerceIn(0f, 0.9995f)
+        val padT = (normTop - spanH * 0.30f).coerceIn(0f, 0.9995f)
+        val padR = (normRight + spanW * 0.30f).coerceIn(padL + 0.0005f, 1f)
+        val padB = (normBottom + spanH * 0.30f).coerceIn(padT + 0.0005f, 1f)
+
         viewportTileJob?.cancel()
         viewportTileJob = viewModelScope.launch {
-            delay(130)
-            _uiState.update { it.copy(isRenderingHd = true) }
+            delay(420)
             val tile = MouzaPdfEngine.renderViewportTile(
                 docFile = file,
                 isPdf = activeIsPdf,
                 pageIndex = _uiState.value.currentPage,
-                normLeft = normLeft,
-                normTop = normTop,
-                normRight = normRight,
-                normBottom = normBottom,
-                targetWidthPx = viewportWidthPx,
-                targetHeightPx = viewportHeightPx
+                normLeft = padL,
+                normTop = padT,
+                normRight = padR,
+                normBottom = padB,
+                targetWidthPx = (viewportWidthPx * 1.4f).roundToInt().coerceAtMost(1800),
+                targetHeightPx = (viewportHeightPx * 1.4f).roundToInt().coerceAtMost(2200)
             )
-            _uiState.update {
-                it.copy(
-                    viewportTile = tile ?: it.viewportTile,
-                    isRenderingHd = false
-                )
+            if (tile != null) {
+                _uiState.update {
+                    it.copy(viewportTile = tile.copy(zoomScale = zoomScale))
+                }
             }
         }
     }
@@ -335,6 +344,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             MouzaSelectionTool.AUTO_TAP -> {
                 val file = activeDocFile ?: return
                 if (state.isAutoFilling) return
+                viewportTileJob?.cancel()
                 autoFillJob?.cancel()
                 autoFillJob = viewModelScope.launch {
                     _uiState.update { it.copy(isAutoFilling = true) }
@@ -417,6 +427,28 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             )
         }
         _uiState.update { it.copy(selectedPlots = updated) }
+    }
+
+    fun snapNearestVertexTo(normX: Float, normY: Float) {
+        val state = _uiState.value
+        var bestPlotId = -1
+        var bestIdx = -1
+        var bestDistSq = Float.MAX_VALUE
+        state.selectedPlots.forEach { plot ->
+            val poly = plot.effectivePolygon() ?: return@forEach
+            poly.forEachIndexed { idx, (vx, vy) ->
+                val dSq = (vx - normX) * (vx - normX) + (vy - normY) * (vy - normY)
+                if (dSq < bestDistSq) {
+                    bestDistSq = dSq
+                    bestPlotId = plot.id
+                    bestIdx = idx
+                }
+            }
+        }
+        if (bestPlotId != -1 && bestIdx != -1) {
+            updatePlotVertex(bestPlotId, bestIdx, normX, normY)
+            _uiState.update { it.copy(statusMessage = "নিকটতম কোণা পয়েন্টারে সরানো হয়েছে") }
+        }
     }
 
     private fun trySplitNearestEdge(normX: Float, normY: Float) {
