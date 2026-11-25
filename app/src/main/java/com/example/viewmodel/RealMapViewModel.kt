@@ -11,6 +11,9 @@ import com.example.engine.PngExporter
 import com.example.model.MapLayerOption
 import com.example.model.MapMeasureCategory
 import com.example.model.SavedMeasurementRecord
+import com.example.model.SavedProjectType
+import com.example.model.SavedSurveyProject
+import com.example.model.SerializableLatLon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +47,9 @@ data class RealMapUiState(
     val isSearching: Boolean = false,
     val searchResults: List<MapSearchSuggestion> = emptyList(),
     val isExporting: Boolean = false,
+    val activeProjectId: String? = null,
+    val savedProjects: List<SavedSurveyProject> = emptyList(),
+    val pendingRestoreProject: SavedSurveyProject? = null,
     val statusMessage: String? = null
 )
 
@@ -54,6 +60,16 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
 
     private val _uiState = MutableStateFlow(RealMapUiState())
     val uiState: StateFlow<RealMapUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            prefs.savedProjectsFlow.collect { all ->
+                _uiState.update {
+                    it.copy(savedProjects = all.filter { p -> p.type == SavedProjectType.REAL_MAP })
+                }
+            }
+        }
+    }
 
     fun selectLayer(layer: MapLayerOption) {
         _uiState.update { it.copy(selectedLayer = layer) }
@@ -93,6 +109,92 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
                 areaSqMeters = areaSqM.coerceAtLeast(0.0),
                 perimeterMeters = perimeterM.coerceAtLeast(0.0)
             )
+        }
+    }
+
+    fun saveMapProject(
+        customTitle: String,
+        centerLat: Double,
+        centerLon: Double,
+        zoom: Double,
+        pointsLatLon: List<Pair<Double, Double>>,
+        modeId: String
+    ) {
+        val state = _uiState.value
+        val sqFeet = state.areaSqMeters * LandCalculators.SQ_FT_PER_SQ_METER
+        val area = LandCalculators.fromSqFeet(sqFeet)
+        val perimeterFeet = state.perimeterMeters * 3.280839895
+        val projId = state.activeProjectId ?: "map_proj_${System.currentTimeMillis()}"
+        val cleanTitle = customTitle.trim().ifBlank {
+            "${state.selectedCategory.titleBn} (${pointsLatLon.size} পিন)"
+        }
+        val project = SavedSurveyProject(
+            id = projId,
+            title = cleanTitle,
+            type = SavedProjectType.REAL_MAP,
+            timestampMillis = System.currentTimeMillis(),
+            decimalArea = area.decimal,
+            kathaArea = area.katha,
+            sqFeetArea = area.sqFeet,
+            perimeterFeet = perimeterFeet,
+            itemCount = pointsLatLon.size,
+            mapLayerId = state.selectedLayer.id,
+            showLabelsOverlay = state.showLabelsOverlay,
+            mapCategoryId = modeId.ifBlank { state.selectedCategory.id },
+            mapCenterLat = centerLat,
+            mapCenterLon = centerLon,
+            mapZoom = zoom,
+            mapPoints = pointsLatLon.map { SerializableLatLon(it.first, it.second) },
+            splitSharesCount = state.splitSharesCount
+        )
+        viewModelScope.launch {
+            prefs.saveSurveyProject(project)
+            _uiState.update {
+                it.copy(
+                    activeProjectId = projId,
+                    statusMessage = "ম্যাপ ডাটা সংরক্ষিত হয়েছে — পরে রিস্টোর করতে পারবেন"
+                )
+            }
+        }
+    }
+
+    fun restoreMapProjectById(projectId: String) {
+        viewModelScope.launch {
+            val proj = prefs.getSurveyProjectById(projectId)
+            if (proj == null) {
+                _uiState.update { it.copy(statusMessage = "সংরক্ষিত ম্যাপ ডাটা খুঁজে পাওয়া যায়নি") }
+                return@launch
+            }
+            restoreMapProject(proj)
+        }
+    }
+
+    fun restoreMapProject(project: SavedSurveyProject) {
+        val layer = MapLayerOption.entries.find { it.id == project.mapLayerId } ?: MapLayerOption.GOOGLE_HYBRID
+        val cat = MapMeasureCategory.entries.find { it.id == project.mapCategoryId } ?: MapMeasureCategory.AREA
+        _uiState.update {
+            it.copy(
+                activeProjectId = project.id,
+                selectedLayer = layer,
+                showLabelsOverlay = project.showLabelsOverlay,
+                selectedCategory = cat,
+                splitSharesCount = project.splitSharesCount.coerceIn(2, 20),
+                pendingRestoreProject = project,
+                statusMessage = "রিস্টোর হয়েছে: ${project.title}"
+            )
+        }
+    }
+
+    fun consumePendingRestore() {
+        _uiState.update { it.copy(pendingRestoreProject = null) }
+    }
+
+    fun deleteSavedProject(projectId: String) {
+        viewModelScope.launch {
+            prefs.deleteSurveyProject(projectId)
+            if (_uiState.value.activeProjectId == projectId) {
+                _uiState.update { it.copy(activeProjectId = null) }
+            }
         }
     }
 

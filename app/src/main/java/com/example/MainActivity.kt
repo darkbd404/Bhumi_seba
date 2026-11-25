@@ -84,6 +84,8 @@ import com.example.model.AiAssistantRoute
 import com.example.model.HomeRoute
 import com.example.model.MouzaPdfRoute
 import com.example.model.RealMapRoute
+import com.example.model.SavedProjectType
+import com.example.model.SavedSurveyProject
 import com.example.model.ServicesRoute
 import com.example.model.ToolsRoute
 import com.example.model.WebBrowserRoute
@@ -125,18 +127,23 @@ class MainActivity : ComponentActivity() {
             val isDarkMode = storedDark ?: systemDark
 
             val savedRecords by prefs.savedRecordsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+            val savedProjects by prefs.savedProjectsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
             val devPhotoUri by prefs.devPhotoUriFlow.collectAsStateWithLifecycle(initialValue = null)
 
             BhumiSurveyTheme(darkTheme = isDarkMode) {
                 BhumiSurveyApp(
                     isDarkMode = isDarkMode,
                     savedRecords = savedRecords,
+                    savedProjects = savedProjects,
                     devPhotoUri = devPhotoUri,
                     onToggleTheme = {
                         scope.launch { prefs.setDarkMode(!isDarkMode) }
                     },
                     onSaveDevPhoto = { uriStr ->
                         scope.launch { prefs.setDevPhotoUri(uriStr) }
+                    },
+                    onDeleteProject = { projId ->
+                        scope.launch { prefs.deleteSurveyProject(projId) }
                     },
                     onClearHistory = {
                         scope.launch { prefs.clearHistory() }
@@ -152,9 +159,11 @@ class MainActivity : ComponentActivity() {
 private fun BhumiSurveyApp(
     isDarkMode: Boolean,
     savedRecords: List<com.example.model.SavedMeasurementRecord>,
+    savedProjects: List<SavedSurveyProject>,
     devPhotoUri: String?,
     onToggleTheme: () -> Unit,
     onSaveDevPhoto: (String) -> Unit,
+    onDeleteProject: (String) -> Unit,
     onClearHistory: () -> Unit,
     onExitApp: () -> Unit
 ) {
@@ -166,8 +175,8 @@ private fun BhumiSurveyApp(
     val topDestinations = remember {
         listOf(
             TopLevelDest(HomeRoute, R.string.nav_home, Icons.Filled.Home, Icons.Outlined.Home, "nav_home"),
-            TopLevelDest(MouzaPdfRoute, R.string.nav_mouza, Icons.Filled.PictureAsPdf, Icons.Outlined.PictureAsPdf, "nav_mouza"),
-            TopLevelDest(RealMapRoute, R.string.nav_map, Icons.Filled.Map, Icons.Outlined.Map, "nav_map"),
+            TopLevelDest(MouzaPdfRoute(), R.string.nav_mouza, Icons.Filled.PictureAsPdf, Icons.Outlined.PictureAsPdf, "nav_mouza"),
+            TopLevelDest(RealMapRoute(), R.string.nav_map, Icons.Filled.Map, Icons.Outlined.Map, "nav_map"),
             TopLevelDest(ServicesRoute, R.string.nav_services, Icons.Filled.Language, Icons.Outlined.Language, "nav_services"),
             TopLevelDest(ToolsRoute(), R.string.nav_tools, Icons.Filled.Build, Icons.Outlined.Build, "nav_tools")
         )
@@ -305,9 +314,10 @@ private fun BhumiSurveyApp(
                         HomeScreen(
                             isDarkMode = isDarkMode,
                             savedRecords = savedRecords,
+                            savedProjects = savedProjects,
                             onToggleTheme = onToggleTheme,
-                            onOpenMouzaPdf = { navigateTopLevel(MouzaPdfRoute) },
-                            onOpenRealMap = { navigateTopLevel(RealMapRoute) },
+                            onOpenMouzaPdf = { navigateTopLevel(MouzaPdfRoute()) },
+                            onOpenRealMap = { navigateTopLevel(RealMapRoute()) },
                             onOpenServices = { navigateTopLevel(ServicesRoute) },
                             onOpenTools = { tab -> navController.navigate(ToolsRoute(initialTab = tab)) },
                             onOpenAiAssistant = { navController.navigate(AiAssistantRoute) },
@@ -315,18 +325,35 @@ private fun BhumiSurveyApp(
                             onOpenUrlInApp = { url, title ->
                                 navController.navigate(WebBrowserRoute(url = url, title = title))
                             },
+                            onRestoreProject = { proj ->
+                                val target = when (proj.type) {
+                                    SavedProjectType.MOUZA_PDF -> MouzaPdfRoute(savedProjectId = proj.id)
+                                    SavedProjectType.REAL_MAP -> RealMapRoute(savedProjectId = proj.id)
+                                }
+                                navController.navigate(target) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = false
+                                    }
+                                    launchSingleTop = true
+                                }
+                            },
+                            onDeleteProject = onDeleteProject,
                             onClearHistory = onClearHistory
                         )
                     }
 
-                    composable<MouzaPdfRoute> {
+                    composable<MouzaPdfRoute> { entry ->
+                        val args = entry.toRoute<MouzaPdfRoute>()
                         MouzaPdfScreen(
+                            savedProjectId = args.savedProjectId,
                             onNavigateBack = { navController.popBackStack() }
                         )
                     }
 
-                    composable<RealMapRoute> {
+                    composable<RealMapRoute> { entry ->
+                        val args = entry.toRoute<RealMapRoute>()
                         RealMapScreen(
+                            savedProjectId = args.savedProjectId,
                             onNavigateBack = { navController.popBackStack() }
                         )
                     }

@@ -20,9 +20,14 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,9 +40,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,30 +58,38 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Pentagon
 import androidx.compose.material.icons.rounded.PieChart
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Straighten
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -100,6 +116,7 @@ import com.example.model.MapLayerOption
 import com.example.model.MapMeasureCategory
 import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.NeuPillChip
+import com.example.ui.components.PrecisionNudgePad
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.neuClickable
@@ -112,13 +129,18 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled", "MissingPermission")
 @Composable
 fun RealMapScreen(
     onNavigateBack: () -> Unit,
+    savedProjectId: String? = null,
     viewModel: RealMapViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
@@ -131,7 +153,25 @@ fun RealMapScreen(
     var showLayerMenu by remember { mutableStateOf(false) }
     var mapReady by remember { mutableStateOf(false) }
     var pointerModeEnabled by remember { mutableStateOf(true) }
+    var showNudgePad by remember { mutableStateOf(false) }
+    var nudgeTargetIsPoint by remember { mutableStateOf(true) }
+    var nudgeStepLevel by remember { mutableIntStateOf(0) }
+    var showSavedProjectsSheet by remember { mutableStateOf(false) }
+    var showSaveProjectDialog by remember { mutableStateOf(false) }
     var localToastMessage by remember { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = showSavedProjectsSheet || showSaveProjectDialog) {
+        when {
+            showSaveProjectDialog -> showSaveProjectDialog = false
+            showSavedProjectsSheet -> showSavedProjectsSheet = false
+        }
+    }
+
+    LaunchedEffect(savedProjectId) {
+        if (!savedProjectId.isNullOrBlank()) {
+            viewModel.restoreMapProjectById(savedProjectId)
+        }
+    }
 
     val fusedClient = remember { LocationServices.getFusedLocationProviderClient(context) }
 
@@ -246,6 +286,23 @@ fun RealMapScreen(
             )
         }
     }
+    LaunchedEffect(state.pendingRestoreProject, mapReady) {
+        val proj = state.pendingRestoreProject ?: return@LaunchedEffect
+        if (mapReady) {
+            val ptsArr = JSONArray()
+            proj.mapPoints.forEach { p ->
+                ptsArr.put(JSONObject().apply {
+                    put("lat", p.lat)
+                    put("lon", p.lon)
+                })
+            }
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.restoreState(${proj.mapCenterLat}, ${proj.mapCenterLon}, ${proj.mapZoom}, '${proj.mapCategoryId}', $ptsArr);",
+                null
+            )
+            viewModel.consumePendingRestore()
+        }
+    }
 
     Box(
         modifier = modifier
@@ -298,6 +355,17 @@ fun RealMapScreen(
                         .weight(1f)
                         .testTag("map_search_input")
                 )
+
+                // Saved Map Projects Button
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .testTag("map_saved_projects_button")
+                        .neuClickable(cornerRadius = 14.dp, elevation = 4.dp, onClick = { showSavedProjectsSheet = true }),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.FolderOpen, contentDescription = "Saved Maps", tint = MaterialTheme.colorScheme.primary)
+                }
 
                 // Layer Picker Button
                 Box {
@@ -565,6 +633,22 @@ fun RealMapScreen(
 
                     Box(
                         modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (showNudgePad) Color(0xEE0F6B54) else Color(0xCC16222B))
+                            .clickable { showNudgePad = !showNudgePad },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.OpenWith,
+                            contentDescription = "Fine Nudge Controller",
+                            tint = if (showNudgePad) Color(0xFFFFD54F) else Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
                             .size(44.dp)
                             .testTag("map_gps_button")
                             .clip(CircleShape)
@@ -652,6 +736,44 @@ fun RealMapScreen(
                             }
                         }
                     }
+                }
+
+                // Separate Fine-Tune Nudge D-Pad Controller (for nudging selected pin OR crosshair slightly)
+                val mapHasPoints = state.pointCount > 0
+                val mapTargetPoint = nudgeTargetIsPoint && mapHasPoints
+                val mapNudgeLabel = if (!mapTargetPoint) {
+                    "ক্রসহেয়ার"
+                } else if (state.selectedPinIdx >= 0) {
+                    "পিন #${state.selectedPinIdx + 1}"
+                } else {
+                    "পিন #${state.pointCount}"
+                }
+
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showNudgePad,
+                    enter = fadeIn() + scaleIn(initialScale = 0.9f),
+                    exit = fadeOut() + scaleOut(targetScale = 0.9f),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 10.dp, bottom = if (pointerModeEnabled) 66.dp else 14.dp)
+                ) {
+                    PrecisionNudgePad(
+                        targetIsPoint = mapTargetPoint,
+                        hasAnyPoint = mapHasPoints,
+                        activePointLabel = mapNudgeLabel,
+                        stepLevel = nudgeStepLevel,
+                        onStepLevelChange = { nudgeStepLevel = it },
+                        onToggleTargetMode = { nudgeTargetIsPoint = it },
+                        onCyclePoint = { delta ->
+                            nudgeTargetIsPoint = true
+                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.cycleSelectedPin($delta);", null)
+                        },
+                        onNudge = { dxPx, dyPx ->
+                            val tMode = if (mapTargetPoint) "pin" else "pointer"
+                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.nudge($dxPx, $dyPx, '$tMode');", null)
+                        },
+                        onClose = { showNudgePad = false }
+                    )
                 }
             }
 
@@ -795,6 +917,17 @@ fun RealMapScreen(
                     ) {
                         Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear", modifier = Modifier.size(18.dp))
                     }
+                    OutlinedButton(
+                        onClick = { showSaveProjectDialog = true },
+                        enabled = state.pointCount > 0 && !state.isExporting,
+                        modifier = Modifier.testTag("map_save_data_button"),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("ডাটা সেভ", maxLines = 1)
+                    }
                     Button(
                         onClick = {
                             val wv = webViewRef ?: return@Button
@@ -827,8 +960,8 @@ fun RealMapScreen(
                         } else {
                             Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                         }
-                        Spacer(Modifier.width(6.dp))
-                        Text("সিলেক্টেড অংশ PNG সেভ", maxLines = 1)
+                        Spacer(Modifier.width(5.dp))
+                        Text("PNG সেভ", maxLines = 1)
                     }
                 }
             }
@@ -843,6 +976,175 @@ fun RealMapScreen(
                 .padding(bottom = 112.dp)
         )
     }
+
+    // Save Map Data Project Dialog
+    if (showSaveProjectDialog) {
+        var projTitle by remember(state.pointCount, state.selectedCategory) {
+            mutableStateOf("${state.selectedCategory.titleBn} (${state.pointCount} পিন)")
+        }
+        AlertDialog(
+            onDismissRequest = { showSaveProjectDialog = false },
+            title = { Text("ম্যাপ ডাটা সংরক্ষণ", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "এই স্যাটেলাইট ম্যাপের লোকেশন, জুম, লেয়ার ও সব পিন সংরক্ষিত থাকবে—পরে ক্লিক করে আবার রিস্টোর ও এডিট করতে পারবেন।",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = projTitle,
+                        onValueChange = { projTitle = it },
+                        label = { Text("জমি / প্রজেক্টের নাম") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val wv = webViewRef
+                        if (wv != null) {
+                            wv.evaluateJavascript("window.bhumiMap && window.bhumiMap.getFullState();") { raw ->
+                                val parsed = parseFullMapState(raw)
+                                viewModel.saveMapProject(
+                                    customTitle = projTitle,
+                                    centerLat = parsed.centerLat,
+                                    centerLon = parsed.centerLon,
+                                    zoom = parsed.zoom,
+                                    pointsLatLon = parsed.points,
+                                    modeId = parsed.mode
+                                )
+                            }
+                        }
+                        showSaveProjectDialog = false
+                    }
+                ) {
+                    Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("সংরক্ষণ করুন")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveProjectDialog = false }) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
+    // Saved Map Projects Restore Sheet
+    if (showSavedProjectsSheet) {
+        ModalBottomSheet(onDismissRequest = { showSavedProjectsSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "সংরক্ষিত স্যাটেলাইট ম্যাপ কাজ (${state.savedProjects.size}টি)",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                if (state.savedProjects.isEmpty()) {
+                    Text(
+                        text = "এখনো কোনো ম্যাপ ডাটা সংরক্ষণ করা হয়নি। ম্যাপে পিন বসিয়ে 'ডাটা সেভ' চাপলে এখানে দেখাবে।",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.savedProjects, key = { it.id }) { proj ->
+                            val dateStr = remember(proj.timestampMillis) {
+                                SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(Date(proj.timestampMillis))
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(EmeraldPrimary.copy(alpha = 0.08f))
+                                    .clickable {
+                                        showSavedProjectsSheet = false
+                                        viewModel.restoreMapProject(proj)
+                                    }
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = proj.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${proj.mapPoints.size} পিন • $dateStr",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = String.format(Locale.US, "%.2f শতক • %.2f কাঠা (রিস্টোর করতে ট্যাপ করুন)", proj.decimalArea, proj.kathaArea),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = EmeraldPrimary
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { viewModel.deleteSavedProject(proj.id) },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(Icons.Rounded.DeleteOutline, contentDescription = "Delete Map Project", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+        }
+    }
+}
+
+private data class FullMapStatePayload(
+    val centerLat: Double,
+    val centerLon: Double,
+    val zoom: Double,
+    val mode: String,
+    val points: List<Pair<Double, Double>>
+)
+
+private fun parseFullMapState(rawJsResult: String?): FullMapStatePayload {
+    if (rawJsResult.isNullOrBlank() || rawJsResult == "null") {
+        return FullMapStatePayload(23.8103, 90.4125, 16.0, "area", emptyList())
+    }
+    return runCatching {
+        val cleaned = rawJsResult.trim().removeSurrounding("\"").replace("\\\"", "\"")
+        val json = JSONObject(cleaned)
+        val ptsArr = json.optJSONArray("points")
+        val pts = mutableListOf<Pair<Double, Double>>()
+        if (ptsArr != null) {
+            for (i in 0 until ptsArr.length()) {
+                val obj = ptsArr.getJSONObject(i)
+                pts.add(obj.getDouble("lat") to obj.getDouble("lon"))
+            }
+        }
+        FullMapStatePayload(
+            centerLat = json.optDouble("centerLat", 23.8103),
+            centerLon = json.optDouble("centerLon", 90.4125),
+            zoom = json.optDouble("zoom", 16.0),
+            mode = json.optString("mode", "area"),
+            points = pts
+        )
+    }.getOrDefault(FullMapStatePayload(23.8103, 90.4125, 16.0, "area", emptyList()))
 }
 
 private data class MapExportPayload(
@@ -1528,6 +1830,48 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 moveSelectedPinToCenter: () => {
                   if (state.selectedPinIdx < 0 || state.selectedPinIdx >= state.points.length) return;
                   state.points[state.selectedPinIdx] = screenToLatLon(rc.clientWidth / 2, rc.clientHeight / 2);
+                  notifyBridge();
+                  scheduleDraw();
+                },
+                cycleSelectedPin: (delta) => {
+                  const n = state.points.length;
+                  if (!n) return;
+                  const cur = state.selectedPinIdx >= 0 ? state.selectedPinIdx : (n - 1);
+                  state.selectedPinIdx = ((cur + delta) % n + n) % n;
+                  notifyBridge();
+                  scheduleDraw();
+                },
+                nudge: (dxPx, dyPx, targetMode) => {
+                  const ws = 256 * Math.pow(2, state.z);
+                  if (targetMode === 'pin' && state.points.length > 0) {
+                    const idx = (state.selectedPinIdx >= 0 && state.selectedPinIdx < state.points.length)
+                      ? state.selectedPinIdx : (state.points.length - 1);
+                    state.selectedPinIdx = idx;
+                    const m = ll2m(state.points[idx].lat, state.points[idx].lon);
+                    state.points[idx] = m2ll(m.x + dxPx / ws, m.y + dyPx / ws);
+                    notifyBridge();
+                  } else {
+                    state.center.x += dxPx / ws;
+                    state.center.y += dyPx / ws;
+                  }
+                  scheduleDraw();
+                },
+                getFullState: () => {
+                  const c = m2ll(state.center.x, state.center.y);
+                  return JSON.stringify({
+                    centerLat: c.lat,
+                    centerLon: c.lon,
+                    zoom: state.z,
+                    mode: state.mode,
+                    points: state.points
+                  });
+                },
+                restoreState: (lat, lon, zoom, mode, pts) => {
+                  state.center = ll2m(lat, lon);
+                  state.z = Math.min(maxViewZ, zoom || 17);
+                  if (mode) state.mode = mode;
+                  state.points = Array.isArray(pts) ? pts.map(p => ({ lat: p.lat, lon: p.lon })) : [];
+                  state.selectedPinIdx = -1;
                   notifyBridge();
                   scheduleDraw();
                 },

@@ -50,6 +50,7 @@ import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Adjust
 import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronLeft
@@ -60,10 +61,13 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterBAndW
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GpsFixed
+import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ZoomOutMap
@@ -88,6 +92,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -120,11 +125,14 @@ import com.example.model.MouzaScale
 import com.example.model.MouzaSelectionTool
 import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.NeuPillChip
+import com.example.ui.components.PrecisionNudgePad
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
 import com.example.viewmodel.MouzaPdfViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.hypot
@@ -136,10 +144,17 @@ import kotlin.math.roundToInt
 @Composable
 fun MouzaPdfScreen(
     onNavigateBack: () -> Unit,
+    savedProjectId: String? = null,
     viewModel: MouzaPdfViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(savedProjectId) {
+        if (!savedProjectId.isNullOrBlank()) {
+            viewModel.restoreMouzaProjectById(savedProjectId)
+        }
+    }
 
     val docPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -155,14 +170,24 @@ fun MouzaPdfScreen(
     var showGapMenu by remember { mutableStateOf(false) }
     var showReportSheet by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    var showSavedProjectsSheet by remember { mutableStateOf(false) }
+    var showSaveProjectDialog by remember { mutableStateOf(false) }
     var pointerModeEnabled by remember { mutableStateOf(true) }
+    var showNudgePad by remember { mutableStateOf(false) }
+    var nudgeTargetIsPoint by remember { mutableStateOf(true) }
+    var nudgeStepLevel by remember { mutableIntStateOf(0) }
     var editingPlot by remember { mutableStateOf<MouzaPlot?>(null) }
     var showCalibrateDialog by remember { mutableStateOf<MouzaPlot?>(null) }
 
-    BackHandler(enabled = showReportSheet || showFilterSheet || editingPlot != null || showCalibrateDialog != null) {
+    BackHandler(
+        enabled = showReportSheet || showFilterSheet || showSavedProjectsSheet ||
+            showSaveProjectDialog || editingPlot != null || showCalibrateDialog != null
+    ) {
         when {
+            showSaveProjectDialog -> showSaveProjectDialog = false
             showCalibrateDialog != null -> showCalibrateDialog = null
             editingPlot != null -> editingPlot = null
+            showSavedProjectsSheet -> showSavedProjectsSheet = false
             showFilterSheet -> showFilterSheet = false
             showReportSheet -> showReportSheet = false
         }
@@ -209,6 +234,18 @@ fun MouzaPdfScreen(
                         else "স্টোরেজ থেকে PDF বা ছবি নিন",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                // Saved Mouza Projects Sheet Trigger
+                IconButton(
+                    onClick = { showSavedProjectsSheet = true },
+                    modifier = Modifier.size(38.dp).testTag("mouza_saved_projects_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.FolderOpen,
+                        contentDescription = "Saved Projects",
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
 
@@ -454,6 +491,19 @@ fun MouzaPdfScreen(
                             Icon(Icons.Rounded.PictureAsPdf, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text("ফোন স্টোরেজ থেকে PDF বা ছবি বাছুন")
+                        }
+                        if (state.savedProjects.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = { showSavedProjectsSheet = true },
+                                modifier = Modifier.testTag("empty_restore_mouza_button"),
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+                            ) {
+                                Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("আগের সংরক্ষিত কাজ (${state.savedProjects.size}টি) রিস্টোর করুন")
+                            }
                         }
                     }
                 } else {
@@ -1166,6 +1216,12 @@ fun MouzaPdfScreen(
                                 onClick = { pointerModeEnabled = !pointerModeEnabled }
                             )
                             CanvasFab(
+                                icon = Icons.Rounded.OpenWith,
+                                desc = "Fine Nudge Controller",
+                                tint = if (showNudgePad) Color(0xFFFFD54F) else Color.White,
+                                onClick = { showNudgePad = !showNudgePad }
+                            )
+                            CanvasFab(
                                 icon = Icons.Rounded.FilterBAndW,
                                 desc = "Enhance Map Filters",
                                 tint = if (state.filterPreset != MouzaFilterPreset.NORMAL) Color(0xFFFFD54F) else Color.White,
@@ -1278,6 +1334,72 @@ fun MouzaPdfScreen(
                                 }
                             }
                         }
+
+                        // Separate Fine-Tune Nudge D-Pad Controller (for nudging selected point OR crosshair slightly)
+                        val hasAnyNudgePoint = when (state.activeTool) {
+                            MouzaSelectionTool.POLYGON_DRAW -> state.manualPolygonDraft.isNotEmpty()
+                            MouzaSelectionTool.EDIT_CORNERS -> state.selectedPlots.any { !it.effectivePolygon().isNullOrEmpty() }
+                            MouzaSelectionTool.TAPE_MEASURE -> state.tapeDraft.isNotEmpty()
+                            else -> false
+                        }
+                        val effectiveTargetPoint = nudgeTargetIsPoint && hasAnyNudgePoint
+                        val activePointLbl = if (!effectiveTargetPoint) {
+                            "ক্রসহেয়ার"
+                        } else {
+                            when (state.activeTool) {
+                                MouzaSelectionTool.POLYGON_DRAW -> {
+                                    val idx = state.selectedDraftIdx?.takeIf { it in state.manualPolygonDraft.indices }
+                                        ?: state.manualPolygonDraft.lastIndex
+                                    "বিন্দু #${idx + 1}"
+                                }
+                                MouzaSelectionTool.EDIT_CORNERS -> {
+                                    val sv = state.selectedVertex
+                                    if (sv != null) "কোণা #${sv.second + 1}" else "কোণা #1"
+                                }
+                                MouzaSelectionTool.TAPE_MEASURE -> {
+                                    val idx = state.selectedTapeIdx?.takeIf { it in state.tapeDraft.indices }
+                                        ?: state.tapeDraft.lastIndex
+                                    "ফিতা #${idx + 1}"
+                                }
+                                else -> "ক্রসহেয়ার"
+                            }
+                        }
+
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = showNudgePad,
+                            enter = fadeIn() + scaleIn(initialScale = 0.9f),
+                            exit = fadeOut() + scaleOut(targetScale = 0.9f),
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(start = 10.dp, bottom = if (hasPolyDraft) 72.dp else 64.dp)
+                        ) {
+                            PrecisionNudgePad(
+                                targetIsPoint = effectiveTargetPoint,
+                                hasAnyPoint = hasAnyNudgePoint,
+                                activePointLabel = activePointLbl,
+                                stepLevel = nudgeStepLevel,
+                                onStepLevelChange = { nudgeStepLevel = it },
+                                onToggleTargetMode = { nudgeTargetIsPoint = it },
+                                onCyclePoint = { delta ->
+                                    nudgeTargetIsPoint = true
+                                    viewModel.cycleActivePoint(delta)
+                                },
+                                onNudge = { dxPx, dyPx ->
+                                    if (effectiveTargetPoint) {
+                                        viewModel.nudgeActivePoint(
+                                            deltaNormX = dxPx / (fitW * scale),
+                                            deltaNormY = dyPx / (fitH * scale)
+                                        )
+                                    } else {
+                                        val maxOffX = max(boxW * scale * 0.75f, boxW * 0.5f)
+                                        val maxOffY = max(boxH * scale * 0.75f, boxH * 0.5f)
+                                        offsetX = (offsetX - dxPx).coerceIn(-maxOffX, maxOffX)
+                                        offsetY = (offsetY - dyPx).coerceIn(-maxOffY, maxOffY)
+                                    }
+                                },
+                                onClose = { showNudgePad = false }
+                            )
+                        }
                     }
                 }
             }
@@ -1382,14 +1504,26 @@ fun MouzaPdfScreen(
                                 )
                             }
 
-                            Button(
-                                onClick = { showReportSheet = true },
-                                modifier = Modifier.testTag("mouza_report_button"),
-                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                                shape = RoundedCornerShape(14.dp),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
-                            ) {
-                                Text("বিস্তারিত ও সেভ", maxLines = 1)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(
+                                    onClick = { showSaveProjectDialog = true },
+                                    modifier = Modifier.testTag("mouza_save_data_button"),
+                                    shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("ডাটা সেভ", maxLines = 1)
+                                }
+                                Button(
+                                    onClick = { showReportSheet = true },
+                                    modifier = Modifier.testTag("mouza_report_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                                    shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Text("PNG ও সেভ", maxLines = 1)
+                                }
                             }
                         }
                     }
@@ -1535,9 +1669,14 @@ fun MouzaPdfScreen(
                     }
                 }
 
+                Text(
+                    text = "২ভাবে সেভ করুন (PNG ছবি অথবা পরে রিস্টোরের জন্য PDF/ম্যাপ ডাটা):",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
                         onClick = {
@@ -1551,9 +1690,9 @@ fun MouzaPdfScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("সেভ: নির্বাচিত দাগ", maxLines = 1)
+                        Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("PNG: নির্বাচিত", maxLines = 1)
                     }
                     OutlinedButton(
                         onClick = {
@@ -1564,7 +1703,148 @@ fun MouzaPdfScreen(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text("পুরো নকশা সেভ", maxLines = 1)
+                        Text("পুরো PNG", maxLines = 1)
+                    }
+                }
+                OutlinedButton(
+                    onClick = {
+                        showReportSheet = false
+                        showSaveProjectDialog = true
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("mouza_sheet_save_project_button"),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Rounded.Bookmark, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("ম্যাপ/PDF ডাটা সেভ করুন (পরে রিস্টোরের জন্য)")
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+        }
+    }
+
+    // Save Project Data Dialog (for restoring later without re-measuring)
+    if (showSaveProjectDialog) {
+        var projTitle by remember(state.fileName, state.khatianTitle) {
+            mutableStateOf(
+                state.khatianTitle.ifBlank {
+                    state.fileName.substringBeforeLast('.').ifBlank { "মৌজা জরিপ" }
+                }
+            )
+        }
+        AlertDialog(
+            onDismissRequest = { showSaveProjectDialog = false },
+            title = { Text("ম্যাপ / PDF ডাটা সংরক্ষণ", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "এই কাজটি অ্যাপের ভেতর স্থায়ীভাবে সংরক্ষিত হবে—পরে যেকোনো সময় ক্লিক করে আগের সব দাগ, পয়েন্ট ও ফিতা মাপ সরাসরি রিস্টোর করতে পারবেন।",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = projTitle,
+                        onValueChange = { projTitle = it },
+                        label = { Text("প্রজেক্ট / খতিয়ান নাম") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.saveMouzaProject(projTitle)
+                        showSaveProjectDialog = false
+                    }
+                ) {
+                    Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("সংরক্ষণ করুন")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveProjectDialog = false }) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
+    // Saved Mouza Projects Sheet (tap any item to restore full PDF + plots/draft/tapes)
+    if (showSavedProjectsSheet) {
+        ModalBottomSheet(onDismissRequest = { showSavedProjectsSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "সংরক্ষিত মৌজা PDF/ম্যাপ কাজ (${state.savedProjects.size}টি)",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                if (state.savedProjects.isEmpty()) {
+                    Text(
+                        text = "এখনো কোনো মৌজা প্রজেক্ট ডাটা সেভ করা হয়নি। নকশায় কাজ করে 'ডাটা সেভ' চাপলে এখানে দেখাবে।",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.savedProjects, key = { it.id }) { proj ->
+                            val dateStr = remember(proj.timestampMillis) {
+                                SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(Date(proj.timestampMillis))
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(EmeraldPrimary.copy(alpha = 0.08f))
+                                    .clickable {
+                                        showSavedProjectsSheet = false
+                                        viewModel.restoreMouzaProject(proj)
+                                    }
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = proj.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${proj.docFileName} • ${proj.savedPlots.size} দাগ • $dateStr",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = String.format(Locale.US, "%.2f শতক • %.2f কাঠা (রিস্টোর করতে ট্যাপ করুন)", proj.decimalArea, proj.kathaArea),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = EmeraldPrimary
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { viewModel.deleteSavedProject(proj.id) },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(Icons.Rounded.DeleteOutline, contentDescription = "Delete Project", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.height(14.dp))

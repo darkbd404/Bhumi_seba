@@ -8,10 +8,10 @@ import kotlinx.serialization.Serializable
 data object HomeRoute
 
 @Serializable
-data object MouzaPdfRoute
+data class MouzaPdfRoute(val savedProjectId: String? = null)
 
 @Serializable
-data object RealMapRoute
+data class RealMapRoute(val savedProjectId: String? = null)
 
 @Serializable
 data object ServicesRoute
@@ -217,4 +217,67 @@ data class SavedMeasurementRecord(
     val kathaArea: Double,
     val sqFeetArea: Double,
     val timestampMillis: Long
+)
+
+@Serializable
+enum class SavedProjectType {
+    MOUZA_PDF,
+    REAL_MAP
+}
+
+@Serializable
+data class SerializablePoint(val x: Float, val y: Float)
+
+@Serializable
+data class SerializableLatLon(val lat: Double, val lon: Double)
+
+@Serializable
+data class SerializedMouzaPlot(
+    val id: Int,
+    val plotIndex: Int,
+    val dagNumber: String = "",
+    val khatianNumber: String = "",
+    val colorArgb: Long,
+    val polygonNormalized: List<SerializablePoint> = emptyList(),
+    val exactAreaSqFeet: Double? = null
+)
+
+@Serializable
+data class SavedSurveyProject(
+    val id: String,
+    val title: String,
+    val type: SavedProjectType,
+    val timestampMillis: Long,
+    val decimalArea: Double = 0.0,
+    val kathaArea: Double = 0.0,
+    val sqFeetArea: Double = 0.0,
+    val perimeterFeet: Double = 0.0,
+    val itemCount: Int = 0,
+    // Mouza PDF/Image state
+    val docFilePath: String? = null,
+    val docFileName: String = "",
+    val isPdf: Boolean = true,
+    val pageIndex: Int = 0,
+    val pdfPageWidthPts: Int = 1000,
+    val pdfPageHeightPts: Int = 1000,
+    val mouzaScaleName: String = MouzaScale.SCALE_16.name,
+    val calibrationMultiplier: Double = 1.0,
+    val gapSealLevel: Int = 1,
+    val filterPresetName: String = MouzaFilterPreset.NORMAL.name,
+    val brightness: Float = 1f,
+    val contrast: Float = 1f,
+    val khatianTitle: String = "",
+    val savedPlots: List<SerializedMouzaPlot> = emptyList(),
+    val manualPolygonDraft: List<SerializablePoint> = emptyList(),
+    val completedTapes: List<List<SerializablePoint>> = emptyList(),
+    val tapeDraft: List<SerializablePoint> = emptyList(),
+    // Real Map state
+    val mapLayerId: String = MapLayerOption.GOOGLE_HYBRID.id,
+    val showLabelsOverlay: Boolean = true,
+    val mapCategoryId: String = MapMeasureCategory.AREA.id,
+    val mapCenterLat: Double = 23.8103,
+    val mapCenterLon: Double = 90.4125,
+    val mapZoom: Double = 16.0,
+    val mapPoints: List<SerializableLatLon> = emptyList(),
+    val splitSharesCount: Int = 2
 )

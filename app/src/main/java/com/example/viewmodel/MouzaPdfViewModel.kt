@@ -11,12 +11,19 @@ import com.example.engine.LandCalculators
 import com.example.engine.MouzaPdfEngine
 import com.example.engine.PlotWallIndex
 import com.example.engine.PngExporter
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import com.example.model.MouzaFilterPreset
 import com.example.model.MouzaPlot
 import com.example.model.MouzaScale
 import com.example.model.MouzaSelectionTool
 import com.example.model.SavedMeasurementRecord
+import com.example.model.SavedProjectType
+import com.example.model.SavedSurveyProject
+import com.example.model.SerializablePoint
+import com.example.model.SerializedMouzaPlot
 import com.example.ui.theme.PlotPalette
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -52,6 +60,7 @@ data class MouzaPdfUiState(
     val manualPolygonDraft: List<Pair<Float, Float>> = emptyList(),
     val selectedDraftIdx: Int? = null,
     val tapeDraft: List<Pair<Float, Float>> = emptyList(),
+    val selectedTapeIdx: Int? = null,
     val completedTapes: List<List<Pair<Float, Float>>> = emptyList(),
     val khatianTitle: String = "",
     val filterPreset: MouzaFilterPreset = MouzaFilterPreset.NORMAL,
@@ -59,6 +68,8 @@ data class MouzaPdfUiState(
     val contrast: Float = 1f,
     val overlayMaskBitmap: Bitmap? = null,
     val focusPlotRequest: MouzaPlot? = null,
+    val activeProjectId: String? = null,
+    val savedProjects: List<SavedSurveyProject> = emptyList(),
     val statusMessage: String? = null,
     val lastSavedPath: String? = null
 )
@@ -80,6 +91,16 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
     private var wallIndexFallback: PlotWallIndex? = null
     private val redoStack = ArrayDeque<MouzaPlot>()
 
+    init {
+        viewModelScope.launch {
+            prefs.savedProjectsFlow.collect { all ->
+                _uiState.update {
+                    it.copy(savedProjects = all.filter { p -> p.type == SavedProjectType.MOUZA_PDF })
+                }
+            }
+        }
+    }
+
     fun openPdfUri(uri: Uri) = openDocumentUri(uri)
 
     fun openDocumentUri(uri: Uri) {
@@ -92,11 +113,14 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             _uiState.update {
                 it.copy(
                     isLoadingPdf = true,
+                    activeProjectId = null,
                     statusMessage = "নকশা ফাইল লোড হচ্ছে...",
                     selectedPlots = emptyList(),
                     canRedo = false,
                     manualPolygonDraft = emptyList(),
+                    selectedDraftIdx = null,
                     tapeDraft = emptyList(),
+                    selectedTapeIdx = null,
                     completedTapes = emptyList(),
                     viewportTile = null,
                     overlayMaskBitmap = null
@@ -903,6 +927,297 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
 
     fun showStatusHint(message: String) {
         _uiState.update { it.copy(statusMessage = message) }
+    }
+
+    fun cycleActivePoint(delta: Int) {
+        val state = _uiState.value
+        when (state.activeTool) {
+            MouzaSelectionTool.POLYGON_DRAW -> {
+                val n = state.manualPolygonDraft.size
+                if (n == 0) return
+                val cur = state.selectedDraftIdx ?: (n - 1)
+                val next = ((cur + delta) % n + n) % n
+                _uiState.update { it.copy(selectedDraftIdx = next) }
+            }
+            MouzaSelectionTool.EDIT_CORNERS -> {
+                val allVertices = state.selectedPlots.flatMap { plot ->
+                    val poly = plot.effectivePolygon() ?: emptyList()
+                    poly.indices.map { idx -> plot.id to idx }
+                }
+                if (allVertices.isEmpty()) return
+                val curIdx = state.selectedVertex?.let { sv -> allVertices.indexOf(sv) } ?: -1
+                val nextIdx = if (curIdx < 0) {
+                    if (delta >= 0) 0 else allVertices.lastIndex
+                } else {
+                    ((curIdx + delta) % allVertices.size + allVertices.size) % allVertices.size
+                }
+                _uiState.update { it.copy(selectedVertex = allVertices[nextIdx]) }
+            }
+            MouzaSelectionTool.TAPE_MEASURE -> {
+                val n = state.tapeDraft.size
+                if (n == 0) return
+                val cur = state.selectedTapeIdx ?: (n - 1)
+                val next = ((cur + delta) % n + n) % n
+                _uiState.update { it.copy(selectedTapeIdx = next) }
+            }
+            else -> Unit
+        }
+    }
+
+    fun nudgeActivePoint(deltaNormX: Float, deltaNormY: Float) {
+        val state = _uiState.value
+        when (state.activeTool) {
+            MouzaSelectionTool.POLYGON_DRAW -> {
+                if (state.manualPolygonDraft.isEmpty()) return
+                val idx = state.selectedDraftIdx?.takeIf { it in state.manualPolygonDraft.indices }
+                    ?: state.manualPolygonDraft.lastIndex
+                val (ox, oy) = state.manualPolygonDraft[idx]
+                updateManualDraftPoint(idx, ox + deltaNormX, oy + deltaNormY)
+            }
+            MouzaSelectionTool.EDIT_CORNERS -> {
+                val target = state.selectedVertex ?: run {
+                    val lastPlot = state.selectedPlots.lastOrNull() ?: return
+                    val poly = lastPlot.effectivePolygon() ?: return
+                    if (poly.isEmpty()) return
+                    lastPlot.id to 0
+                }
+                val plot = state.selectedPlots.find { it.id == target.first } ?: return
+                val poly = plot.effectivePolygon() ?: return
+                if (target.second !in poly.indices) return
+                val (ox, oy) = poly[target.second]
+                _uiState.update { it.copy(selectedVertex = target) }
+                updatePlotVertex(target.first, target.second, ox + deltaNormX, oy + deltaNormY)
+            }
+            MouzaSelectionTool.TAPE_MEASURE -> {
+                if (state.tapeDraft.isEmpty()) return
+                val idx = state.selectedTapeIdx?.takeIf { it in state.tapeDraft.indices }
+                    ?: state.tapeDraft.lastIndex
+                val draft = state.tapeDraft.toMutableList()
+                val (ox, oy) = draft[idx]
+                draft[idx] = (ox + deltaNormX).coerceIn(0f, 1f) to (oy + deltaNormY).coerceIn(0f, 1f)
+                _uiState.update { it.copy(tapeDraft = draft, selectedTapeIdx = idx) }
+            }
+            else -> Unit
+        }
+    }
+
+    fun saveMouzaProject(customTitle: String) {
+        val state = _uiState.value
+        val srcFile = activeDocFile
+        if (srcFile == null || !srcFile.exists() || state.displayBitmap == null) {
+            _uiState.update { it.copy(statusMessage = "আগে একটি মৌজা PDF বা ছবি খুলুন।") }
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val savedDir = File(appContext.filesDir, "saved_mouza_docs").apply { mkdirs() }
+                val destFile = withContext(Dispatchers.IO) {
+                    if (srcFile.parentFile?.absolutePath == savedDir.absolutePath && srcFile.exists()) {
+                        srcFile
+                    } else {
+                        val ext = srcFile.extension.ifBlank { if (activeIsPdf) "pdf" else "png" }
+                        val target = File(savedDir, "mouza_doc_${System.currentTimeMillis()}.$ext")
+                        srcFile.copyTo(target, overwrite = true)
+                        target
+                    }
+                }
+                activeDocFile = destFile
+
+                val totalSqFt = totalSelectedSqFeet()
+                val area = LandCalculators.fromSqFeet(totalSqFt)
+                val projId = state.activeProjectId ?: "mouza_proj_${System.currentTimeMillis()}"
+                val cleanTitle = customTitle.trim().ifBlank {
+                    state.khatianTitle.ifBlank {
+                        state.fileName.ifBlank { "মৌজা প্রজেক্ট" }
+                    }
+                }
+
+                val serializedPlots = state.selectedPlots.map { plot ->
+                    val poly = plot.effectivePolygon() ?: listOf(
+                        (plot.minX.toFloat() / plot.gridWidth) to (plot.minY.toFloat() / plot.gridHeight),
+                        (plot.maxX.toFloat() / plot.gridWidth) to (plot.minY.toFloat() / plot.gridHeight),
+                        (plot.maxX.toFloat() / plot.gridWidth) to (plot.maxY.toFloat() / plot.gridHeight),
+                        (plot.minX.toFloat() / plot.gridWidth) to (plot.maxY.toFloat() / plot.gridHeight)
+                    )
+                    SerializedMouzaPlot(
+                        id = plot.id,
+                        plotIndex = plot.plotIndex,
+                        dagNumber = plot.dagNumber,
+                        khatianNumber = plot.khatianNumber,
+                        colorArgb = plot.color.toArgb().toLong(),
+                        polygonNormalized = poly.map { SerializablePoint(it.first, it.second) },
+                        exactAreaSqFeet = plotAreaSqFeet(plot)
+                    )
+                }
+
+                val project = SavedSurveyProject(
+                    id = projId,
+                    title = cleanTitle,
+                    type = SavedProjectType.MOUZA_PDF,
+                    timestampMillis = System.currentTimeMillis(),
+                    decimalArea = area.decimal,
+                    kathaArea = area.katha,
+                    sqFeetArea = area.sqFeet,
+                    itemCount = serializedPlots.size.coerceAtLeast(state.manualPolygonDraft.size),
+                    docFilePath = destFile.absolutePath,
+                    docFileName = state.fileName,
+                    isPdf = activeIsPdf,
+                    pageIndex = state.currentPage,
+                    pdfPageWidthPts = state.pdfPageWidthPts,
+                    pdfPageHeightPts = state.pdfPageHeightPts,
+                    mouzaScaleName = state.selectedScale.name,
+                    calibrationMultiplier = state.calibrationMultiplier,
+                    gapSealLevel = state.gapSealLevel,
+                    filterPresetName = state.filterPreset.name,
+                    brightness = state.brightness,
+                    contrast = state.contrast,
+                    khatianTitle = state.khatianTitle,
+                    savedPlots = serializedPlots,
+                    manualPolygonDraft = state.manualPolygonDraft.map { SerializablePoint(it.first, it.second) },
+                    completedTapes = state.completedTapes.map { line -> line.map { SerializablePoint(it.first, it.second) } },
+                    tapeDraft = state.tapeDraft.map { SerializablePoint(it.first, it.second) }
+                )
+
+                prefs.saveSurveyProject(project)
+                _uiState.update {
+                    it.copy(
+                        activeProjectId = projId,
+                        statusMessage = "প্রজেক্ট ডাটা সংরক্ষিত হয়েছে — পরে রিস্টোর করতে পারবেন"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(statusMessage = "প্রজেক্ট ডাটা সেভ ব্যর্থ: ${e.localizedMessage ?: "ত্রুটি"}")
+                }
+            }
+        }
+    }
+
+    fun restoreMouzaProjectById(projectId: String) {
+        viewModelScope.launch {
+            val proj = prefs.getSurveyProjectById(projectId)
+            if (proj == null) {
+                _uiState.update { it.copy(statusMessage = "সংরক্ষিত প্রজেক্টটি খুঁজে পাওয়া যায়নি") }
+                return@launch
+            }
+            restoreMouzaProject(proj)
+        }
+    }
+
+    fun restoreMouzaProject(project: SavedSurveyProject) {
+        val docPath = project.docFilePath
+        val docFile = docPath?.let { File(it) }
+        if (docFile == null || !docFile.exists()) {
+            _uiState.update { it.copy(statusMessage = "সংরক্ষিত PDF/ছবি ফাইলটি আর ফোনে নেই") }
+            return
+        }
+        renderJob?.cancel()
+        viewportTileJob?.cancel()
+        autoFillJob?.cancel()
+        redoStack.clear()
+
+        renderJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoadingPdf = true,
+                    activeProjectId = project.id,
+                    statusMessage = "সংরক্ষিত মৌজা কাজ লোড হচ্ছে..."
+                )
+            }
+            try {
+                activeDocFile = docFile
+                activeIsPdf = project.isPdf
+                wallIndexFallback = null
+
+                val scaleEnum = runCatching { MouzaScale.valueOf(project.mouzaScaleName) }.getOrDefault(MouzaScale.SCALE_16)
+                val filterEnum = runCatching { MouzaFilterPreset.valueOf(project.filterPresetName) }.getOrDefault(MouzaFilterPreset.NORMAL)
+                val pageCnt = if (project.isPdf) {
+                    withContext(Dispatchers.IO) {
+                        android.os.ParcelFileDescriptor.open(docFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                            android.graphics.pdf.PdfRenderer(pfd).use { it.pageCount }
+                        }
+                    }
+                } else 1
+
+                val base = MouzaPdfEngine.renderBaseDocument(
+                    appContext, docFile, project.isPdf, project.pageIndex.coerceIn(0, (pageCnt - 1).coerceAtLeast(0)), ultraHd = true
+                )
+
+                val aspect = base.pdfPageHeightPts.toFloat() / base.pdfPageWidthPts.toFloat().coerceAtLeast(1f)
+                val gw = 1500
+                val gh = (1500f * aspect).roundToInt().coerceAtLeast(200)
+
+                val restoredPlots = project.savedPlots.map { sp ->
+                    val pts = sp.polygonNormalized.map { it.x to it.y }
+                    val sqFt = if (pts.size >= 3) {
+                        MouzaPdfEngine.computePolygonAreaSqFeet(
+                            pts, base.pdfPageWidthPts, base.pdfPageHeightPts, scaleEnum, project.calibrationMultiplier
+                        )
+                    } else sp.exactAreaSqFeet
+                    val basePlot = MouzaPdfEngine.buildManualPolygonPlot(
+                        normalizedPoints = pts,
+                        gridWidth = gw,
+                        gridHeight = gh,
+                        plotId = sp.id,
+                        plotIndex = sp.plotIndex,
+                        color = Color(sp.colorArgb.toInt())
+                    )
+                    basePlot.copy(
+                        dagNumber = sp.dagNumber,
+                        khatianNumber = sp.khatianNumber,
+                        exactAreaSqFeet = sqFt
+                    )
+                }
+                nextPlotId = (restoredPlots.maxOfOrNull { it.id } ?: 0) + 1
+
+                _uiState.update {
+                    it.copy(
+                        isLoadingPdf = false,
+                        isRenderingHd = false,
+                        hdReady = true,
+                        fileName = project.docFileName,
+                        isPdf = project.isPdf,
+                        pageCount = pageCnt,
+                        currentPage = project.pageIndex.coerceIn(0, (pageCnt - 1).coerceAtLeast(0)),
+                        displayBitmap = base.bitmap,
+                        viewportTile = null,
+                        pdfPageWidthPts = base.pdfPageWidthPts,
+                        pdfPageHeightPts = base.pdfPageHeightPts,
+                        selectedScale = scaleEnum,
+                        calibrationMultiplier = project.calibrationMultiplier,
+                        gapSealLevel = project.gapSealLevel,
+                        filterPreset = filterEnum,
+                        brightness = project.brightness,
+                        contrast = project.contrast,
+                        khatianTitle = project.khatianTitle,
+                        selectedPlots = restoredPlots,
+                        manualPolygonDraft = project.manualPolygonDraft.map { it.x to it.y },
+                        selectedDraftIdx = null,
+                        tapeDraft = project.tapeDraft.map { it.x to it.y },
+                        selectedTapeIdx = null,
+                        completedTapes = project.completedTapes.map { line -> line.map { pt -> pt.x to pt.y } },
+                        activeTool = if (restoredPlots.isNotEmpty()) MouzaSelectionTool.EDIT_CORNERS else MouzaSelectionTool.POLYGON_DRAW,
+                        statusMessage = "রিস্টোর সম্পন্ন: ${project.title} (${restoredPlots.size}টি দাগ)"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoadingPdf = false,
+                        statusMessage = "রিস্টোর ব্যর্থ: ${e.localizedMessage ?: "ত্রুটি"}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun deleteSavedProject(projectId: String) {
+        viewModelScope.launch {
+            prefs.deleteSurveyProject(projectId)
+            if (_uiState.value.activeProjectId == projectId) {
+                _uiState.update { it.copy(activeProjectId = null) }
+            }
+        }
     }
 
     private fun resolveFileName(uri: Uri): String {

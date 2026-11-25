@@ -399,3 +399,246 @@ fun BottomSwipeToastBanner(
     }
 }
 
+@Composable
+fun PrecisionNudgePad(
+    targetIsPoint: Boolean,
+    hasAnyPoint: Boolean,
+    activePointLabel: String,
+    stepLevel: Int,
+    onStepLevelChange: (Int) -> Unit,
+    onToggleTargetMode: (Boolean) -> Unit,
+    onCyclePoint: (Int) -> Unit,
+    onNudge: (dxPx: Float, dyPx: Float) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val stepPx = when (stepLevel) {
+        0 -> 1.6f
+        2 -> 14.0f
+        else -> 5.0f
+    }
+    val stepLabel = when (stepLevel) {
+        0 -> "সূক্ষ্ম"
+        2 -> "বেশি"
+        else -> "মাঝারি"
+    }
+
+    Column(
+        modifier = modifier
+            .width(178.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xE8132028))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Header: target mode switch + close
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0x33FFFFFF))
+                    .padding(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (!targetIsPoint) Color(0xFF0F6B54) else Color.Transparent)
+                        .clickable { onToggleTargetMode(false) }
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "পয়েন্টার",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        maxLines = 1
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (targetIsPoint && hasAnyPoint) Color(0xFFE08A00) else Color.Transparent
+                        )
+                        .clickable(enabled = hasAnyPoint) { onToggleTargetMode(true) }
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "বিন্দু",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (hasAnyPoint) Color.White else Color.White.copy(alpha = 0.38f),
+                        maxLines = 1
+                    )
+                }
+            }
+            Spacer(Modifier.width(4.dp))
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x33FFFFFF))
+                    .clickable(onClick = onClose),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Close Nudge Pad",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+
+        // Point switcher (< বিন্দু #2 >) when points exist
+        if (hasAnyPoint) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0x28FFFFFF))
+                        .clickable { onCyclePoint(-1) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("‹", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    text = activePointLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (targetIsPoint) Color(0xFFFFD54F) else Color(0xFF80CBC4),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0x28FFFFFF))
+                        .clickable { onCyclePoint(1) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("›", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // 4-way D-Pad (Supports quick tap AND continuous hold)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            NudgeDirButton(
+                symbol = "▲",
+                desc = "Move Up",
+                testTag = "nudge_up_btn",
+                onTrigger = { onNudge(0f, -stepPx) }
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                NudgeDirButton(
+                    symbol = "◀",
+                    desc = "Move Left",
+                    testTag = "nudge_left_btn",
+                    onTrigger = { onNudge(-stepPx, 0f) }
+                )
+                // Center step-size toggle button
+                Box(
+                    modifier = Modifier
+                        .size(width = 50.dp, height = 38.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF1E3540))
+                        .clickable { onStepLevelChange((stepLevel + 1) % 3) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stepLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFFFE082),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+                NudgeDirButton(
+                    symbol = "▶",
+                    desc = "Move Right",
+                    testTag = "nudge_right_btn",
+                    onTrigger = { onNudge(stepPx, 0f) }
+                )
+            }
+            NudgeDirButton(
+                symbol = "▼",
+                desc = "Move Down",
+                testTag = "nudge_down_btn",
+                onTrigger = { onNudge(0f, stepPx) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun NudgeDirButton(
+    symbol: String,
+    desc: String,
+    testTag: String,
+    onTrigger: () -> Unit
+) {
+    val latestTrigger by androidx.compose.runtime.rememberUpdatedState(onTrigger)
+    Box(
+        modifier = Modifier
+            .size(width = 44.dp, height = 38.dp)
+            .testTag(testTag)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0x38FFFFFF))
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val downEvent = awaitPointerEvent()
+                        val down = downEvent.changes.firstOrNull { it.pressed } ?: continue
+                        down.consume()
+                        latestTrigger()
+                        var elapsed = 0L
+                        var nextFire = 260L
+                        while (true) {
+                            val res = withTimeoutOrNull(45L) { awaitPointerEvent() }
+                            if (res != null) {
+                                val stillPressed = res.changes.any { it.pressed }
+                                res.changes.forEach { it.consume() }
+                                if (!stillPressed) break
+                            } else {
+                                elapsed += 45L
+                                if (elapsed >= nextFire) {
+                                    latestTrigger()
+                                    nextFire += 65L
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = symbol,
+            color = Color.White,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+

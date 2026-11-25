@@ -1,12 +1,15 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,12 +26,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Language
@@ -37,10 +43,9 @@ import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Straighten
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +60,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -65,6 +69,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.SavedMeasurementRecord
+import com.example.model.SavedProjectType
+import com.example.model.SavedSurveyProject
 import com.example.ui.components.AnimatedCompassBadge
 import com.example.ui.components.NeuFeatureCard
 import com.example.ui.theme.EmeraldPrimary
@@ -73,6 +79,7 @@ import com.example.ui.theme.SurveyGold
 import com.example.ui.theme.TealSecondary
 import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -81,6 +88,7 @@ import java.util.Locale
 fun HomeScreen(
     isDarkMode: Boolean,
     savedRecords: List<SavedMeasurementRecord>,
+    savedProjects: List<SavedSurveyProject> = emptyList(),
     onToggleTheme: () -> Unit,
     onOpenMouzaPdf: () -> Unit,
     onOpenRealMap: () -> Unit,
@@ -89,6 +97,8 @@ fun HomeScreen(
     onOpenAiAssistant: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenUrlInApp: (url: String, title: String) -> Unit,
+    onRestoreProject: (SavedSurveyProject) -> Unit = {},
+    onDeleteProject: (String) -> Unit = {},
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -172,99 +182,81 @@ fun HomeScreen(
             }
         }
 
-        // Hero Banner Card
+        // Clean Auto-Sliding Image Hero Carousel (no overlaid text/buttons — pure crisp artwork)
         item {
+            val bannerImages = remember {
+                listOf(
+                    R.drawable.img_banner_paddy,
+                    R.drawable.img_banner_survey,
+                    R.drawable.img_banner_mouza,
+                    R.drawable.img_banner_delta,
+                    R.drawable.img_land_hero
+                )
+            }
+            val pagerState = rememberPagerState(pageCount = { bannerImages.size })
+
+            LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
+                if (!pagerState.isScrollInProgress) {
+                    delay(3400L)
+                    val nextPage = (pagerState.currentPage + 1) % bannerImages.size
+                    pagerState.animateScrollToPage(
+                        page = nextPage,
+                        animationSpec = tween(durationMillis = 560, easing = FastOutSlowInEasing)
+                    )
+                }
+            }
+
             AnimatedVisibility(
                 visible = visible,
                 enter = fadeIn(tween(350)) + slideInVertically(tween(350)) { it / 5 }
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(196.dp)
-                        .neuSurface(cornerRadius = 24.dp, elevation = 8.dp)
-                        .clip(RoundedCornerShape(24.dp))
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.img_land_hero),
-                        contentDescription = "Bangladesh Land Survey Hero",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color(0x55082E24),
-                                        Color(0xDE062920)
-                                    )
-                                )
-                            )
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(18.dp),
-                        verticalArrangement = Arrangement.SpaceBetween
+                            .fillMaxWidth()
+                            .height(196.dp)
+                            .neuSurface(cornerRadius = 24.dp, elevation = 8.dp)
+                            .clip(RoundedCornerShape(24.dp))
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0x33FFFFFF))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "1000x Ultra-HD মৌজা ম্যাপ (PDF / ছবি) ও রিয়েল স্যাটেলাইট",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFFFE082)
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize()
+                        ) { page ->
+                            Image(
+                                painter = painterResource(id = bannerImages[page]),
+                                contentDescription = "Bangladesh Land Survey Banner ${page + 1}",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
+                    }
 
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
-                                text = "ফোন থেকে মৌজা নকশা (PDF/ছবি) ও স্যাটেলাইট ম্যাপে নিখুঁত জমি মাপুন",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        repeat(bannerImages.size) { index ->
+                            val isSelected = pagerState.currentPage == index
+                            val dotWidth by animateDpAsState(
+                                targetValue = if (isSelected) 22.dp else 7.dp,
+                                animationSpec = tween(250),
+                                label = "bannerDotWidth"
                             )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Button(
-                                    onClick = onOpenMouzaPdf,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("hero_mouza_button"),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = EmeraldPrimary
-                                    ),
-                                    shape = RoundedCornerShape(14.dp),
-                                    contentPadding = PaddingValues(vertical = 10.dp)
-                                ) {
-                                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("মৌজা নকশা", maxLines = 1)
-                                }
-                                Button(
-                                    onClick = onOpenRealMap,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("hero_realmap_button"),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = SurveyGold,
-                                        contentColor = Color(0xFF1F1600)
-                                    ),
-                                    shape = RoundedCornerShape(14.dp),
-                                    contentPadding = PaddingValues(vertical = 10.dp)
-                                ) {
-                                    Icon(Icons.Rounded.Map, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("রিয়েল ম্যাপ", maxLines = 1)
-                                }
-                            }
+                            val dotColor by animateColorAsState(
+                                targetValue = if (isSelected) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.28f),
+                                animationSpec = tween(250),
+                                label = "bannerDotColor"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .height(7.dp)
+                                    .width(dotWidth)
+                                    .clip(CircleShape)
+                                    .background(dotColor)
+                            )
                         }
                     }
                 }
@@ -455,7 +447,25 @@ fun HomeScreen(
             }
         }
 
-        // Saved Measurement History
+        // Saved Restorable Projects (Mouza PDF + Real Map data snapshots)
+        if (savedProjects.isNotEmpty()) {
+            item {
+                Text(
+                    text = "সংরক্ষিত ম্যাপ ও PDF কাজ (${savedProjects.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            items(savedProjects.take(8), key = { it.id }) { proj ->
+                SavedProjectRow(
+                    project = proj,
+                    onClick = { onRestoreProject(proj) },
+                    onDelete = { onDeleteProject(proj.id) }
+                )
+            }
+        }
+
+        // Saved Measurement History (PNG Exports)
         if (savedRecords.isNotEmpty()) {
             item {
                 Row(
@@ -464,7 +474,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "সাম্প্রতিক সেভকৃত পরিমাপ (${savedRecords.size})",
+                        text = "সাম্প্রতিক সেভকৃত PNG পরিমাপ (${savedRecords.size})",
                         style = MaterialTheme.typography.titleMedium
                     )
                     TextButton(onClick = onClearHistory) {
@@ -591,6 +601,79 @@ private fun SavedRecordRow(record: SavedMeasurementRecord) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun SavedProjectRow(
+    project: SavedSurveyProject,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val dateStr = remember(project.timestampMillis) {
+        SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(Date(project.timestampMillis))
+    }
+    val isMouza = project.type == SavedProjectType.MOUZA_PDF
+    val badgeText = if (isMouza) "মৌজা PDF/ছবি" else "রিয়েল ম্যাপ"
+    val accent = if (isMouza) EmeraldPrimary else TealSecondary
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("home_project_${project.id}")
+            .neuClickable(cornerRadius = 18.dp, elevation = 5.dp, onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(accent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isMouza) Icons.Rounded.PictureAsPdf else Icons.Rounded.Map,
+                    contentDescription = null,
+                    tint = accent
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = project.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "$badgeText • ${project.itemCount}টি • $dateStr",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = String.format(Locale.US, "%.2f শতক • %.2f কাঠা • রিস্টোর করুন", project.decimalArea, project.kathaArea),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accent
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClick, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Rounded.Restore, contentDescription = "Restore Project", tint = accent)
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Delete Project", tint = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
