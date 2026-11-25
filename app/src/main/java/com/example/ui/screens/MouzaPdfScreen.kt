@@ -6,8 +6,14 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -92,6 +98,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -146,6 +153,15 @@ fun MouzaPdfScreen(
     var pointerModeEnabled by remember { mutableStateOf(true) }
     var editingPlot by remember { mutableStateOf<MouzaPlot?>(null) }
     var showCalibrateDialog by remember { mutableStateOf<MouzaPlot?>(null) }
+
+    BackHandler(enabled = showReportSheet || showFilterSheet || editingPlot != null || showCalibrateDialog != null) {
+        when {
+            showCalibrateDialog != null -> showCalibrateDialog = null
+            editingPlot != null -> editingPlot = null
+            showFilterSheet -> showFilterSheet = false
+            showReportSheet -> showReportSheet = false
+        }
+    }
 
     val colorMatrixFilter = remember(state.filterPreset, state.brightness, state.contrast) {
         buildFilterColorMatrix(state.filterPreset, state.brightness, state.contrast)
@@ -255,6 +271,13 @@ fun MouzaPdfScreen(
                         onClick = { pointerModeEnabled = !pointerModeEnabled }
                     )
                     NeuPillChip(
+                        text = "পলিগন",
+                        selected = state.activeTool == MouzaSelectionTool.POLYGON_DRAW,
+                        icon = Icons.Rounded.Draw,
+                        testTag = "tool_manual_polygon",
+                        onClick = { viewModel.setTool(MouzaSelectionTool.POLYGON_DRAW) }
+                    )
+                    NeuPillChip(
                         text = "অটো ফিল",
                         selected = state.activeTool == MouzaSelectionTool.AUTO_TAP,
                         icon = Icons.Rounded.AutoFixHigh,
@@ -274,13 +297,6 @@ fun MouzaPdfScreen(
                         icon = Icons.Rounded.Straighten,
                         testTag = "tool_tape_measure",
                         onClick = { viewModel.setTool(MouzaSelectionTool.TAPE_MEASURE) }
-                    )
-                    NeuPillChip(
-                        text = "পলিগন",
-                        selected = state.activeTool == MouzaSelectionTool.POLYGON_DRAW,
-                        icon = Icons.Rounded.Draw,
-                        testTag = "tool_manual_polygon",
-                        onClick = { viewModel.setTool(MouzaSelectionTool.POLYGON_DRAW) }
                     )
                     NeuPillChip(
                         text = "প্যান/মুভ",
@@ -490,46 +506,126 @@ fun MouzaPdfScreen(
                     }
 
                     var draggedVertex by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+                    var draggedDraftIdx by remember { mutableStateOf<Int?>(null) }
 
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            // In EDIT_CORNERS mode, allow single-finger vertex dragging cleanly while still panning if away from handle
+                            // PC / Trackpad Scroll-Wheel Zoom support
+                            .pointerInput(bmp, fitW, fitH) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        if (event.type == PointerEventType.Scroll) {
+                                            val change = event.changes.firstOrNull() ?: continue
+                                            val deltaY = change.scrollDelta.y
+                                            if (deltaY != 0f) {
+                                                val zoomFactor = if (deltaY < 0f) 1.18f else 1f / 1.18f
+                                                val oldScale = scale
+                                                val newScale = (oldScale * zoomFactor).coerceIn(1f, 1000f)
+                                                if (newScale <= 1.01f) {
+                                                    scale = 1f; offsetX = 0f; offsetY = 0f
+                                                } else {
+                                                    val pos = change.position
+                                                    val ratio = newScale / oldScale
+                                                    val nextOffX = (offsetX - (pos.x - cx)) * ratio + (pos.x - cx)
+                                                    val nextOffY = (offsetY - (pos.y - cy)) * ratio + (pos.y - cy)
+                                                    val maxOffX = max(boxW * newScale * 0.75f, boxW * 0.5f)
+                                                    val maxOffY = max(boxH * newScale * 0.75f, boxH * 0.5f)
+                                                    scale = newScale
+                                                    offsetX = nextOffX.coerceIn(-maxOffX, maxOffX)
+                                                    offsetY = nextOffY.coerceIn(-maxOffY, maxOffY)
+                                                }
+                                                change.consume()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // In EDIT_CORNERS or POLYGON_DRAW mode, allow dragging corner handles or draft points cleanly
                             .then(
-                                if (state.activeTool == MouzaSelectionTool.EDIT_CORNERS && state.selectedPlots.isNotEmpty()) {
-                                    Modifier.pointerInput(state.selectedPlots, scale, offsetX, offsetY, fitW, fitH) {
+                                if ((state.activeTool == MouzaSelectionTool.EDIT_CORNERS && state.selectedPlots.isNotEmpty()) ||
+                                    (state.activeTool == MouzaSelectionTool.POLYGON_DRAW && state.manualPolygonDraft.isNotEmpty())
+                                ) {
+                                    Modifier.pointerInput(
+                                        state.activeTool,
+                                        state.selectedPlots,
+                                        state.manualPolygonDraft,
+                                        scale,
+                                        offsetX,
+                                        offsetY,
+                                        fitW,
+                                        fitH
+                                    ) {
                                         detectDragGestures(
                                             onDragStart = { start ->
-                                                var best: Pair<Int, Int>? = null
-                                                var bestDist = 52f
-                                                state.selectedPlots.forEach { plot ->
-                                                    val poly = plot.effectivePolygon() ?: return@forEach
-                                                    poly.forEachIndexed { idx, (nx, ny) ->
-                                                        val sx = toScreenX(nx)
-                                                        val sy = toScreenY(ny)
-                                                        val d = hypot(sx - start.x, sy - start.y)
+                                                draggedVertex = null
+                                                draggedDraftIdx = null
+                                                if (state.activeTool == MouzaSelectionTool.POLYGON_DRAW) {
+                                                    var bestIdx: Int? = null
+                                                    var bestDist = 56f
+                                                    state.manualPolygonDraft.forEachIndexed { idx, (nx, ny) ->
+                                                        val d = hypot(toScreenX(nx) - start.x, toScreenY(ny) - start.y)
                                                         if (d < bestDist) {
                                                             bestDist = d
-                                                            best = plot.id to idx
+                                                            bestIdx = idx
                                                         }
                                                     }
+                                                    draggedDraftIdx = bestIdx
+                                                    if (bestIdx != null) viewModel.selectDraftPoint(bestIdx)
+                                                } else {
+                                                    var best: Pair<Int, Int>? = null
+                                                    var bestDist = 56f
+                                                    state.selectedPlots.forEach { plot ->
+                                                        val poly = plot.effectivePolygon() ?: return@forEach
+                                                        poly.forEachIndexed { idx, (nx, ny) ->
+                                                            val sx = toScreenX(nx)
+                                                            val sy = toScreenY(ny)
+                                                            val d = hypot(sx - start.x, sy - start.y)
+                                                            if (d < bestDist) {
+                                                                bestDist = d
+                                                                best = plot.id to idx
+                                                            }
+                                                        }
+                                                    }
+                                                    draggedVertex = best
+                                                    if (best != null) viewModel.selectVertex(best!!.first, best!!.second)
                                                 }
-                                                draggedVertex = best
                                             },
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
+                                                val draftTarget = draggedDraftIdx
                                                 val target = draggedVertex
-                                                if (target != null) {
-                                                    val nx = toNormX(change.position.x)
-                                                    val ny = toNormY(change.position.y)
-                                                    viewModel.updatePlotVertex(target.first, target.second, nx, ny)
-                                                } else {
-                                                    offsetX += dragAmount.x
-                                                    offsetY += dragAmount.y
+                                                when {
+                                                    draftTarget != null -> {
+                                                        viewModel.updateManualDraftPoint(
+                                                            draftTarget,
+                                                            toNormX(change.position.x),
+                                                            toNormY(change.position.y)
+                                                        )
+                                                    }
+                                                    target != null -> {
+                                                        viewModel.updatePlotVertex(
+                                                            target.first,
+                                                            target.second,
+                                                            toNormX(change.position.x),
+                                                            toNormY(change.position.y)
+                                                        )
+                                                    }
+                                                    else -> {
+                                                        offsetX += dragAmount.x
+                                                        offsetY += dragAmount.y
+                                                    }
                                                 }
                                             },
-                                            onDragEnd = { draggedVertex = null },
-                                            onDragCancel = { draggedVertex = null }
+                                            onDragEnd = {
+                                                draggedVertex = null
+                                                draggedDraftIdx = null
+                                            },
+                                            onDragCancel = {
+                                                draggedVertex = null
+                                                draggedDraftIdx = null
+                                            }
                                         )
                                     }
                                 } else {
@@ -741,11 +837,24 @@ fun MouzaPdfScreen(
                                             drawCircle(plot.color, radius = 4f, center = Offset(mx, my))
                                         }
 
-                                        // Vertex corner handle
-                                        val handleRadius = if (isEditMode) 13f else 6f
-                                        drawCircle(Color.White, radius = handleRadius + 2.5f, center = sA)
+                                        // Vertex corner handle (highlight selected corner brightly for edit/delete)
+                                        val isSelVertex = state.selectedVertex == (plot.id to i)
+                                        val handleRadius = when {
+                                            isSelVertex -> 16f
+                                            isEditMode -> 13f
+                                            else -> 6.5f
+                                        }
                                         drawCircle(
-                                            color = if (isEditMode) Color(0xFFFFB300) else plot.color,
+                                            color = if (isSelVertex) Color(0xFFE53935) else Color.White,
+                                            radius = handleRadius + 3f,
+                                            center = sA
+                                        )
+                                        drawCircle(
+                                            color = when {
+                                                isSelVertex -> Color(0xFFFFEA00)
+                                                isEditMode -> Color(0xFFFFB300)
+                                                else -> plot.color
+                                            },
                                             radius = handleRadius,
                                             center = sA
                                         )
@@ -811,50 +920,180 @@ fun MouzaPdfScreen(
                             state.completedTapes.forEach { drawTapePath(it, isDraft = false) }
                             drawTapePath(state.tapeDraft, isDraft = true)
 
-                            // 5. Draw Active Manual Polygon Draft
+                            // 5. Draw Active Manual Polygon Draft (highlight selected draft point for edit/delete)
                             val draft = state.manualPolygonDraft
                             if (draft.isNotEmpty()) {
                                 val path = Path()
-                                draft.forEachIndexed { idx, (nx, ny) ->
-                                    val pt = Offset(toScreenX(nx), toScreenY(ny))
+                                val screenPts = draft.map { (nx, ny) -> Offset(toScreenX(nx), toScreenY(ny)) }
+                                screenPts.forEachIndexed { idx, pt ->
                                     if (idx == 0) path.moveTo(pt.x, pt.y) else path.lineTo(pt.x, pt.y)
-                                    drawCircle(Color.White, radius = 11f, center = pt)
-                                    drawCircle(EmeraldPrimary, radius = 8f, center = pt)
                                 }
                                 if (draft.size >= 2) {
                                     drawPath(path, color = EmeraldPrimary, style = Stroke(width = 4.5f))
                                 }
+                                screenPts.forEachIndexed { idx, pt ->
+                                    val isSel = state.selectedDraftIdx == idx
+                                    drawCircle(
+                                        color = if (isSel) Color(0xFFE53935) else Color.White,
+                                        radius = if (isSel) 15f else 12f,
+                                        center = pt
+                                    )
+                                    drawCircle(
+                                        color = if (isSel) Color(0xFFFFD54F) else EmeraldPrimary,
+                                        radius = if (isSel) 11f else 8.5f,
+                                        center = pt
+                                    )
+                                }
                             }
-                            // 6. Precision Center Crosshair Pointer (when enabled)
+
+                            // 6. Enlarged Precision Crosshair Pointer + Live 3.2x Zoom Loupe (when enabled)
                             if (pointerModeEnabled) {
                                 val center = Offset(size.width / 2f, size.height / 2f)
+                                val radius = 44f
+                                val gap = 12f
+                                val arm = 64f
+
                                 drawCircle(
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    radius = 30f,
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    radius = radius,
                                     center = center,
-                                    style = Stroke(width = 5f)
+                                    style = Stroke(width = 6.5f)
                                 )
                                 drawCircle(
                                     color = Color(0xFFE53935),
-                                    radius = 30f,
+                                    radius = radius,
                                     center = center,
-                                    style = Stroke(width = 2.5f)
+                                    style = Stroke(width = 3.2f)
                                 )
-                                val gap = 10f
-                                val arm = 42f
-                                // White halo behind crosshair ticks
-                                drawLine(Color.White, Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 5f)
-                                drawLine(Color.White, Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 5f)
-                                drawLine(Color.White, Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 5f)
-                                drawLine(Color.White, Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 5f)
-                                // Crisp red/emerald crosshair ticks
-                                drawLine(Color(0xFFE53935), Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 2.5f)
-                                drawLine(Color(0xFFE53935), Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 2.5f)
-                                drawLine(Color(0xFFE53935), Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 2.5f)
-                                drawLine(Color(0xFFE53935), Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 2.5f)
-                                // Center pinpoint dot
-                                drawCircle(Color.White, radius = 5.5f, center = center)
-                                drawCircle(Color(0xFFE53935), radius = 3.2f, center = center)
+                                drawLine(Color.White, Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 6.5f)
+                                drawLine(Color.White, Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 6.5f)
+                                drawLine(Color.White, Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 6.5f)
+                                drawLine(Color.White, Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 6.5f)
+                                drawLine(Color(0xFFE53935), Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 3.2f)
+                                drawLine(Color(0xFFE53935), Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 3.2f)
+                                drawLine(Color(0xFFE53935), Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 3.2f)
+                                drawLine(Color(0xFFE53935), Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 3.2f)
+                                drawCircle(Color.White, radius = 7f, center = center)
+                                drawCircle(Color(0xFFE53935), radius = 4.2f, center = center)
+
+                                // Live 3.2x Magnifying Loupe at top-center showing the exact zoomed target under crosshair
+                                val loupeR = 54.dp.toPx()
+                                val loupeX = size.width / 2f
+                                val loupeY = (loupeR + 12.dp.toPx()).coerceAtMost(center.y - radius - 14f)
+                                if (loupeY > loupeR) {
+                                    val mag = 3.2f
+                                    drawIntoCanvas { canvas ->
+                                        val native = canvas.nativeCanvas
+                                        val clipPath = android.graphics.Path().apply {
+                                            addCircle(loupeX, loupeY, loupeR, android.graphics.Path.Direction.CW)
+                                        }
+                                        native.save()
+                                        native.clipPath(clipPath)
+                                        native.drawColor(android.graphics.Color.WHITE)
+
+                                        native.translate(loupeX, loupeY)
+                                        native.scale(mag, mag)
+                                        native.translate(-center.x, -center.y)
+
+                                        val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+                                            colorFilter = colorMatrixFilter
+                                        }
+                                        val hdTile = state.viewportTile
+                                        val crossNx = toNormX(center.x)
+                                        val crossNy = toNormY(center.y)
+                                        val useHd = hdTile != null && scale >= 2.2f && !hdTile.bitmap.isRecycled &&
+                                            crossNx in hdTile.normLeft..hdTile.normRight &&
+                                            crossNy in hdTile.normTop..hdTile.normBottom
+                                        if (useHd && hdTile != null) {
+                                            val tileDst = RectF(
+                                                toScreenX(hdTile.normLeft),
+                                                toScreenY(hdTile.normTop),
+                                                toScreenX(hdTile.normRight),
+                                                toScreenY(hdTile.normBottom)
+                                            )
+                                            native.drawBitmap(
+                                                hdTile.bitmap,
+                                                Rect(0, 0, hdTile.bitmap.width, hdTile.bitmap.height),
+                                                tileDst,
+                                                bitmapPaint
+                                            )
+                                        } else {
+                                            val halfNormW = (loupeR / (fitW * scale * mag)).coerceAtLeast(0.01f)
+                                            val halfNormH = (loupeR / (fitH * scale * mag)).coerceAtLeast(0.01f)
+                                            val cL = (crossNx - halfNormW * 1.4f).coerceIn(0f, 0.99f)
+                                            val cT = (crossNy - halfNormH * 1.4f).coerceIn(0f, 0.99f)
+                                            val cR = (crossNx + halfNormW * 1.4f).coerceIn(cL + 0.005f, 1f)
+                                            val cB = (crossNy + halfNormH * 1.4f).coerceIn(cT + 0.005f, 1f)
+                                            val srcR = Rect(
+                                                (cL * bmp.width).toInt().coerceIn(0, bmp.width - 1),
+                                                (cT * bmp.height).toInt().coerceIn(0, bmp.height - 1),
+                                                (cR * bmp.width).roundToInt().coerceIn(1, bmp.width),
+                                                (cB * bmp.height).roundToInt().coerceIn(1, bmp.height)
+                                            )
+                                            val dstR = RectF(
+                                                toScreenX(cL),
+                                                toScreenY(cT),
+                                                toScreenX(cR),
+                                                toScreenY(cB)
+                                            )
+                                            native.drawBitmap(bmp, srcR, dstR, bitmapPaint)
+                                        }
+
+                                        // Also render polygon & draft lines inside the 3.2x magnifying loupe
+                                        val loupePolyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                            color = android.graphics.Color.parseColor("#0F6B54")
+                                            style = Paint.Style.STROKE
+                                            strokeWidth = 2.2f
+                                        }
+                                        state.selectedPlots.forEach { plot ->
+                                            val poly = plot.effectivePolygon() ?: return@forEach
+                                            if (poly.size >= 3) {
+                                                val pPath = android.graphics.Path()
+                                                poly.forEachIndexed { idx, (nx, ny) ->
+                                                    val px = toScreenX(nx)
+                                                    val py = toScreenY(ny)
+                                                    if (idx == 0) pPath.moveTo(px, py) else pPath.lineTo(px, py)
+                                                }
+                                                pPath.close()
+                                                loupePolyPaint.color = plot.color.toArgb()
+                                                native.drawPath(pPath, loupePolyPaint)
+                                            }
+                                        }
+                                        if (draft.size >= 2) {
+                                            val dPath = android.graphics.Path()
+                                            draft.forEachIndexed { idx, (nx, ny) ->
+                                                val px = toScreenX(nx)
+                                                val py = toScreenY(ny)
+                                                if (idx == 0) dPath.moveTo(px, py) else dPath.lineTo(px, py)
+                                            }
+                                            loupePolyPaint.color = android.graphics.Color.parseColor("#0F6B54")
+                                            native.drawPath(dPath, loupePolyPaint)
+                                        }
+                                        native.restore()
+                                    }
+
+                                    // Magnifier lens ring + inner fine crosshair
+                                    val lensCenter = Offset(loupeX, loupeY)
+                                    drawCircle(
+                                        color = Color(0xFF0F6B54),
+                                        radius = loupeR,
+                                        center = lensCenter,
+                                        style = Stroke(width = 4.dp.toPx())
+                                    )
+                                    drawCircle(
+                                        color = Color.White,
+                                        radius = loupeR + 2.dp.toPx(),
+                                        center = lensCenter,
+                                        style = Stroke(width = 2.dp.toPx())
+                                    )
+                                    val lArm = 16.dp.toPx()
+                                    val lGap = 4.dp.toPx()
+                                    drawLine(Color(0xFFE53935), Offset(loupeX - lArm, loupeY), Offset(loupeX - lGap, loupeY), strokeWidth = 2.4f)
+                                    drawLine(Color(0xFFE53935), Offset(loupeX + lGap, loupeY), Offset(loupeX + lArm, loupeY), strokeWidth = 2.4f)
+                                    drawLine(Color(0xFFE53935), Offset(loupeX, loupeY - lArm), Offset(loupeX, loupeY - lGap), strokeWidth = 2.4f)
+                                    drawLine(Color(0xFFE53935), Offset(loupeX, loupeY + lGap), Offset(loupeX, loupeY + lArm), strokeWidth = 2.4f)
+                                    drawCircle(Color(0xFFE53935), radius = 3.2f, center = lensCenter)
+                                }
                             }
                         }
 
@@ -917,52 +1156,83 @@ fun MouzaPdfScreen(
                             )
                         }
 
-                        // Precision Crosshair Action Button (never overlaps manual polygon draft bar)
-                        if (pointerModeEnabled && state.activeTool != MouzaSelectionTool.PAN_ONLY) {
-                            val hasPolyDraft = state.activeTool == MouzaSelectionTool.POLYGON_DRAW && state.manualPolygonDraft.isNotEmpty()
+                        // Precision Crosshair Action Bar (includes Delete Point when editing/drawing)
+                        val hasPolyDraft = state.activeTool == MouzaSelectionTool.POLYGON_DRAW && state.manualPolygonDraft.isNotEmpty()
+                        val hasEditPlots = state.activeTool == MouzaSelectionTool.EDIT_CORNERS && state.selectedPlots.isNotEmpty()
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = pointerModeEnabled && state.activeTool != MouzaSelectionTool.PAN_ONLY,
+                            enter = fadeIn() + scaleIn(initialScale = 0.9f),
+                            exit = fadeOut() + scaleOut(targetScale = 0.9f),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = if (hasPolyDraft) 70.dp else 10.dp)
+                        ) {
                             val ptrBtnLabel = when (state.activeTool) {
+                                MouzaSelectionTool.POLYGON_DRAW -> "পয়েন্টারে কোণা বসান"
                                 MouzaSelectionTool.AUTO_TAP -> "পয়েন্টারে দাগ সিলেক্ট"
                                 MouzaSelectionTool.EDIT_CORNERS -> "কোণা এখানে আনুন"
                                 MouzaSelectionTool.TAPE_MEASURE -> "পয়েন্টারে মাপ বিন্দু"
-                                MouzaSelectionTool.POLYGON_DRAW -> "পয়েন্টারে কোণা বসান"
                                 MouzaSelectionTool.PAN_ONLY -> ""
                             }
-                            Button(
-                                onClick = {
-                                    val nx = toNormX(cx)
-                                    val ny = toNormY(cy)
-                                    if (nx in 0f..1f && ny in 0f..1f) {
-                                        if (state.activeTool == MouzaSelectionTool.EDIT_CORNERS) {
-                                            viewModel.snapNearestVertexTo(nx, ny)
-                                        } else {
-                                            viewModel.onMapTap(nx, ny)
-                                        }
-                                    }
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(bottom = if (hasPolyDraft) 70.dp else 10.dp)
-                                    .testTag("mouza_pointer_select_button"),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE0F6B54)),
-                                shape = RoundedCornerShape(18.dp),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(ptrBtnLabel, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Button(
+                                    onClick = {
+                                        val nx = toNormX(cx)
+                                        val ny = toNormY(cy)
+                                        if (nx in 0f..1f && ny in 0f..1f) {
+                                            if (state.activeTool == MouzaSelectionTool.EDIT_CORNERS) {
+                                                viewModel.snapNearestVertexTo(nx, ny)
+                                            } else {
+                                                viewModel.onMapTap(nx, ny)
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("mouza_pointer_select_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE0F6B54)),
+                                    shape = RoundedCornerShape(18.dp),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                                ) {
+                                    Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(ptrBtnLabel, fontWeight = FontWeight.Bold, maxLines = 1)
+                                }
+
+                                if (hasEditPlots) {
+                                    Button(
+                                        onClick = {
+                                            viewModel.deleteSelectedOrNearestVertex(toNormX(cx), toNormY(cy))
+                                        },
+                                        modifier = Modifier.testTag("mouza_delete_vertex_button"),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xEEC62828)),
+                                        shape = RoundedCornerShape(18.dp),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("বিন্দু ডিলিট", fontWeight = FontWeight.Bold, maxLines = 1)
+                                    }
+                                }
                             }
                         }
 
-                        // Manual Polygon Draft Action Pill
-                        if (state.activeTool == MouzaSelectionTool.POLYGON_DRAW && state.manualPolygonDraft.isNotEmpty()) {
+                        // Manual Polygon Draft Action Pill (Edit / Delete selected point / Undo / Finish)
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = hasPolyDraft,
+                            enter = fadeIn() + scaleIn(initialScale = 0.92f),
+                            exit = fadeOut() + scaleOut(targetScale = 0.92f),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(10.dp)
+                        ) {
                             Row(
                                 modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(10.dp)
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(Color(0xEE16222B))
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
@@ -970,8 +1240,17 @@ fun MouzaPdfScreen(
                                     color = Color.White,
                                     style = MaterialTheme.typography.labelLarge
                                 )
-                                TextButton(onClick = { viewModel.undoManualPoint() }) {
-                                    Text("পিছনে", color = Color(0xFFFFD54F))
+                                TextButton(
+                                    onClick = { viewModel.deleteSelectedOrLastDraftPoint() },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text("বিন্দু ডিলিট", color = Color(0xFFFF8A80))
+                                }
+                                TextButton(
+                                    onClick = { viewModel.clearManualDraft() },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Text("সব মুছুন", color = Color(0xFFFFD54F))
                                 }
                                 Button(
                                     onClick = { viewModel.finishManualPolygon() },

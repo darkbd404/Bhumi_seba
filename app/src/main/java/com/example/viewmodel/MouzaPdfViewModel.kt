@@ -45,10 +45,12 @@ data class MouzaPdfUiState(
     val selectedScale: MouzaScale = MouzaScale.SCALE_16,
     val calibrationMultiplier: Double = 1.0,
     val gapSealLevel: Int = 1, // 0 = Exact, 1 = Balanced, 2 = Strong
-    val activeTool: MouzaSelectionTool = MouzaSelectionTool.AUTO_TAP,
+    val activeTool: MouzaSelectionTool = MouzaSelectionTool.POLYGON_DRAW,
     val selectedPlots: List<MouzaPlot> = emptyList(),
     val canRedo: Boolean = false,
+    val selectedVertex: Pair<Int, Int>? = null, // (plotId, vertexIndex)
     val manualPolygonDraft: List<Pair<Float, Float>> = emptyList(),
+    val selectedDraftIdx: Int? = null,
     val tapeDraft: List<Pair<Float, Float>> = emptyList(),
     val completedTapes: List<List<Pair<Float, Float>>> = emptyList(),
     val khatianTitle: String = "",
@@ -303,16 +305,17 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
 
     fun setTool(tool: MouzaSelectionTool) {
         val hint = when (tool) {
+            MouzaSelectionTool.POLYGON_DRAW -> "দাগের কোণাগুলোতে ট্যাপ বা পয়েন্টারে বসান — বিন্দু টেনে/ডিলিটও করা যাবে"
             MouzaSelectionTool.AUTO_TAP -> "দাগের ভেতরে ট্যাপ করলে অটো সিলেক্ট হবে (কোণা টেনে ঠিক করা যাবে)"
-            MouzaSelectionTool.EDIT_CORNERS -> "হলুদ কোণাগুলো টেনে বা লাইনের মাঝে ট্যাপ করে সীমানা ঠিক করুন"
+            MouzaSelectionTool.EDIT_CORNERS -> "হলুদ কোণা ট্যাপ করে সিলেক্ট/ডিলিট বা ড্র্যাগ করে সীমানা ঠিক করুন"
             MouzaSelectionTool.TAPE_MEASURE -> "ম্যাপে ট্যাপ করে বিন্দু বসান — দূরত্ব ফুট/লিংকে দেখাবে"
-            MouzaSelectionTool.POLYGON_DRAW -> "দাগের কোণাগুলোতে ট্যাপ করে 'সম্পন্ন' চাপুন"
             MouzaSelectionTool.PAN_ONLY -> "শুধু জুম ও প্যান মোড"
         }
         _uiState.update {
             it.copy(
                 activeTool = tool,
-                manualPolygonDraft = emptyList(),
+                selectedVertex = null,
+                selectedDraftIdx = null,
                 statusMessage = hint
             )
         }
@@ -325,13 +328,39 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         when (state.activeTool) {
             MouzaSelectionTool.PAN_ONLY -> return
             MouzaSelectionTool.EDIT_CORNERS -> {
-                // Allow tapping near a selected polygon's edge midpoint to split edge for fine adjustment
+                // First check if user tapped near an existing corner to select it for move/delete
+                val hitVertex = findNearestVertex(state.selectedPlots, normX, normY, maxDistSq = 0.0008f)
+                if (hitVertex != null) {
+                    _uiState.update {
+                        it.copy(
+                            selectedVertex = hitVertex,
+                            statusMessage = "কোণা সিলেক্ট হয়েছে — ড্র্যাগ করুন বা 'বিন্দু ডিলিট' চাপুন"
+                        )
+                    }
+                    return
+                }
+                // Otherwise allow tapping near an edge midpoint to split edge for fine adjustment
                 trySplitNearestEdge(normX, normY)
                 return
             }
             MouzaSelectionTool.POLYGON_DRAW -> {
-                _uiState.update {
-                    it.copy(manualPolygonDraft = it.manualPolygonDraft + (normX to normY))
+                // If user tapped close to an existing draft point, select it for edit/delete instead of duplicating
+                val hitDraft = findNearestDraftIndex(state.manualPolygonDraft, normX, normY, maxDistSq = 0.0005f)
+                if (hitDraft != null) {
+                    _uiState.update {
+                        it.copy(
+                            selectedDraftIdx = if (it.selectedDraftIdx == hitDraft) null else hitDraft,
+                            statusMessage = "বিন্দু #${hitDraft + 1} সিলেক্ট হয়েছে — ড্র্যাগ বা ডিলিট করুন"
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        val next = it.manualPolygonDraft + (normX to normY)
+                        it.copy(
+                            manualPolygonDraft = next,
+                            selectedDraftIdx = next.lastIndex
+                        )
+                    }
                 }
                 return
             }
@@ -431,10 +460,108 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
 
     fun snapNearestVertexTo(normX: Float, normY: Float) {
         val state = _uiState.value
+        val target = state.selectedVertex ?: findNearestVertex(state.selectedPlots, normX, normY, maxDistSq = Float.MAX_VALUE)
+        if (target != null) {
+            updatePlotVertex(target.first, target.second, normX, normY)
+            _uiState.update {
+                it.copy(
+                    selectedVertex = target,
+                    statusMessage = "কোণা পয়েন্টারে সরানো হয়েছে"
+                )
+            }
+        }
+    }
+
+    fun selectVertex(plotId: Int, vertexIdx: Int) {
+        _uiState.update { it.copy(selectedVertex = plotId to vertexIdx) }
+    }
+
+    fun deleteSelectedOrNearestVertex(centerNormX: Float, centerNormY: Float) {
+        val state = _uiState.value
+        val target = state.selectedVertex ?: findNearestVertex(state.selectedPlots, centerNormX, centerNormY, maxDistSq = Float.MAX_VALUE)
+        if (target == null) {
+            _uiState.update { it.copy(statusMessage = "ডিলিট করার মতো কোনো কোণা পাওয়া যায়নি") }
+            return
+        }
+        val plot = state.selectedPlots.find { it.id == target.first } ?: return
+        val poly = plot.effectivePolygon()?.toMutableList() ?: return
+        if (poly.size <= 3) {
+            _uiState.update {
+                it.copy(statusMessage = "দাগে কমপক্ষে ৩টি কোণা থাকতে হবে (পুরো দাগ বাদ দিতে 'বাদ' চাপুন)")
+            }
+            return
+        }
+        if (target.second !in poly.indices) return
+        poly.removeAt(target.second)
+        val sqFt = MouzaPdfEngine.computePolygonAreaSqFeet(
+            poly, state.pdfPageWidthPts, state.pdfPageHeightPts, state.selectedScale, state.calibrationMultiplier
+        )
+        val cx = poly.map { it.first }.average().toFloat()
+        val cy = poly.map { it.second }.average().toFloat()
+        val updated = state.selectedPlots.map { p ->
+            if (p.id != plot.id) p else p.copy(
+                polygonNormalized = poly,
+                manualPolygonNormalized = if (p.manualPolygonNormalized != null) poly else null,
+                centroidNormalized = cx to cy,
+                exactAreaSqFeet = sqFt
+            )
+        }
+        _uiState.update {
+            it.copy(
+                selectedPlots = updated,
+                selectedVertex = null,
+                statusMessage = "অপ্রয়োজনীয় কোণা ডিলিট করা হয়েছে"
+            )
+        }
+    }
+
+    fun selectDraftPoint(idx: Int?) {
+        _uiState.update { it.copy(selectedDraftIdx = idx) }
+    }
+
+    fun updateManualDraftPoint(idx: Int, newNormX: Float, newNormY: Float) {
+        _uiState.update { state ->
+            val draft = state.manualPolygonDraft.toMutableList()
+            if (idx !in draft.indices) return@update state
+            draft[idx] = newNormX.coerceIn(0f, 1f) to newNormY.coerceIn(0f, 1f)
+            state.copy(manualPolygonDraft = draft, selectedDraftIdx = idx)
+        }
+    }
+
+    fun deleteSelectedOrLastDraftPoint() {
+        _uiState.update { state ->
+            val draft = state.manualPolygonDraft.toMutableList()
+            if (draft.isEmpty()) return@update state
+            val idx = state.selectedDraftIdx?.takeIf { it in draft.indices } ?: draft.lastIndex
+            draft.removeAt(idx)
+            state.copy(
+                manualPolygonDraft = draft,
+                selectedDraftIdx = draft.lastIndex.takeIf { it >= 0 },
+                statusMessage = "বিন্দু ডিলিট করা হয়েছে"
+            )
+        }
+    }
+
+    fun clearManualDraft() {
+        _uiState.update {
+            it.copy(
+                manualPolygonDraft = emptyList(),
+                selectedDraftIdx = null,
+                statusMessage = "ড্রাফট বিন্দু মুছে ফেলা হয়েছে"
+            )
+        }
+    }
+
+    private fun findNearestVertex(
+        plots: List<MouzaPlot>,
+        normX: Float,
+        normY: Float,
+        maxDistSq: Float
+    ): Pair<Int, Int>? {
         var bestPlotId = -1
         var bestIdx = -1
-        var bestDistSq = Float.MAX_VALUE
-        state.selectedPlots.forEach { plot ->
+        var bestDistSq = maxDistSq
+        plots.forEach { plot ->
             val poly = plot.effectivePolygon() ?: return@forEach
             poly.forEachIndexed { idx, (vx, vy) ->
                 val dSq = (vx - normX) * (vx - normX) + (vy - normY) * (vy - normY)
@@ -445,10 +572,25 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
-        if (bestPlotId != -1 && bestIdx != -1) {
-            updatePlotVertex(bestPlotId, bestIdx, normX, normY)
-            _uiState.update { it.copy(statusMessage = "নিকটতম কোণা পয়েন্টারে সরানো হয়েছে") }
+        return if (bestPlotId != -1 && bestIdx != -1) bestPlotId to bestIdx else null
+    }
+
+    private fun findNearestDraftIndex(
+        draft: List<Pair<Float, Float>>,
+        normX: Float,
+        normY: Float,
+        maxDistSq: Float
+    ): Int? {
+        var bestIdx = -1
+        var bestDistSq = maxDistSq
+        draft.forEachIndexed { idx, (vx, vy) ->
+            val dSq = (vx - normX) * (vx - normX) + (vy - normY) * (vy - normY)
+            if (dSq < bestDistSq) {
+                bestDistSq = dSq
+                bestIdx = idx
+            }
         }
+        return if (bestIdx >= 0) bestIdx else null
     }
 
     private fun trySplitNearestEdge(normX: Float, normY: Float) {
@@ -520,6 +662,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
         _uiState.update {
             it.copy(
                 manualPolygonDraft = emptyList(),
+                selectedDraftIdx = null,
                 selectedPlots = updated,
                 canRedo = false,
                 statusMessage = "ম্যানুয়াল দাগ #${plot.plotIndex} যুক্ত হয়েছে"
@@ -530,7 +673,10 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
     fun undoManualPoint() {
         val draft = _uiState.value.manualPolygonDraft
         if (draft.isNotEmpty()) {
-            _uiState.update { it.copy(manualPolygonDraft = draft.dropLast(1)) }
+            _uiState.update {
+                val next = draft.dropLast(1)
+                it.copy(manualPolygonDraft = next, selectedDraftIdx = next.lastIndex.takeIf { idx -> idx >= 0 })
+            }
         }
     }
 

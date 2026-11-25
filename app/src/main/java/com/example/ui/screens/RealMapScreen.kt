@@ -238,6 +238,14 @@ fun RealMapScreen(
             )
         }
     }
+    LaunchedEffect(pointerModeEnabled, mapReady) {
+        if (mapReady) {
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.setPointerMode($pointerModeEnabled);",
+                null
+            )
+        }
+    }
 
     Box(
         modifier = modifier
@@ -424,8 +432,13 @@ fun RealMapScreen(
                             addJavascriptInterface(
                                 object {
                                     @JavascriptInterface
-                                    fun onMeasurementChanged(points: Int, areaSqM: Double, perimeterM: Double) {
-                                        viewModel.updateMeasurementFromBridge(points, areaSqM, perimeterM)
+                                    fun onMeasurementChanged(
+                                        points: Int,
+                                        areaSqM: Double,
+                                        perimeterM: Double,
+                                        selectedPinIdx: Int
+                                    ) {
+                                        viewModel.updateMeasurementFromBridge(points, areaSqM, perimeterM, selectedPinIdx)
                                     }
                                 },
                                 "AndroidMapBridge"
@@ -568,51 +581,76 @@ fun RealMapScreen(
                     }
                 }
 
-                // Precision Center Crosshair Pointer (non-blocking overlay)
+                // Precision Large Center Crosshair Pointer (non-blocking overlay)
                 if (pointerModeEnabled) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val center = Offset(size.width / 2f, size.height / 2f)
                         drawCircle(
-                            color = Color.White.copy(alpha = 0.85f),
-                            radius = 30f,
+                            color = Color.Black.copy(alpha = 0.55f),
+                            radius = 44f,
                             center = center,
-                            style = Stroke(width = 5f)
+                            style = Stroke(width = 7f)
                         )
                         drawCircle(
                             color = Color(0xFFFFD54F),
-                            radius = 30f,
+                            radius = 44f,
                             center = center,
-                            style = Stroke(width = 2.5f)
+                            style = Stroke(width = 3.2f)
                         )
-                        val gap = 10f
-                        val arm = 42f
-                        drawLine(Color.Black.copy(alpha = 0.7f), Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 5f)
-                        drawLine(Color.Black.copy(alpha = 0.7f), Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 5f)
-                        drawLine(Color.Black.copy(alpha = 0.7f), Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 5f)
-                        drawLine(Color.Black.copy(alpha = 0.7f), Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 5f)
-                        drawLine(Color(0xFFFFD54F), Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 2.5f)
-                        drawLine(Color(0xFFFFD54F), Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 2.5f)
-                        drawLine(Color(0xFFFFD54F), Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 2.5f)
-                        drawLine(Color(0xFFFFD54F), Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 2.5f)
-                        drawCircle(Color.White, radius = 5.5f, center = center)
-                        drawCircle(Color(0xFFE53935), radius = 3.2f, center = center)
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.45f),
+                            radius = 22f,
+                            center = center,
+                            style = Stroke(width = 1.6f)
+                        )
+                        val gap = 12f
+                        val arm = 64f
+                        drawLine(Color.Black.copy(alpha = 0.72f), Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 6f)
+                        drawLine(Color.Black.copy(alpha = 0.72f), Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 6f)
+                        drawLine(Color.Black.copy(alpha = 0.72f), Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 6f)
+                        drawLine(Color.Black.copy(alpha = 0.72f), Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 6f)
+                        drawLine(Color(0xFFFFD54F), Offset(center.x - arm, center.y), Offset(center.x - gap, center.y), strokeWidth = 3f)
+                        drawLine(Color(0xFFFFD54F), Offset(center.x + gap, center.y), Offset(center.x + arm, center.y), strokeWidth = 3f)
+                        drawLine(Color(0xFFFFD54F), Offset(center.x, center.y - arm), Offset(center.x, center.y - gap), strokeWidth = 3f)
+                        drawLine(Color(0xFFFFD54F), Offset(center.x, center.y + gap), Offset(center.x, center.y + arm), strokeWidth = 3f)
+                        drawCircle(Color.White, radius = 6.5f, center = center)
+                        drawCircle(Color(0xFFE53935), radius = 3.6f, center = center)
                     }
 
-                    Button(
-                        onClick = {
-                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.addCenterPoint();", null)
-                        },
+                    Row(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 12.dp)
-                            .testTag("map_pointer_add_button"),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE0F6B54)),
-                        shape = RoundedCornerShape(18.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                            .padding(bottom = 12.dp, start = 12.dp, end = 64.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("পয়েন্টারে পিন বসান", fontWeight = FontWeight.Bold, maxLines = 1)
+                        Button(
+                            onClick = {
+                                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.addCenterPoint();", null)
+                            },
+                            modifier = Modifier.testTag("map_pointer_add_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE0F6B54)),
+                            shape = RoundedCornerShape(18.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("পয়েন্টারে পিন বসান", fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+
+                        AnimatedVisibility(visible = state.selectedPinIdx >= 0) {
+                            Button(
+                                onClick = {
+                                    webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.moveSelectedPinToCenter();", null)
+                                },
+                                modifier = Modifier.testTag("map_move_pin_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xEE1565C0)),
+                                shape = RoundedCornerShape(18.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                            ) {
+                                Text("পিন #${state.selectedPinIdx + 1} সরান", fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            }
+                        }
                     }
                 }
             }
@@ -637,7 +675,7 @@ fun RealMapScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "ম্যাপে দাগের কোণাগুলোতে ট্যাপ করুন (পিন টেনে ঠিক করা যাবে)",
+                        text = "ম্যাপে পয়েন্টার রেখে জুম লুপে দেখে পিন বসান — পিন ট্যাপ/ড্র্যাগ করে এডিট বা ডিলিট করা যাবে",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -725,9 +763,26 @@ fun RealMapScreen(
                         enabled = state.pointCount > 0,
                         modifier = Modifier.testTag("map_undo_button"),
                         shape = RoundedCornerShape(14.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo", modifier = Modifier.size(18.dp))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.deleteSelectedPin();", null)
+                        },
+                        enabled = state.pointCount > 0,
+                        modifier = Modifier.testTag("map_delete_pin_button"),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Rounded.Remove, contentDescription = "Delete Pin", modifier = Modifier.size(16.dp), tint = Color(0xFFD6405A))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = if (state.selectedPinIdx >= 0) "পিন #${state.selectedPinIdx + 1}" else "বিন্দু ডিলিট",
+                            color = Color(0xFFD6405A),
+                            maxLines = 1
+                        )
                     }
                     OutlinedButton(
                         onClick = {
@@ -736,7 +791,7 @@ fun RealMapScreen(
                         enabled = state.pointCount > 0,
                         modifier = Modifier.testTag("map_clear_button"),
                         shape = RoundedCornerShape(14.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
                     ) {
                         Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear", modifier = Modifier.size(18.dp))
                     }
@@ -900,7 +955,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
               const rc = document.getElementById('rc');
               const attrEl = document.getElementById('attr');
               const ctx = rc.getContext('2d');
-              const dpr = () => Math.min(window.devicePixelRatio || 1, 2.5);
+              const dpr = () => Math.min(window.devicePixelRatio || 1, 3.0);
 
               // Mercator projection helpers [0..1]
               function ll2m(lat, lon) {
@@ -951,6 +1006,8 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 z: 16,
                 mode: 'area',
                 points: [],
+                selectedPinIdx: -1,
+                pointerMode: true,
                 userLoc: null
               };
 
@@ -969,7 +1026,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 if (TC.has(k)) return TC.get(k);
                 const entry = { img: new Image(), state: 'loading' };
                 TC.set(k, entry);
-                if (TC.size > 480) {
+                if (TC.size > 640) {
                   const first = TC.keys().next().value;
                   TC.delete(first);
                 }
@@ -981,7 +1038,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
 
               function drawTileLayer(urlTmpl, keyPrefix, maxNative) {
                 const w = rc.clientWidth, h = rc.clientHeight;
-                const zt = Math.max(1, Math.min(maxNative, Math.floor(state.z)));
+                const zt = Math.max(1, Math.min(maxNative, Math.round(state.z + 0.35)));
                 const wsView = 256 * Math.pow(2, state.z);
                 const tilePxOnScreen = 256 * Math.pow(2, state.z - zt);
                 const n = Math.pow(2, zt);
@@ -1003,10 +1060,9 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
 
                     const tile = fetchTile(urlTmpl, keyPrefix, zt, wrapX, ty);
                     if (tile.state === 'ok') {
-                      ctx.drawImage(tile.img, sx, sy, tilePxOnScreen + 0.8, tilePxOnScreen + 0.8);
+                      ctx.drawImage(tile.img, sx, sy, tilePxOnScreen + 0.65, tilePxOnScreen + 0.65);
                     } else {
                       // Parent zoom fallback so map is never blank while loading or zoomed deep!
-                      let drawnFallback = false;
                       for (let dz = 1; dz <= 4 && (zt - dz) >= 1; dz++) {
                         const pz = zt - dz;
                         const pScale = 1 << dz;
@@ -1020,8 +1076,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                           const subW = iw / pScale, subH = ih / pScale;
                           const subX = (wrapX % pScale) * subW;
                           const subY = (ty % pScale) * subH;
-                          ctx.drawImage(pTile.img, subX, subY, subW, subH, sx, sy, tilePxOnScreen + 0.8, tilePxOnScreen + 0.8);
-                          drawnFallback = true;
+                          ctx.drawImage(pTile.img, subX, subY, subW, subH, sx, sy, tilePxOnScreen + 0.65, tilePxOnScreen + 0.65);
                           break;
                         }
                       }
@@ -1070,6 +1125,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
 
               function notifyBridge() {
                 const pts = state.points;
+                if (state.selectedPinIdx >= pts.length) state.selectedPinIdx = pts.length - 1;
                 let area = 0, perimeter = 0;
                 if (state.mode === 'circle' && pts.length >= 2) {
                   const r = haversineM(pts[0], pts[1]);
@@ -1083,29 +1139,17 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   for (let i = 0; i < edges; i++) perimeter += haversineM(pts[i], pts[(i + 1) % pts.length]);
                 }
                 if (window.AndroidMapBridge) {
-                  window.AndroidMapBridge.onMeasurementChanged(pts.length, area, perimeter);
+                  window.AndroidMapBridge.onMeasurementChanged(pts.length, area, perimeter, state.selectedPinIdx);
                 }
               }
 
-              function draw() {
-                const w = rc.clientWidth, h = rc.clientHeight;
-                if (!w || !h) return;
-                const ratio = dpr();
-                const cw = Math.round(w * ratio), ch = Math.round(h * ratio);
-                if (rc.width !== cw || rc.height !== ch) { rc.width = cw; rc.height = ch; }
-                ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-
-                // Subtle grid background behind loading tiles
-                ctx.fillStyle = '#182923';
-                ctx.fillRect(0, 0, w, h);
-
+              function drawMapContent(w, h, includeTextLabels) {
                 drawTileLayer(tileUrl, tileUrl, maxNativeZ);
                 if (showEsriOverlay) {
                   drawTileLayer(ROADS_URL, 'esri_roads', 18);
                   drawTileLayer(PLACES_URL, 'esri_places', 18);
                 }
 
-                // Draw shape / distances / pins
                 const pts = state.points;
                 const spts = pts.map(toScreen);
 
@@ -1127,7 +1171,9 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   ctx.stroke();
                   ctx.setLineDash([]);
 
-                  drawLabel('R: ' + (radM * 3.28084).toFixed(1) + "'", (spts[0].x + spts[1].x) / 2, (spts[0].y + spts[1].y) / 2);
+                  if (includeTextLabels) {
+                    drawLabel('R: ' + (radM * 3.28084).toFixed(1) + "'", (spts[0].x + spts[1].x) / 2, (spts[0].y + spts[1].y) / 2);
+                  }
                 } else if (state.mode === 'distance') {
                   if (spts.length >= 2) {
                     ctx.beginPath();
@@ -1135,9 +1181,11 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                     ctx.lineWidth = 4;
                     ctx.strokeStyle = '#ffd54f';
                     ctx.stroke();
-                    for (let i = 0; i < pts.length - 1; i++) {
-                      const dM = haversineM(pts[i], pts[i + 1]);
-                      drawLabel((dM * 3.28084).toFixed(1) + "'", (spts[i].x + spts[i + 1].x) / 2, (spts[i].y + spts[i + 1].y) / 2);
+                    if (includeTextLabels) {
+                      for (let i = 0; i < pts.length - 1; i++) {
+                        const dM = haversineM(pts[i], pts[i + 1]);
+                        drawLabel((dM * 3.28084).toFixed(1) + "'", (spts[i].x + spts[i + 1].x) / 2, (spts[i].y + spts[i + 1].y) / 2);
+                      }
                     }
                   }
                 } else {
@@ -1150,8 +1198,10 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                     ctx.strokeStyle = '#ffd54f';
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    const dM = haversineM(pts[0], pts[1]);
-                    drawLabel((dM * 3.28084).toFixed(1) + "'", (spts[0].x + spts[1].x) / 2, (spts[0].y + spts[1].y) / 2);
+                    if (includeTextLabels) {
+                      const dM = haversineM(pts[0], pts[1]);
+                      drawLabel((dM * 3.28084).toFixed(1) + "'", (spts[0].x + spts[1].x) / 2, (spts[0].y + spts[1].y) / 2);
+                    }
                   } else if (spts.length >= 3) {
                     ctx.beginPath();
                     spts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
@@ -1162,25 +1212,37 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                     ctx.strokeStyle = '#ffd54f';
                     ctx.stroke();
 
-                    for (let i = 0; i < pts.length; i++) {
-                      const j = (i + 1) % pts.length;
-                      const dM = haversineM(pts[i], pts[j]);
-                      const segPx = Math.hypot(spts[j].x - spts[i].x, spts[j].y - spts[i].y);
-                      if (segPx > 36) {
-                        drawLabel((dM * 3.28084).toFixed(1) + "'", (spts[i].x + spts[j].x) / 2, (spts[i].y + spts[j].y) / 2);
+                    if (includeTextLabels) {
+                      for (let i = 0; i < pts.length; i++) {
+                        const j = (i + 1) % pts.length;
+                        const dM = haversineM(pts[i], pts[j]);
+                        const segPx = Math.hypot(spts[j].x - spts[i].x, spts[j].y - spts[i].y);
+                        if (segPx > 36) {
+                          drawLabel((dM * 3.28084).toFixed(1) + "'", (spts[i].x + spts[j].x) / 2, (spts[i].y + spts[j].y) / 2);
+                        }
                       }
                     }
                   }
                 }
 
-                // Draw draggable vertex pins
-                spts.forEach(p => {
+                // Draw draggable vertex pins (highlight selected pin)
+                spts.forEach((p, idx) => {
+                  const isSel = idx === state.selectedPinIdx;
+                  if (isSel) {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(229, 57, 53, 0.28)';
+                    ctx.fill();
+                    ctx.lineWidth = 2.2;
+                    ctx.strokeStyle = '#ff5252';
+                    ctx.stroke();
+                  }
                   ctx.beginPath();
-                  ctx.arc(p.x, p.y, 9, 0, Math.PI * 2);
-                  ctx.fillStyle = '#ffd54f';
+                  ctx.arc(p.x, p.y, isSel ? 9.5 : 8.5, 0, Math.PI * 2);
+                  ctx.fillStyle = isSel ? '#ff5252' : '#ffd54f';
                   ctx.fill();
-                  ctx.lineWidth = 3;
-                  ctx.strokeStyle = '#0f6b54';
+                  ctx.lineWidth = 2.8;
+                  ctx.strokeStyle = isSel ? '#ffffff' : '#0f6b54';
                   ctx.stroke();
                 });
 
@@ -1198,6 +1260,82 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   ctx.lineWidth = 2.5;
                   ctx.strokeStyle = '#ffffff';
                   ctx.stroke();
+                }
+              }
+
+              function draw() {
+                const w = rc.clientWidth, h = rc.clientHeight;
+                if (!w || !h) return;
+                const ratio = dpr();
+                const cw = Math.round(w * ratio), ch = Math.round(h * ratio);
+                if (rc.width !== cw || rc.height !== ch) { rc.width = cw; rc.height = ch; }
+                ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+
+                // Subtle background behind loading tiles
+                ctx.fillStyle = '#182923';
+                ctx.fillRect(0, 0, w, h);
+
+                drawMapContent(w, h, true);
+
+                // Live 3.0x Circular Magnifying Loupe showing HD zoomed imagery under pointer
+                if (state.pointerMode && w > 180 && h > 220) {
+                  const lx = w / 2;
+                  const lr = 54;
+                  const ly = Math.min(92, Math.max(68, lr + 18));
+                  const zoomFactor = 3.0;
+                  ctx.save();
+                  ctx.beginPath();
+                  ctx.arc(lx, ly, lr, 0, Math.PI * 2);
+                  ctx.clip();
+                  ctx.fillStyle = '#182923';
+                  ctx.fillRect(lx - lr, ly - lr, lr * 2, lr * 2);
+                  ctx.translate(lx, ly);
+                  ctx.scale(zoomFactor, zoomFactor);
+                  ctx.translate(-w / 2, -h / 2);
+                  drawMapContent(w, h, false);
+                  ctx.restore();
+
+                  // Crisp inner reticle inside loupe
+                  ctx.save();
+                  ctx.strokeStyle = 'rgba(229, 57, 53, 0.92)';
+                  ctx.lineWidth = 1.6;
+                  ctx.beginPath();
+                  ctx.moveTo(lx - lr + 8, ly); ctx.lineTo(lx - 7, ly);
+                  ctx.moveTo(lx + 7, ly); ctx.lineTo(lx + lr - 8, ly);
+                  ctx.moveTo(lx, ly - lr + 8); ctx.lineTo(lx, ly - 7);
+                  ctx.moveTo(lx, ly + 7); ctx.lineTo(lx, ly + lr - 8);
+                  ctx.stroke();
+                  ctx.beginPath();
+                  ctx.arc(lx, ly, 3.2, 0, Math.PI * 2);
+                  ctx.fillStyle = '#e53935';
+                  ctx.fill();
+
+                  // Loupe border & badge
+                  ctx.beginPath();
+                  ctx.arc(lx, ly, lr, 0, Math.PI * 2);
+                  ctx.lineWidth = 3.2;
+                  ctx.strokeStyle = '#ffd54f';
+                  ctx.stroke();
+                  ctx.beginPath();
+                  ctx.arc(lx, ly, lr + 2, 0, Math.PI * 2);
+                  ctx.lineWidth = 1.4;
+                  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+                  ctx.stroke();
+
+                  ctx.font = 'bold 10px sans-serif';
+                  const tag = '3x জুম';
+                  const tw = ctx.measureText(tag).width + 10;
+                  ctx.fillStyle = 'rgba(15, 107, 84, 0.92)';
+                  ctx.beginPath();
+                  ctx.roundRect(lx - tw / 2, ly + lr - 13, tw, 16, 8);
+                  ctx.fill();
+                  ctx.fillStyle = '#ffffff';
+                  ctx.textAlign = 'center';
+                  ctx.textBaseline = 'middle';
+                  ctx.fillText(tag, lx, ly + lr - 5);
+                  ctx.restore();
                 }
 
                 // Scale bar at bottom-left
@@ -1270,6 +1408,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 if (pointers.size === 1) {
                   dragStart.mv = Math.max(dragStart.mv, Math.hypot(curr.x - dragStart.x, curr.y - dragStart.y));
                   if (draggingPinIdx >= 0) {
+                    state.selectedPinIdx = draggingPinIdx;
                     state.points[draggingPinIdx] = screenToLatLon(curr.x, curr.y);
                     notifyBridge();
                   } else {
@@ -1297,13 +1436,23 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 const pt = rel(e);
                 const wasLast = pointers.size === 1;
                 pointers.delete(e.pointerId);
-                if (wasLast && dragStart && draggingPinIdx < 0 && dragStart.mv < 9 && (Date.now() - dragStart.t) < 480 && e.type === 'pointerup') {
-                  const ll = screenToLatLon(pt.x, pt.y);
-                  if (state.mode === 'circle' && state.points.length >= 2) {
-                    state.points[1] = ll;
+                if (wasLast && dragStart && dragStart.mv < 9 && (Date.now() - dragStart.t) < 480 && e.type === 'pointerup') {
+                  if (draggingPinIdx >= 0) {
+                    state.selectedPinIdx = (state.selectedPinIdx === draggingPinIdx) ? -1 : draggingPinIdx;
                   } else {
-                    state.points.push(ll);
+                    const ll = screenToLatLon(pt.x, pt.y);
+                    if (state.mode === 'circle' && state.points.length >= 2) {
+                      state.points[1] = ll;
+                      state.selectedPinIdx = 1;
+                    } else {
+                      state.points.push(ll);
+                      state.selectedPinIdx = state.points.length - 1;
+                    }
                   }
+                  notifyBridge();
+                  scheduleDraw();
+                } else if (wasLast && draggingPinIdx >= 0) {
+                  state.selectedPinIdx = draggingPinIdx;
                   notifyBridge();
                   scheduleDraw();
                 }
@@ -1311,15 +1460,26 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
               }
               rc.addEventListener('pointerup', onUp);
               rc.addEventListener('pointercancel', onUp);
+              rc.addEventListener('wheel', e => {
+                e.preventDefault();
+                const pt = rel(e);
+                const dz = e.deltaY < 0 ? 0.35 : -0.35;
+                zoomAround(dz, pt.x, pt.y);
+                scheduleDraw();
+              }, { passive: false });
               window.addEventListener('resize', scheduleDraw);
 
               window.bhumiMap = {
                 resize: () => scheduleDraw(),
+                setPointerMode: (enabled) => {
+                  state.pointerMode = !!enabled;
+                  scheduleDraw();
+                },
                 setTileLayer: (url, attr, nativeMax, viewMax, overlay) => {
                   tileUrl = url;
                   tileAttr = attr;
                   maxNativeZ = nativeMax || 18;
-                  maxViewZ = viewMax || 22;
+                  maxViewZ = viewMax || 23;
                   showEsriOverlay = !!overlay;
                   scheduleDraw();
                 },
@@ -1333,15 +1493,40 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   scheduleDraw();
                 },
                 addPoint: (lat, lon) => {
-                  if (state.mode === 'circle' && state.points.length >= 2) state.points[1] = { lat, lon };
-                  else state.points.push({ lat, lon });
+                  if (state.mode === 'circle' && state.points.length >= 2) {
+                    state.points[1] = { lat, lon };
+                    state.selectedPinIdx = 1;
+                  } else {
+                    state.points.push({ lat, lon });
+                    state.selectedPinIdx = state.points.length - 1;
+                  }
                   notifyBridge();
                   scheduleDraw();
                 },
                 addCenterPoint: () => {
                   const ll = screenToLatLon(rc.clientWidth / 2, rc.clientHeight / 2);
-                  if (state.mode === 'circle' && state.points.length >= 2) state.points[1] = ll;
-                  else state.points.push(ll);
+                  if (state.mode === 'circle' && state.points.length >= 2) {
+                    state.points[1] = ll;
+                    state.selectedPinIdx = 1;
+                  } else {
+                    state.points.push(ll);
+                    state.selectedPinIdx = state.points.length - 1;
+                  }
+                  notifyBridge();
+                  scheduleDraw();
+                },
+                deleteSelectedPin: () => {
+                  if (!state.points.length) return;
+                  const idx = (state.selectedPinIdx >= 0 && state.selectedPinIdx < state.points.length)
+                    ? state.selectedPinIdx : (state.points.length - 1);
+                  state.points.splice(idx, 1);
+                  state.selectedPinIdx = state.points.length ? Math.min(idx, state.points.length - 1) : -1;
+                  notifyBridge();
+                  scheduleDraw();
+                },
+                moveSelectedPinToCenter: () => {
+                  if (state.selectedPinIdx < 0 || state.selectedPinIdx >= state.points.length) return;
+                  state.points[state.selectedPinIdx] = screenToLatLon(rc.clientWidth / 2, rc.clientHeight / 2);
                   notifyBridge();
                   scheduleDraw();
                 },
@@ -1357,11 +1542,13 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 },
                 undo: () => {
                   if (state.points.length) state.points.pop();
+                  state.selectedPinIdx = state.points.length - 1;
                   notifyBridge();
                   scheduleDraw();
                 },
                 clearAll: () => {
                   state.points = [];
+                  state.selectedPinIdx = -1;
                   notifyBridge();
                   scheduleDraw();
                 },

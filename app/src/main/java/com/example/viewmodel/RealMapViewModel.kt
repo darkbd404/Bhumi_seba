@@ -35,6 +35,7 @@ data class RealMapUiState(
     val showLabelsOverlay: Boolean = true,
     val selectedCategory: MapMeasureCategory = MapMeasureCategory.AREA,
     val pointCount: Int = 0,
+    val selectedPinIdx: Int = -1,
     val areaSqMeters: Double = 0.0,
     val perimeterMeters: Double = 0.0,
     val splitSharesCount: Int = 2,
@@ -79,10 +80,16 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(splitSharesCount = count.coerceIn(2, 20)) }
     }
 
-    fun updateMeasurementFromBridge(points: Int, areaSqM: Double, perimeterM: Double) {
+    fun updateMeasurementFromBridge(
+        points: Int,
+        areaSqM: Double,
+        perimeterM: Double,
+        selectedPinIdx: Int = -1
+    ) {
         _uiState.update {
             it.copy(
                 pointCount = points,
+                selectedPinIdx = selectedPinIdx,
                 areaSqMeters = areaSqM.coerceAtLeast(0.0),
                 perimeterMeters = perimeterM.coerceAtLeast(0.0)
             )

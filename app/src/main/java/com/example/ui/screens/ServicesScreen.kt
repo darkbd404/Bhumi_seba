@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -263,13 +265,25 @@ fun ServicesScreen(
         filtered.groupBy { it.category }
     }
 
-    LazyColumn(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(LocalNeuPalette.current.canvas),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentAlignment = Alignment.TopCenter
     ) {
+        val portalCols = when {
+            maxWidth >= 900.dp -> 3
+            maxWidth >= 600.dp -> 2
+            else -> 1
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 1120.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -366,21 +380,34 @@ fun ServicesScreen(
                 )
             }
 
-            items(portals, key = { it.id }) { portal ->
-                ServicePortalCard(
-                    portal = portal,
-                    onClick = { onOpenUrlInApp(portal.url, portal.titleBn) }
-                )
+            items(portals.chunked(portalCols), key = { row -> row.joinToString("_") { it.id } }) { rowPortals ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    rowPortals.forEach { portal ->
+                        ServicePortalCard(
+                            portal = portal,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onOpenUrlInApp(portal.url, portal.titleBn) }
+                        )
+                    }
+                    repeat(portalCols - rowPortals.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
 
         item { Spacer(Modifier.height(16.dp)) }
+    }
     }
 }
 
 @Composable
 private fun ServicePortalCard(
     portal: LandServicePortal,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val (icon: ImageVector, accent: Color) = when (portal.id) {
@@ -399,7 +426,7 @@ private fun ServicePortalCard(
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .testTag("portal_card_${portal.id}")
             .neuClickable(cornerRadius = 18.dp, elevation = 5.dp, onClick = onClick)

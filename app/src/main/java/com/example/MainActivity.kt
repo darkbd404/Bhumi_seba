@@ -3,18 +3,34 @@ package com.example
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Language
@@ -36,15 +52,23 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -158,8 +182,9 @@ private fun BhumiSurveyApp(
         showExitDialog = true
     }
 
-    val screenWidthDp = LocalConfiguration.current.screenWidthDp
-    val useNavRail = screenWidthDp >= 600
+    val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+    val density = LocalDensity.current
+    var edgeSwipeProgressPx by remember { mutableFloatStateOf(0f) }
 
     fun navigateTopLevel(route: Any) {
         navController.navigate(route) {
@@ -171,107 +196,111 @@ private fun BhumiSurveyApp(
         }
     }
 
-    Scaffold(
-        containerColor = LocalNeuPalette.current.canvas,
-        contentWindowInsets = WindowInsets.safeDrawing,
-        bottomBar = {
-            if (!useNavRail && !isInBrowser) {
-                NavigationBar(
-                    containerColor = LocalNeuPalette.current.surface
-                ) {
-                    topDestinations.forEach { dest ->
-                        val selected = when (dest.route) {
-                            is HomeRoute -> currentDest?.hasRoute<HomeRoute>() == true
-                            is MouzaPdfRoute -> currentDest?.hasRoute<MouzaPdfRoute>() == true
-                            is RealMapRoute -> currentDest?.hasRoute<RealMapRoute>() == true
-                            is ServicesRoute -> currentDest?.hasRoute<ServicesRoute>() == true
-                            is ToolsRoute -> currentDest?.hasRoute<ToolsRoute>() == true
-                            else -> false
-                        }
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = { navigateTopLevel(dest.route) },
-                            icon = {
-                                Icon(
-                                    imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                                    contentDescription = stringResource(dest.labelRes)
-                                )
-                            },
-                            label = { Text(stringResource(dest.labelRes), maxLines = 1) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer
-                            ),
-                            modifier = Modifier.testTag(dest.testTag)
-                        )
-                    }
-                }
-            }
-        }
-    ) { innerPadding ->
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            if (useNavRail && !isInBrowser) {
-                NavigationRail(
-                    containerColor = LocalNeuPalette.current.surface
-                ) {
-                    topDestinations.forEach { dest ->
-                        val selected = when (dest.route) {
-                            is HomeRoute -> currentDest?.hasRoute<HomeRoute>() == true
-                            is MouzaPdfRoute -> currentDest?.hasRoute<MouzaPdfRoute>() == true
-                            is RealMapRoute -> currentDest?.hasRoute<RealMapRoute>() == true
-                            is ServicesRoute -> currentDest?.hasRoute<ServicesRoute>() == true
-                            is ToolsRoute -> currentDest?.hasRoute<ToolsRoute>() == true
-                            else -> false
-                        }
-                        NavigationRailItem(
-                            selected = selected,
-                            onClick = { navigateTopLevel(dest.route) },
-                            icon = {
-                                Icon(
-                                    imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                                    contentDescription = stringResource(dest.labelRes)
-                                )
-                            },
-                            label = { Text(stringResource(dest.labelRes)) }
-                        )
-                    }
-                }
-            }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val useNavRail = maxWidth >= 600.dp
 
-            Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                NavHost(
-                    navController = navController,
-                    startDestination = HomeRoute,
-                    enterTransition = {
-                        slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Left,
-                            animationSpec = tween(240)
-                        )
-                    },
-                    exitTransition = {
-                        slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Left,
-                            animationSpec = tween(240)
-                        )
-                    },
-                    popEnterTransition = {
-                        slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            animationSpec = tween(240)
-                        )
-                    },
-                    popExitTransition = {
-                        slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            animationSpec = tween(240)
-                        )
+        Scaffold(
+            containerColor = LocalNeuPalette.current.canvas,
+            contentWindowInsets = WindowInsets.safeDrawing,
+            bottomBar = {
+                if (!useNavRail && !isInBrowser) {
+                    NavigationBar(
+                        containerColor = LocalNeuPalette.current.surface
+                    ) {
+                        topDestinations.forEach { dest ->
+                            val selected = when (dest.route) {
+                                is HomeRoute -> currentDest?.hasRoute<HomeRoute>() == true
+                                is MouzaPdfRoute -> currentDest?.hasRoute<MouzaPdfRoute>() == true
+                                is RealMapRoute -> currentDest?.hasRoute<RealMapRoute>() == true
+                                is ServicesRoute -> currentDest?.hasRoute<ServicesRoute>() == true
+                                is ToolsRoute -> currentDest?.hasRoute<ToolsRoute>() == true
+                                else -> false
+                            }
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = { navigateTopLevel(dest.route) },
+                                icon = {
+                                    Icon(
+                                        imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+                                        contentDescription = stringResource(dest.labelRes)
+                                    )
+                                },
+                                label = { Text(stringResource(dest.labelRes), maxLines = 1) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                                ),
+                                modifier = Modifier.testTag(dest.testTag)
+                            )
+                        }
                     }
-                ) {
+                }
+            }
+        ) { innerPadding ->
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                if (useNavRail && !isInBrowser) {
+                    NavigationRail(
+                        containerColor = LocalNeuPalette.current.surface
+                    ) {
+                        topDestinations.forEach { dest ->
+                            val selected = when (dest.route) {
+                                is HomeRoute -> currentDest?.hasRoute<HomeRoute>() == true
+                                is MouzaPdfRoute -> currentDest?.hasRoute<MouzaPdfRoute>() == true
+                                is RealMapRoute -> currentDest?.hasRoute<RealMapRoute>() == true
+                                is ServicesRoute -> currentDest?.hasRoute<ServicesRoute>() == true
+                                is ToolsRoute -> currentDest?.hasRoute<ToolsRoute>() == true
+                                else -> false
+                            }
+                            NavigationRailItem(
+                                selected = selected,
+                                onClick = { navigateTopLevel(dest.route) },
+                                icon = {
+                                    Icon(
+                                        imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+                                        contentDescription = stringResource(dest.labelRes)
+                                    )
+                                },
+                                label = { Text(stringResource(dest.labelRes), maxLines = 1) },
+                                modifier = Modifier.testTag(dest.testTag)
+                            )
+                        }
+                    }
+                }
+
+                Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                    NavHost(
+                        navController = navController,
+                        startDestination = HomeRoute,
+                        enterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(260, easing = FastOutSlowInEasing)
+                            ) + fadeIn(tween(220))
+                        },
+                        exitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(260, easing = FastOutSlowInEasing)
+                            ) + fadeOut(tween(180))
+                        },
+                        popEnterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(260, easing = FastOutSlowInEasing)
+                            ) + fadeIn(tween(220))
+                        },
+                        popExitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(260, easing = FastOutSlowInEasing)
+                            ) + fadeOut(tween(180))
+                        }
+                    ) {
                     composable<HomeRoute> {
                         HomeScreen(
                             isDarkMode = isDarkMode,
@@ -348,8 +377,59 @@ private fun BhumiSurveyApp(
                         )
                     }
                 }
+
+                // Universal Left-Edge Swipe-Back Gesture for Phone, Tablet & PC mouse drag
+                if (!isAtHomeRoot) {
+                    val thresholdPx = with(density) { 56.dp.toPx() }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(26.dp)
+                            .align(Alignment.CenterStart)
+                            .pointerInput(currentDest?.route) {
+                                detectHorizontalDragGestures(
+                                    onDragStart = { edgeSwipeProgressPx = 0f },
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        edgeSwipeProgressPx = (edgeSwipeProgressPx + dragAmount).coerceIn(0f, thresholdPx * 1.6f)
+                                    },
+                                    onDragEnd = {
+                                        if (edgeSwipeProgressPx >= thresholdPx) {
+                                            backDispatcher?.onBackPressed()
+                                        }
+                                        edgeSwipeProgressPx = 0f
+                                    },
+                                    onDragCancel = { edgeSwipeProgressPx = 0f }
+                                )
+                            }
+                    )
+
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = edgeSwipeProgressPx > 8f,
+                        enter = fadeIn(tween(100)) + scaleIn(tween(120)),
+                        exit = fadeOut(tween(120)) + scaleOut(tween(120)),
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .offset { IntOffset((edgeSwipeProgressPx * 0.45f).roundToInt(), 0) }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Swipe Back",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
+    }
     }
 
     if (showExitDialog) {

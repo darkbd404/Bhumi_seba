@@ -44,10 +44,10 @@ enum class MouzaScale(
 }
 
 enum class MouzaSelectionTool(val labelBn: String) {
+    POLYGON_DRAW("পলিগন"),
     AUTO_TAP("অটো ফিল"),
     EDIT_CORNERS("পয়েন্ট এডিট"),
     TAPE_MEASURE("ফিতা মাপ"),
-    POLYGON_DRAW("পলিগন"),
     PAN_ONLY("প্যান/মুভ")
 }
 
@@ -109,22 +109,22 @@ enum class MapLayerOption(
 ) {
     GOOGLE_HYBRID(
         id = "google_hybrid",
-        titleBn = "Google হাইব্রিড (স্যাটেলাইট + নাম)",
-        titleEn = "Google Hybrid",
-        tileUrl = "https://mt1.google.com/vt/lyrs=y&hl=bn&x={x}&y={y}&z={z}",
+        titleBn = "Google হাইব্রিড HD (স্যাটেলাইট + নাম)",
+        titleEn = "Google Hybrid HD",
+        tileUrl = "https://mt1.google.com/vt/lyrs=y&hl=bn&scale=2&x={x}&y={y}&z={z}",
         attribution = "Map data © Google",
-        maxNativeZoom = 20,
-        maxZoom = 22,
+        maxNativeZoom = 21,
+        maxZoom = 23,
         supportsLabelOverlay = false
     ),
     GOOGLE_STREETS(
         id = "google_streets",
-        titleBn = "Google রাস্তা ও এলাকা",
-        titleEn = "Google Streets",
-        tileUrl = "https://mt1.google.com/vt/lyrs=m&hl=bn&x={x}&y={y}&z={z}",
+        titleBn = "Google রাস্তা ও এলাকা HD",
+        titleEn = "Google Streets HD",
+        tileUrl = "https://mt1.google.com/vt/lyrs=m&hl=bn&scale=2&x={x}&y={y}&z={z}",
         attribution = "Map data © Google",
-        maxNativeZoom = 20,
-        maxZoom = 22,
+        maxNativeZoom = 21,
+        maxZoom = 23,
         supportsLabelOverlay = false
     ),
     ESRI_SATELLITE(
@@ -133,8 +133,8 @@ enum class MapLayerOption(
         titleEn = "Esri Satellite",
         tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attribution = "Tiles © Esri — World Imagery",
-        maxNativeZoom = 18,
-        maxZoom = 22,
+        maxNativeZoom = 19,
+        maxZoom = 23,
         supportsLabelOverlay = true
     ),
     OPEN_STREET_MAP(
@@ -144,7 +144,7 @@ enum class MapLayerOption(
         tileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         attribution = "© OpenStreetMap contributors",
         maxNativeZoom = 19,
-        maxZoom = 22,
+        maxZoom = 23,
         supportsLabelOverlay = false
     ),
     ESRI_STREET(
@@ -153,8 +153,8 @@ enum class MapLayerOption(
         titleEn = "Esri Street",
         tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
         attribution = "Tiles © Esri — World Street Map",
-        maxNativeZoom = 18,
-        maxZoom = 22,
+        maxNativeZoom = 19,
+        maxZoom = 23,
         supportsLabelOverlay = false
     ),
     ESRI_TOPO(

@@ -7,17 +7,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.net.URLEncoder
 
-data class SearchChatItem(
-    val id: Long,
-    val query: String,
-    val searchUrl: String
-)
-
 data class GoogleChatUiState(
-    val history: List<SearchChatItem> = emptyList(),
-    val activeItem: SearchChatItem? = null,
+    val currentQuery: String = "",
+    val searchUrl: String = "https://www.google.com/",
+    val searchNonce: Long = 0L,
     val pageProgress: Int = 0,
-    val isLoadingPage: Boolean = false
+    val isLoadingPage: Boolean = true
 )
 
 class AiAssistantViewModel : ViewModel() {
@@ -30,28 +25,13 @@ class AiAssistantViewModel : ViewModel() {
         if (trimmed.isEmpty()) return
         val encoded = URLEncoder.encode(trimmed, "UTF-8")
         val url = "https://www.google.com/search?q=$encoded"
-        val item = SearchChatItem(
-            id = System.currentTimeMillis(),
-            query = trimmed,
-            searchUrl = url
-        )
-        _uiState.update { state ->
-            val deduped = state.history.filterNot { it.query.equals(trimmed, ignoreCase = true) }
-            state.copy(
-                history = (deduped + item).takeLast(12),
-                activeItem = item,
-                isLoadingPage = true,
-                pageProgress = 10
-            )
-        }
-    }
-
-    fun selectHistoryItem(item: SearchChatItem) {
         _uiState.update {
             it.copy(
-                activeItem = item,
+                currentQuery = trimmed,
+                searchUrl = url,
+                searchNonce = System.currentTimeMillis(),
                 isLoadingPage = true,
-                pageProgress = 10
+                pageProgress = 12
             )
         }
     }
@@ -65,7 +45,10 @@ class AiAssistantViewModel : ViewModel() {
         }
     }
 
-    fun clearChat() {
-        _uiState.value = GoogleChatUiState()
+    fun resetToGoogleHome() {
+        _uiState.value = GoogleChatUiState(
+            searchUrl = "https://www.google.com/",
+            searchNonce = System.currentTimeMillis()
+        )
     }
 }

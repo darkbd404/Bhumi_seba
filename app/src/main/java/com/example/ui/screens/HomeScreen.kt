@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -8,6 +9,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -92,13 +95,22 @@ fun HomeScreen(
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
-    LazyColumn(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(LocalNeuPalette.current.canvas),
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentAlignment = Alignment.TopCenter
     ) {
+        val quickCols = if (maxWidth >= 840.dp) 4 else 2
+        val featureCols = if (maxWidth >= 840.dp) 3 else 2
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 1120.dp),
+            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         // Top Header Bar
         item {
             Row(
@@ -261,195 +273,184 @@ fun HomeScreen(
 
         // Featured Own Websites Strip
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "তাৎক্ষণিক ভূমি পোর্টাল (ইন-অ্যাপ ব্রাউজার)",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    PortalQuickPill(
-                        title = "DLRMS Land",
-                        subtitle = "মৌজা ও খতিয়ান",
-                        accent = EmeraldPrimary,
-                        testTag = "quick_dlrms_button",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenUrlInApp("https://dlrmslandgovbd.com", "DLRMS Land Portal") }
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(420, delayMillis = 60, easing = FastOutSlowInEasing)) +
+                    slideInVertically(tween(420, delayMillis = 60, easing = FastOutSlowInEasing)) { it / 6 }
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "তাৎক্ষণিক ভূমি পোর্টাল (ইন-অ্যাপ ব্রাউজার)",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
-                    PortalQuickPill(
-                        title = "E-Porcha Tech",
-                        subtitle = "ই-পর্চা ও ডাউনলোড",
-                        accent = TealSecondary,
-                        testTag = "quick_eporcha_button",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenUrlInApp("https://eporcha.tech/", "E-Porcha Tech") }
+                    val quickPortals = listOf(
+                        Triple("DLRMS Land", "মৌজা ও খতিয়ান", "quick_dlrms_button" to Pair(EmeraldPrimary) { onOpenUrlInApp("https://dlrmslandgovbd.com", "DLRMS Land Portal") }),
+                        Triple("E-Porcha Tech", "ই-পর্চা ও ডাউনলোড", "quick_eporcha_button" to Pair(TealSecondary) { onOpenUrlInApp("https://eporcha.tech/", "E-Porcha Tech") }),
+                        Triple("সরকারি DLRMS", "dlrms.land.gov.bd", "quick_dlrms_gov_button" to Pair(Color(0xFF1A73E8)) { onOpenUrlInApp("https://dlrms.land.gov.bd", "ই-পর্চা / খতিয়ান (DLRMS)") }),
+                        Triple("খতিয়ান অনুসন্ধান", "settlement.gov.bd", "quick_settlement_button" to Pair(SurveyGold) { onOpenUrlInApp("https://settlement.gov.bd/Khatian/", "খতিয়ান অনুসন্ধান") })
                     )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    PortalQuickPill(
-                        title = "সরকারি DLRMS",
-                        subtitle = "dlrms.land.gov.bd",
-                        accent = Color(0xFF1A73E8),
-                        testTag = "quick_dlrms_gov_button",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenUrlInApp("https://dlrms.land.gov.bd", "ই-পর্চা / খতিয়ান (DLRMS)") }
-                    )
-                    PortalQuickPill(
-                        title = "খতিয়ান অনুসন্ধান",
-                        subtitle = "settlement.gov.bd",
-                        accent = SurveyGold,
-                        testTag = "quick_settlement_button",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenUrlInApp("https://settlement.gov.bd/Khatian/", "খতিয়ান অনুসন্ধান") }
-                    )
+                    quickPortals.chunked(quickCols).forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            rowItems.forEach { (title, sub, meta) ->
+                                PortalQuickPill(
+                                    title = title,
+                                    subtitle = sub,
+                                    accent = meta.second.first,
+                                    testTag = meta.first,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = meta.second.second
+                                )
+                            }
+                            repeat(quickCols - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
                 }
             }
         }
 
         // Main Neumorphic Feature Grid
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "সকল জরিপ ও ভূমি সেবা টুলস",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(460, delayMillis = 120, easing = FastOutSlowInEasing)) +
+                    slideInVertically(tween(460, delayMillis = 120, easing = FastOutSlowInEasing)) { it / 6 }
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "সকল জরিপ ও ভূমি সেবা টুলস",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    NeuFeatureCard(
-                        title = "মৌজা নকশা মাপ",
-                        subtitle = "1000x HD জুম, অটো-ফিল, ফিতা ও PNG সেভ",
-                        icon = Icons.Rounded.PictureAsPdf,
-                        accentColor = EmeraldPrimary,
-                        badge = "1000x HD",
-                        testTag = "card_mouza_pdf",
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenMouzaPdf
+                    val features = listOf<@Composable (Modifier) -> Unit>(
+                        { m ->
+                            NeuFeatureCard(
+                                title = "মৌজা নকশা মাপ",
+                                subtitle = "1000x HD জুম, পলিগন, অটো-ফিল ও PNG সেভ",
+                                icon = Icons.Rounded.PictureAsPdf,
+                                accentColor = EmeraldPrimary,
+                                badge = "1000x HD",
+                                testTag = "card_mouza_pdf",
+                                modifier = m,
+                                onClick = onOpenMouzaPdf
+                            )
+                        },
+                        { m ->
+                            NeuFeatureCard(
+                                title = "রিয়েল স্যাটেলাইট",
+                                subtitle = "HD Google, Esri, OSM ম্যাপে লুপ পয়েন্টার ও GPS",
+                                icon = Icons.Rounded.Public,
+                                accentColor = TealSecondary,
+                                badge = "HD Layers",
+                                testTag = "card_real_map",
+                                modifier = m,
+                                onClick = onOpenRealMap
+                            )
+                        },
+                        { m ->
+                            NeuFeatureCard(
+                                title = "সকল ভূমি সেবা",
+                                subtitle = "নামজারি, খাজনা, মৌজা ম্যাপ ও সরকারি পোর্টাল",
+                                icon = Icons.Rounded.Language,
+                                accentColor = Color(0xFF1A73E8),
+                                badge = "22 Portals",
+                                testTag = "card_services",
+                                modifier = m,
+                                onClick = onOpenServices
+                            )
+                        },
+                        { m ->
+                            NeuFeatureCard(
+                                title = "জরিপ ক্যালকুলেটর",
+                                subtitle = "শতাংশ, কাঠা, দৈর্ঘ্য, আকৃতি, ফারায়েজ ও স্কেল",
+                                icon = Icons.Rounded.Calculate,
+                                accentColor = SurveyGold,
+                                badge = "7 Tools",
+                                testTag = "card_tools",
+                                modifier = m,
+                                onClick = { onOpenTools("unit") }
+                            )
+                        },
+                        { m ->
+                            NeuFeatureCard(
+                                title = "গুগল ভূমি সার্চ",
+                                subtitle = "বড় পেজে সরাসরি Google-এ যেকোনো বিষয় খুঁজুন",
+                                icon = Icons.Rounded.Search,
+                                accentColor = Color(0xFF1A73E8),
+                                badge = "Google",
+                                testTag = "card_ai_assistant",
+                                modifier = m,
+                                onClick = onOpenAiAssistant
+                            )
+                        },
+                        { m ->
+                            NeuFeatureCard(
+                                title = "পরিচিতি ও যোগাযোগ",
+                                subtitle = "ডেভেলপার প্রোফাইল ও সাপোর্ট",
+                                icon = Icons.Rounded.Person,
+                                accentColor = Color(0xFF00897B),
+                                badge = "About",
+                                testTag = "card_about",
+                                modifier = m,
+                                onClick = onOpenAbout
+                            )
+                        }
                     )
-                    NeuFeatureCard(
-                        title = "রিয়েল স্যাটেলাইট",
-                        subtitle = "Google, Esri, OSM, Topo ম্যাপে পিন ও GPS",
-                        icon = Icons.Rounded.Public,
-                        accentColor = TealSecondary,
-                        badge = "7 Layers",
-                        testTag = "card_real_map",
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenRealMap
-                    )
-                }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    NeuFeatureCard(
-                        title = "সকল ভূমি সেবা",
-                        subtitle = "নামজারি, খাজনা, মৌজা ম্যাপ ও সরকারি পোর্টাল",
-                        icon = Icons.Rounded.Language,
-                        accentColor = Color(0xFF1A73E8),
-                        badge = "22 Portals",
-                        testTag = "card_services",
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenServices
-                    )
-                    NeuFeatureCard(
-                        title = "জরিপ ক্যালকুলেটর",
-                        subtitle = "শতাংশ, কাঠা, দৈর্ঘ্য, আকৃতি, ফারায়েজ ও স্কেল",
-                        icon = Icons.Rounded.Calculate,
-                        accentColor = SurveyGold,
-                        badge = "7 Tools",
-                        testTag = "card_tools",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenTools("unit") }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    NeuFeatureCard(
-                        title = "গুগল ভূমি সার্চ",
-                        subtitle = "যেকোনো বিষয় লিখে চ্যাটেই গুগল রেজাল্ট দেখুন",
-                        icon = Icons.Rounded.Search,
-                        accentColor = Color(0xFF1A73E8),
-                        badge = "Google",
-                        testTag = "card_ai_assistant",
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenAiAssistant
-                    )
-                    NeuFeatureCard(
-                        title = "পরিচিতি ও যোগাযোগ",
-                        subtitle = "ডেভেলপার প্রোফাইল ও সাপোর্ট",
-                        icon = Icons.Rounded.Person,
-                        accentColor = Color(0xFF00897B),
-                        badge = "About",
-                        testTag = "card_about",
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenAbout
-                    )
+                    features.chunked(featureCols).forEach { rowCards ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            rowCards.forEach { card -> card(Modifier.weight(1f)) }
+                            repeat(featureCols - rowCards.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
                 }
             }
         }
 
-        // Quick Calculator Shortcuts (matching reference UI.html tools)
+        // Quick Calculator Shortcuts
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "তাৎক্ষণিক পরিমাপ ক্যালকুলেটর",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    PortalQuickPill(
-                        title = "দৈর্ঘ্য কনভার্টার",
-                        subtitle = "ফুট, লিংক, চেইন, গজ",
-                        accent = EmeraldPrimary,
-                        testTag = "quick_tool_len",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenTools("len") }
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(500, delayMillis = 180, easing = FastOutSlowInEasing)) +
+                    slideInVertically(tween(500, delayMillis = 180, easing = FastOutSlowInEasing)) { it / 6 }
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "তাৎক্ষণিক পরিমাপ ক্যালকুলেটর",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
-                    PortalQuickPill(
-                        title = "আকৃতি মাপ",
-                        subtitle = "আয়ত, ত্রিভুজ ও ৪-বাহু",
-                        accent = TealSecondary,
-                        testTag = "quick_tool_shape",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenTools("shape") }
+                    val calcQuick = listOf(
+                        Triple("দৈর্ঘ্য কনভার্টার", "ফুট, লিংক, চেইন, গজ", "quick_tool_len" to Pair(EmeraldPrimary) { onOpenTools("len") }),
+                        Triple("আকৃতি মাপ", "আয়ত, ত্রিভুজ ও ৪-বাহু", "quick_tool_shape" to Pair(TealSecondary) { onOpenTools("shape") }),
+                        Triple("স্কেল ও চেইন", "১৬\"/৩২\"/৬৪\" নকশা হিসাব", "quick_tool_scale" to Pair(Color(0xFF1A73E8)) { onOpenTools("scale") }),
+                        Triple("দলিল ও দাম", "মূল্য, স্ট্যাম্প ও বণ্টন", "quick_tool_tax" to Pair(SurveyGold) { onOpenTools("tax") })
                     )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    PortalQuickPill(
-                        title = "স্কেল ও চেইন",
-                        subtitle = "১৬\"/৩২\"/৬৪\" নকশা হিসাব",
-                        accent = Color(0xFF1A73E8),
-                        testTag = "quick_tool_scale",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenTools("scale") }
-                    )
-                    PortalQuickPill(
-                        title = "দলিল ও দাম",
-                        subtitle = "মূল্য, স্ট্যাম্প ও বণ্টন",
-                        accent = SurveyGold,
-                        testTag = "quick_tool_tax",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenTools("tax") }
-                    )
+                    calcQuick.chunked(quickCols).forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            rowItems.forEach { (title, sub, meta) ->
+                                PortalQuickPill(
+                                    title = title,
+                                    subtitle = sub,
+                                    accent = meta.second.first,
+                                    testTag = meta.first,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = meta.second.second
+                                )
+                            }
+                            repeat(quickCols - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
                 }
             }
         }
@@ -479,6 +480,7 @@ fun HomeScreen(
         }
 
         item { Spacer(Modifier.height(12.dp)) }
+    }
     }
 }
 

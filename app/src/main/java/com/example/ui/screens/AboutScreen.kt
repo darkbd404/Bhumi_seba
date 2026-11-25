@@ -5,6 +5,10 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +41,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -91,13 +101,22 @@ fun AboutScreen(
         }
     }
 
-    LazyColumn(
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(LocalNeuPalette.current.canvas),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentAlignment = Alignment.TopCenter
     ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 820.dp),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -123,6 +142,10 @@ fun AboutScreen(
 
         // Developer Profile Card with Photo & Name (No raw phone/email/URL text shown)
         item {
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(320)) + slideInVertically(tween(320)) { it / 6 }
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -224,10 +247,15 @@ fun AboutScreen(
                     Text("নিজের ছবি সেট করুন")
                 }
             }
+            }
         }
 
         // Icon-Only Contact Actions (Privacy preserved: numbers, email & URLs not displayed as text)
         item {
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(380, delayMillis = 80)) + slideInVertically(tween(380, delayMillis = 80)) { it / 6 }
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -298,9 +326,11 @@ fun AboutScreen(
                     )
                 }
             }
+            }
         }
 
         item { Spacer(Modifier.height(14.dp)) }
+        }
     }
 }
 

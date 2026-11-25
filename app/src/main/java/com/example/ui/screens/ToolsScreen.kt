@@ -1,5 +1,11 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -80,11 +87,17 @@ fun ToolsScreen(
         SurveyToolTab.entries.find { it.key == initialTabKey }?.let { activeTab = it }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(LocalNeuPalette.current.canvas)
+            .background(LocalNeuPalette.current.canvas),
+        contentAlignment = Alignment.TopCenter
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 960.dp)
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -149,16 +162,28 @@ fun ToolsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            when (activeTab) {
-                SurveyToolTab.UNIT_CONVERTER -> item { UnitConverterPanel() }
-                SurveyToolTab.LENGTH_CONVERTER -> item { LengthConverterPanel() }
-                SurveyToolTab.SHAPE_SURVEY -> item { ShapeSurveyPanel() }
-                SurveyToolTab.KHATIAN_HISSA -> item { KhatianHissaPanel() }
-                SurveyToolTab.FARAIZ -> item { FaraizPanel() }
-                SurveyToolTab.DEED_TAX -> item { DeedTaxPanel() }
-                SurveyToolTab.CHAIN_SCALE -> item { ChainScalePanel() }
+            item {
+                AnimatedContent(
+                    targetState = activeTab,
+                    transitionSpec = {
+                        (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 18 })
+                            .togetherWith(fadeOut(tween(150)))
+                    },
+                    label = "tools_tab_transition"
+                ) { tab ->
+                    when (tab) {
+                        SurveyToolTab.UNIT_CONVERTER -> UnitConverterPanel()
+                        SurveyToolTab.LENGTH_CONVERTER -> LengthConverterPanel()
+                        SurveyToolTab.SHAPE_SURVEY -> ShapeSurveyPanel()
+                        SurveyToolTab.KHATIAN_HISSA -> KhatianHissaPanel()
+                        SurveyToolTab.FARAIZ -> FaraizPanel()
+                        SurveyToolTab.DEED_TAX -> DeedTaxPanel()
+                        SurveyToolTab.CHAIN_SCALE -> ChainScalePanel()
+                    }
+                }
             }
             item { Spacer(Modifier.height(16.dp)) }
+        }
         }
     }
 }
