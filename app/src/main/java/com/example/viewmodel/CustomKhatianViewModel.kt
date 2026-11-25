@@ -93,7 +93,8 @@ class CustomKhatianViewModel(application: Application) : AndroidViewModel(applic
         fatherOrHusband: String,
         address: String,
         shareText: String,
-        shareRatio: Double
+        shareRatio: Double,
+        revenue: String = ""
     ) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
@@ -104,7 +105,8 @@ class CustomKhatianViewModel(application: Application) : AndroidViewModel(applic
             fatherOrHusband = fatherOrHusband.trim(),
             address = address.trim(),
             shareText = shareText.trim().ifBlank { String.format(java.util.Locale.US, "%.3f", ratio) },
-            shareRatio = ratio
+            shareRatio = ratio,
+            revenue = revenue.trim()
         )
         _uiState.update { st ->
             val list = st.document.owners
@@ -138,7 +140,8 @@ class CustomKhatianViewModel(application: Application) : AndroidViewModel(applic
         totalDecimal: Double,
         thisKhatianShare: Double,
         explicitThisKhatianDecimal: Double?,
-        remarks: String
+        remarks: String,
+        revenue: String = ""
     ) {
         val cleanDag = dagNumber.trim()
         if (cleanDag.isBlank()) return
@@ -153,7 +156,8 @@ class CustomKhatianViewModel(application: Application) : AndroidViewModel(applic
             totalDecimal = safeTotal,
             thisKhatianShare = safeShare,
             thisKhatianDecimal = computedDecimal,
-            remarks = remarks.trim()
+            remarks = remarks.trim(),
+            revenue = revenue.trim()
         )
         _uiState.update { st ->
             val list = st.document.dags

@@ -70,10 +70,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
-import com.example.model.PC_INSTALL_APP_URL
 import com.example.model.SavedMeasurementRecord
 import com.example.model.SavedProjectType
 import com.example.model.SavedSurveyProject
+import com.example.model.SurveyorProfile
 import com.example.ui.components.AnimatedCompassBadge
 import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.NeuFeatureCard
@@ -94,6 +94,7 @@ fun HomeScreen(
     isDarkMode: Boolean,
     savedRecords: List<SavedMeasurementRecord>,
     savedProjects: List<SavedSurveyProject> = emptyList(),
+    surveyorProfile: SurveyorProfile = SurveyorProfile(),
     onToggleTheme: () -> Unit,
     onOpenMouzaPdf: () -> Unit,
     onOpenRealMap: () -> Unit,
@@ -517,10 +518,13 @@ fun HomeScreen(
             }
         }
 
-        // PC / Web Install & Share Link Card
+        // PC / Computer Version Server & Offline Export Card
         item {
             PcInstallLinkCard(
-                url = PC_INSTALL_APP_URL,
+                surveyorProfile = surveyorProfile,
+                onPreviewPcMode = { pcUrl ->
+                    onOpenUrlInApp(pcUrl, "PC ভার্সন — ভূমি সেবা ডিজিটাল")
+                },
                 onCopySuccess = { msg -> toastMessage = msg }
             )
         }

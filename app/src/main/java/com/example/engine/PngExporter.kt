@@ -1005,7 +1005,7 @@ object PngExporter {
         val mapH = mapBitmap.height.coerceAtLeast(620)
         val outerMargin = (mapW * 0.030f).roundToInt().coerceIn(32, 54)
         val headerH = (mapW * 0.090f).roundToInt().coerceIn(106, 148)
-        val footerH = (mapW * 0.240f).roundToInt().coerceIn(300, 390)
+        val footerH = (mapW * 0.165f).roundToInt().coerceIn(200, 240)
 
         val sheetW = mapW + outerMargin * 2
         val sheetH = outerMargin * 2 + headerH + mapH + footerH + 24
@@ -1217,12 +1217,12 @@ object PngExporter {
         drawFittedText(canvas, "প্রস্তুতকারক / সার্ভেয়ার বিবরণ", rInnerLeft, rightColRect.top + 28f, rMaxW, hdrPaint)
         canvas.drawLine(rInnerLeft, rightColRect.top + 38f, rightColRect.right - rPad, rightColRect.top + 38f, dividerPaint)
 
-        val avatarSize = (rightColRect.height() * 0.56f).coerceIn(104f, 152f)
-        val avatarTop = rightColRect.top + 52f
+        val avatarSize = (rightColRect.height() * 0.46f).coerceIn(88f, 104f)
+        val avatarTop = rightColRect.top + 46f
         val avatarRect = RectF(rInnerLeft, avatarTop, rInnerLeft + avatarSize, avatarTop + avatarSize)
         val avatarBmp = loadSurveyorPhotoBitmap(context, surveyorProfile.photoUri)
         if (avatarBmp != null) {
-            drawCircularBitmap(canvas, avatarBmp, avatarRect, COLOR_INK_GREEN, 4f)
+            drawCircularBitmap(canvas, avatarBmp, avatarRect, COLOR_INK_GREEN, 3.5f)
             avatarBmp.recycle()
         } else {
             val placeholder = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = COLOR_INK_GREEN }
@@ -1233,17 +1233,17 @@ object PngExporter {
         val infoMaxW = (rightColRect.right - rPad - infoLeft).coerceAtLeast(120f)
         val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = COLOR_INK_DARK
-            textSize = (mapW * 0.018f).coerceIn(22f, 27f)
+            textSize = (mapW * 0.018f).coerceIn(21f, 25f)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val desigPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = COLOR_INK_GREEN
-            textSize = (mapW * 0.013f).coerceIn(15f, 19f)
+            textSize = (mapW * 0.013f).coerceIn(14f, 18f)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val contactPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = COLOR_INK_DARK
-            textSize = (mapW * 0.0138f).coerceIn(16f, 21f)
+            textSize = (mapW * 0.0138f).coerceIn(15f, 19f)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
 
@@ -1252,25 +1252,25 @@ object PngExporter {
         val cleanPhone = surveyorProfile.phone.ifBlank { "01620230864" }
         val cleanEmail = surveyorProfile.email.ifBlank { "salam230864@gmail.com" }
 
-        var iy = avatarTop + 26f
+        var iy = avatarTop + 22f
         drawFittedText(canvas, cleanName, infoLeft, iy, infoMaxW, namePaint)
-        iy += 28f
+        iy += 26f
         drawFittedText(canvas, cleanDesig, infoLeft, iy, infoMaxW, desigPaint)
-        iy += 30f
+        iy += 26f
         drawFittedText(canvas, "মোবা: $cleanPhone", infoLeft, iy, infoMaxW, contactPaint)
-        iy += 28f
+        iy += 26f
         drawFittedText(canvas, "Gmail: $cleanEmail", infoLeft, iy, infoMaxW, contactPaint)
 
-        // Official Bottom Seal Pill
+        // Official Bottom Seal Pill (Tightly placed with zero wasted space)
         val sealPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = COLOR_INK_GREEN }
         val sealTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#FAD165")
-            textSize = 17f
+            textSize = 16f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
-        val sealRect = RectF(rInnerLeft, rightColRect.bottom - 42f, rightColRect.right - rPad, rightColRect.bottom - 12f)
-        canvas.drawRoundRect(sealRect, 8f, 8f, sealPaint)
+        val sealRect = RectF(rInnerLeft, rightColRect.bottom - 36f, rightColRect.right - rPad, rightColRect.bottom - 8f)
+        canvas.drawRoundRect(sealRect, 7f, 7f, sealPaint)
         canvas.drawText("ডিজিটাল জরিপ ও নকশা শিট • ভূমি সেবা ডিজিটাল", sealRect.centerX(), sealRect.centerY() + 6f, sealTextPaint)
 
         return outBitmap
@@ -1426,16 +1426,12 @@ object PngExporter {
         paint.textSize = originalSize
     }
 
-    internal fun drawWrappedLines(
-        canvas: Canvas,
+    internal fun wrapTextToLines(
         text: String,
-        x: Float,
-        startY: Float,
         maxWidth: Float,
-        lineStepY: Float,
         maxLines: Int,
         paint: Paint
-    ) {
+    ): List<String> {
         val words = text.split(" ")
         val lines = mutableListOf<String>()
         var current = StringBuilder()
@@ -1452,6 +1448,20 @@ object PngExporter {
         if (current.isNotEmpty() && lines.size < maxLines) {
             lines.add(current.toString())
         }
+        return lines
+    }
+
+    internal fun drawWrappedLines(
+        canvas: Canvas,
+        text: String,
+        x: Float,
+        startY: Float,
+        maxWidth: Float,
+        lineStepY: Float,
+        maxLines: Int,
+        paint: Paint
+    ) {
+        val lines = wrapTextToLines(text, maxWidth, maxLines, paint)
         lines.forEachIndexed { idx, line ->
             drawFittedText(canvas, line, x, startY + idx * lineStepY, maxWidth, paint)
         }

@@ -591,17 +591,17 @@ fun CustomKhatianScreen(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "দাগ নং: ${dag.dagNumber} • শ্রেণী: ${dag.landClass}",
+                                            text = "দাগ নং: ${dag.dagNumber} • শ্রেণী: ${dag.landClass}${if (dag.revenue.isNotBlank()) " • রাজস্ব: ${dag.revenue}" else ""}",
                                             style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.SemiBold
                                         )
                                         Text(
-                                            text = "দাগে মোট: ${String.format(Locale.US, "%.2f", dag.totalDecimal)} শতক • অংশ: ${String.format(Locale.US, "%.3f", dag.thisKhatianShare)}",
+                                            text = "দাগে মোট: ${String.format(Locale.US, "%.4f", dag.totalDecimal / 100.0)} একর (${String.format(Locale.US, "%.2f", dag.totalDecimal)} শতক) • অংশ: ${String.format(Locale.US, "%.3f", dag.thisKhatianShare)}",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         Text(
-                                            text = "অত্র খতিয়ানে: ${String.format(Locale.US, "%.2f", dag.thisKhatianDecimal)} শতাংশ (${String.format(Locale.US, "%.2f", dag.thisKhatianDecimal * 0.605)} কাঠা)",
+                                            text = "অত্র খতিয়ানে: ${String.format(Locale.US, "%.4f", dag.thisKhatianDecimal / 100.0)} একর (${String.format(Locale.US, "%.2f", dag.thisKhatianDecimal)} শতক • ${String.format(Locale.US, "%.2f", (dag.thisKhatianDecimal * 435.6) / 720.0)} কাঠা)",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = EmeraldPrimary,
                                             fontWeight = FontWeight.SemiBold
@@ -783,7 +783,7 @@ fun CustomKhatianScreen(
         DagEntryDialog(
             initial = editingDag,
             onDismiss = { showDagDialog = false },
-            onSave = { dagNo, landClass, totalDec, share, explicitDec, remarks ->
+            onSave = { dagNo, landClass, totalDec, share, explicitDec, remarks, revenue ->
                 viewModel.addOrUpdateDag(
                     editId = editingDag?.id,
                     dagNumber = dagNo,
@@ -791,7 +791,8 @@ fun CustomKhatianScreen(
                     totalDecimal = totalDec,
                     thisKhatianShare = share,
                     explicitThisKhatianDecimal = explicitDec,
-                    remarks = remarks
+                    remarks = remarks,
+                    revenue = revenue
                 )
                 showDagDialog = false
             }
@@ -1105,12 +1106,15 @@ private fun OwnerEntryDialog(
 private fun DagEntryDialog(
     initial: KhatianDagEntry?,
     onDismiss: () -> Unit,
-    onSave: (dagNo: String, landClass: String, totalDec: Double, share: Double, explicitDec: Double?, remarks: String) -> Unit
+    onSave: (dagNo: String, landClass: String, totalDec: Double, share: Double, explicitDec: Double?, remarks: String, revenue: String) -> Unit
 ) {
     var dagNo by remember { mutableStateOf(initial?.dagNumber ?: "") }
     var landClass by remember { mutableStateOf(initial?.landClass ?: "নাল") }
+    var totalAcreStr by remember {
+        mutableStateOf(if (initial != null && initial.totalDecimal > 0.0) String.format(Locale.US, "%.4f", initial.totalDecimal / 100.0) else "")
+    }
     var totalDecStr by remember {
-        mutableStateOf(if (initial != null) String.format(Locale.US, "%.2f", initial.totalDecimal) else "")
+        mutableStateOf(if (initial != null && initial.totalDecimal > 0.0) String.format(Locale.US, "%.2f", initial.totalDecimal) else "")
     }
     var shareStr by remember {
         mutableStateOf(if (initial != null) String.format(Locale.US, "%.4f", initial.thisKhatianShare) else "1.0")
@@ -1122,9 +1126,28 @@ private fun DagEntryDialog(
             } else ""
         )
     }
+    var revenue by remember { mutableStateOf(initial?.revenue ?: "") }
     var remarks by remember { mutableStateOf(initial?.remarks ?: "") }
 
-    val landClasses = listOf("নাল", "ভিটি", "বাড়ি", "পুকুর", "চালা", "বাগান", "ডোবা", "রাস্তা")
+    val landClasses = listOf("নাল", "ভিটা", "বাড়ী", "পুকুর", "বাগান", "ডোবা", "বাঁশঝাড়", "চালা", "রাস্তা", "পতিত")
+
+    // Parse effective total decimal, auto-adjusting if user typed 4-digit khatian notation like 4800 (which means 48.00 decimal / 0.4800 acre)
+    fun parseInputDecimal(raw: String): Double {
+        val clean = raw.trim()
+        val num = clean.toDoubleOrNull() ?: return 0.0
+        return if (!clean.contains('.') && num >= 1000.0 && num <= 9999.0) {
+            num / 100.0 // e.g. 4800 -> 48.00 decimal
+        } else {
+            num
+        }
+    }
+
+    val parsedDec = parseInputDecimal(totalDecStr)
+    val parsedShare = shareStr.toDoubleOrNull()?.coerceIn(0.0, 1.0) ?: 1.0
+    val khatianDec = explicitDecStr.toDoubleOrNull() ?: (parsedDec * parsedShare)
+    val khatianAcre = khatianDec / 100.0
+    val khatianKatha = (khatianDec * 435.6) / 720.0
+    val khatianSqFt = khatianDec * 435.6
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1134,14 +1157,24 @@ private fun DagEntryDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedTextField(
-                    value = dagNo,
-                    onValueChange = { dagNo = it },
-                    label = { Text("দাগ নং *") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text("জমির শ্রেণী:", style = MaterialTheme.typography.labelSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = dagNo,
+                        onValueChange = { dagNo = it },
+                        label = { Text("দাগ নং *") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = revenue,
+                        onValueChange = { revenue = it },
+                        label = { Text("রাজস্ব (খাজনা)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Text("জমির শ্রেণী (৫ নং কলাম):", style = MaterialTheme.typography.labelSmall)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(landClasses) { cls ->
                         FilterChip(
@@ -1154,40 +1187,104 @@ private fun DagEntryDialog(
                 OutlinedTextField(
                     value = landClass,
                     onValueChange = { landClass = it },
-                    label = { Text("কাস্টম শ্রেণী") },
+                    label = { Text("কাস্টম শ্রেণী (কৃষি / অকৃষি)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Text("দাগের মোট জমি (৬ নং কলাম):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
-                        value = totalDecStr,
-                        onValueChange = { totalDecStr = it },
-                        label = { Text("দাগে মোট শতাংশ") },
+                        value = totalAcreStr,
+                        onValueChange = {
+                            totalAcreStr = it
+                            val ac = it.toDoubleOrNull()
+                            if (ac != null) {
+                                totalDecStr = String.format(Locale.US, "%.2f", ac * 100.0)
+                            }
+                        },
+                        label = { Text("৬(ক) একর") },
+                        placeholder = { Text("০.৪৮০০") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
-                        value = shareStr,
-                        onValueChange = { shareStr = it },
-                        label = { Text("অত্র অংশ (০–১)") },
+                        value = totalDecStr,
+                        onValueChange = {
+                            totalDecStr = it
+                            val dec = parseInputDecimal(it)
+                            if (dec > 0.0) {
+                                totalAcreStr = String.format(Locale.US, "%.4f", dec / 100.0)
+                            }
+                        },
+                        label = { Text("৬(খ) শতাংশ") },
+                        placeholder = { Text("৪৮.০০") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                 }
-                OutlinedTextField(
-                    value = explicitDecStr,
-                    onValueChange = { explicitDecStr = it },
-                    label = { Text("সরাসরি অত্র খতিয়ানের শতাংশ (ঐচ্ছিক)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
+
+                if (!totalDecStr.contains('.') && (totalDecStr.toDoubleOrNull() ?: 0.0) >= 1000.0) {
+                    Text(
+                        text = "💡 খতিয়ানের ৪-সংখ্যার নোটেশন শনাক্ত: ${parsedDec} শতক (${String.format(Locale.US, "%.4f", parsedDec / 100.0)} একর)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = EmeraldPrimary
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = shareStr,
+                        onValueChange = { shareStr = it },
+                        label = { Text("৭. অত্র অংশ (০–১)") },
+                        placeholder = { Text("১.০০০") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = explicitDecStr,
+                        onValueChange = { explicitDecStr = it },
+                        label = { Text("৮. সরাসরি শতক (ঐচ্ছিক)") },
+                        placeholder = { Text(if (parsedDec > 0.0) String.format(Locale.US, "%.2f", parsedDec * parsedShare) else "") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                // Live authentic Form 5462/5463 breakdown
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
-                )
+                ) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "অত্র খতিয়ানের প্রাপ্যতা (৮ নং কলাম):",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldPrimary
+                        )
+                        Text(
+                            text = "${String.format(Locale.US, "%.4f", khatianAcre)} একর • ${String.format(Locale.US, "%.2f", khatianDec)} শতক (${String.format(Locale.US, "%.2f", khatianKatha)} কাঠা)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "বর্গফুট: ${String.format(Locale.US, "%,.0f", khatianSqFt)} ব.ফু. (১ শতক = ৪৩৫.৬ ব.ফু.)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 OutlinedTextField(
                     value = remarks,
                     onValueChange = { remarks = it },
-                    label = { Text("মন্তব্য / দখল") },
+                    label = { Text("৯. দখল বিষয়ক বা বিশেষ মন্তব্য") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1196,10 +1293,10 @@ private fun DagEntryDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val totalDec = totalDecStr.toDoubleOrNull() ?: 0.0
+                    val finalDec = parseInputDecimal(totalDecStr)
                     val share = shareStr.toDoubleOrNull()?.coerceIn(0.0, 1.0) ?: 1.0
                     val explicit = explicitDecStr.toDoubleOrNull()
-                    onSave(dagNo, landClass, totalDec, share, explicit, remarks)
+                    onSave(dagNo, landClass, finalDec, share, explicit, remarks, revenue)
                 },
                 enabled = dagNo.isNotBlank()
             ) {

@@ -520,8 +520,70 @@ class ExampleRobolectricTest {
             doc = doc,
             surveyorProfile = com.example.model.SurveyorProfile()
         )
-        assertTrue("Expected wide ledger bitmap, got ${bmp.width}x${bmp.height}", bmp.width >= 1800 && bmp.height >= 1200)
+        assertTrue("Expected wide ledger bitmap, got ${bmp.width}x${bmp.height}", bmp.width >= 1800 && bmp.height >= 900)
         bmp.recycle()
+    }
+
+    @Test
+    fun desktopExporter_andLocalPcServer_serveFullPcVersionWithout404() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val customProfile = com.example.model.SurveyorProfile(
+            name = "Abdus Salam",
+            phone = "01620230864",
+            email = "salam230864@gmail.com"
+        )
+        val html = com.example.engine.DesktopAppExporter.buildStandaloneDesktopHtml(context, customProfile)
+        assertTrue(html.contains("ভূমি সেবা ডিজিটাল"))
+        assertTrue(html.contains("salam230864@gmail.com"))
+        assertTrue(html.contains("khSummary"))
+        assertTrue(html.contains("scr_home"))
+        assertTrue(html.contains("scr_mouza"))
+        assertTrue(html.contains("scr_sat"))
+        assertTrue(html.contains("scr_khatian"))
+        assertTrue(html.contains("scr_services"))
+        assertTrue(html.contains("scr_tools"))
+        assertTrue(html.contains("faraiz"))
+        assertTrue(html.contains("hissa"))
+        assertTrue(!html.contains("ais-pre-unuuvzicd3jk2gwzkjmqiu"))
+
+        try {
+            com.example.engine.LocalPcWebServer.start(context, customProfile)
+            var port = 0
+            for (i in 0..40) {
+                val st = com.example.engine.LocalPcWebServer.state.value
+                if (st.isRunning && st.port > 0) {
+                    port = st.port
+                    break
+                }
+                Thread.sleep(50)
+            }
+            assertTrue("LocalPcWebServer should start on a valid port", port > 0)
+
+            val conn = java.net.URL("http://127.0.0.1:$port/").openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 2000
+            conn.readTimeout = 2000
+            assertEquals(200, conn.responseCode)
+            val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertTrue(body.contains("কাস্টম খতিয়ান"))
+            assertTrue(body.contains("অটো ফিল"))
+            conn.disconnect()
+
+            val mfConn = java.net.URL("http://127.0.0.1:$port/manifest.webmanifest").openConnection() as java.net.HttpURLConnection
+            assertEquals(200, mfConn.responseCode)
+            val mfBody = mfConn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertTrue(mfBody.contains("standalone"))
+            mfConn.disconnect()
+
+            listOf("/icon.png", "/avatar.jpg", "/banner/0").forEach { assetPath ->
+                val aConn = java.net.URL("http://127.0.0.1:$port$assetPath").openConnection() as java.net.HttpURLConnection
+                assertEquals("Expected 200 for $assetPath", 200, aConn.responseCode)
+                val bytes = aConn.inputStream.readBytes()
+                assertTrue("Expected non-empty bytes for $assetPath", bytes.isNotEmpty())
+                aConn.disconnect()
+            }
+        } finally {
+            com.example.engine.LocalPcWebServer.stop()
+        }
     }
 }
 

@@ -65,7 +65,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
-import com.example.model.PC_INSTALL_APP_URL
 import com.example.model.SurveyorProfile
 import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.PcInstallLinkCard
@@ -363,7 +362,10 @@ fun AboutScreen(
 
         item {
             PcInstallLinkCard(
-                url = PC_INSTALL_APP_URL,
+                surveyorProfile = surveyorProfile,
+                onPreviewPcMode = { pcUrl ->
+                    onOpenUrlInApp(pcUrl, "PC ভার্সন — ভূমি সেবা ডিজিটাল")
+                },
                 onCopySuccess = { msg -> toastMessage = msg }
             )
         }

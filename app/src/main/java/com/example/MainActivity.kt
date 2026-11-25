@@ -325,6 +325,7 @@ private fun BhumiSurveyApp(
                             isDarkMode = isDarkMode,
                             savedRecords = savedRecords,
                             savedProjects = savedProjects,
+                            surveyorProfile = surveyorProfile,
                             onToggleTheme = onToggleTheme,
                             onOpenMouzaPdf = { navigateTopLevel(MouzaPdfRoute()) },
                             onOpenRealMap = { navigateTopLevel(RealMapRoute()) },

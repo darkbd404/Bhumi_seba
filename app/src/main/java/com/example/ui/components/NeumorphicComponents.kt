@@ -39,13 +39,19 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.OpenInBrowser
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,8 +76,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.engine.DesktopAppExporter
+import com.example.engine.LocalPcWebServer
+import com.example.model.SurveyorProfile
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
@@ -398,15 +407,15 @@ fun PrecisionNudgePad(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Level 0 = ultra-fine 1% precision (0.22 screen px) so e.g. 27.11 -> 27.90 moves smoothly unit-by-unit
+    // Level 0 = ultra-fine 1% precision (0.06 screen px) so e.g. 27.11 -> 27.90 moves smoothly unit-by-unit
     val stepPx = when (stepLevel) {
-        0 -> 0.22f
-        1 -> 1.0f
-        2 -> 4.0f
-        else -> 12.0f
+        0 -> 0.06f
+        1 -> 0.35f
+        2 -> 2.0f
+        else -> 8.0f
     }
     val stepLabel = when (stepLevel) {
-        0 -> "১% (০.২px)"
+        0 -> "১% অতি সূক্ষ্ম"
         1 -> "সূক্ষ্ম (১px)"
         2 -> "মাঝারি (৪px)"
         else -> "বেশি (১২px)"
@@ -636,12 +645,14 @@ private fun NudgeDirButton(
 
 @Composable
 fun PcInstallLinkCard(
-    url: String,
+    surveyorProfile: SurveyorProfile = SurveyorProfile(),
+    onPreviewPcMode: (String) -> Unit = {},
     onCopySuccess: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val serverState by LocalPcWebServer.state.collectAsStateWithLifecycle()
 
     Column(
         modifier = modifier
@@ -657,142 +668,224 @@ fun PcInstallLinkCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color(0xFF1A73E8).copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = androidx.compose.material.icons.Icons.Rounded.Computer,
-                    contentDescription = "PC Install Link",
+                    contentDescription = "PC / Laptop Version",
                     tint = Color(0xFF1A73E8),
                     modifier = Modifier.size(22.dp)
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "ভূমি সেবা ডিজিটাল — PC / ল্যাপটপ অ্যাপ",
+                    text = "ভূমি সেবা ডিজিটাল — একক সিস্টেম (PC ও Android)",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "কম্পিউটারের Chrome/Edge-এ লিংকটি খুলে 'Install App' দিন অথবা নিচের অফলাইন PC সফটওয়্যার ফাইল ডাউনলোড করে ডাবল-ক্লিক করুন।",
+                    text = "Android-এর হুবহু একই ডিজাইন ও সব ফিচার (মৌজা, স্যাটেলাইট, কাস্টম খতিয়ান, ২২ পোর্টাল, ৭ ক্যালকুলেটর) PC ব্রাউজারে চালাতে সার্ভার চালু করুন বা অফলাইন .html ডাউনলোড করুন।",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(LocalNeuPalette.current.canvas)
-                .clickable {
-                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(url))
-                    onCopySuccess("PC ইনস্টল লিংক কপি হয়েছে!")
-                }
-                .padding(horizontal = 12.dp, vertical = 9.dp)
+        // Method 1: Live Phone Wi-Fi / Hotspot Server for PC Browser (Real working local HTTP server)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Button(
+                onClick = {
+                    if (serverState.isRunning) {
+                        LocalPcWebServer.stop()
+                        onCopySuccess("PC লাইভ সার্ভার বন্ধ হয়েছে")
+                    } else {
+                        LocalPcWebServer.start(context, surveyorProfile)
+                        onCopySuccess("PC লাইভ সার্ভার চালু হচ্ছে...")
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (serverState.isRunning) Color(0xFFC93B52) else Color(0xFF0F6B54)
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("pc_server_toggle_button"),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(
+                    imageVector = if (serverState.isRunning) androidx.compose.material.icons.Icons.Rounded.Stop
+                    else androidx.compose.material.icons.Icons.Rounded.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = if (serverState.isRunning) "PC সার্ভার চালু আছে (বন্ধ করুন)"
+                    else "PC লাইভ Wi-Fi সার্ভার চালু করুন",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (serverState.isRunning) {
+                IconButton(
+                    onClick = {
+                        LocalPcWebServer.refreshNetworkUrl()
+                        onCopySuccess("Wi-Fi / Hotspot IP আপডেট হয়েছে")
+                    },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Rounded.Refresh,
+                        contentDescription = "Refresh IP"
+                    )
+                }
+            }
+        }
+
+        if (serverState.isRunning && serverState.lanUrl.isNotBlank()) {
+            Surface(
+                color = Color(0xFF0F6B54).copy(alpha = 0.09f),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Rounded.Wifi,
+                            contentDescription = null,
+                            tint = Color(0xFF0F6B54),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = serverState.lanUrl,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(serverState.lanUrl))
+                                    onCopySuccess("PC সার্ভার লিংক কপি হয়েছে!")
+                                }
+                        )
+                    }
+
+                    Text(
+                        text = serverState.networkHint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(androidx.compose.ui.text.AnnotatedString(serverState.lanUrl))
+                                onCopySuccess("PC সার্ভার লিংক কপি হয়েছে!")
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("pc_link_copy_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Rounded.ContentCopy,
+                                contentDescription = "Copy",
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("কপি", maxLines = 1)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, "ভূমি সেবা ডিজিটাল — PC লাইভ সার্ভার")
+                                    putExtra(
+                                        android.content.Intent.EXTRA_TEXT,
+                                        "কম্পিউটারের Chrome/Edge ব্রাউজারে এই ঠিকানা লিখে খুলুন (একই Wi-Fi বা Hotspot):\n${serverState.lanUrl}"
+                                    )
+                                }
+                                context.startActivity(
+                                    android.content.Intent.createChooser(shareIntent, "PC সার্ভার লিংক শেয়ার করুন")
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("pc_link_share_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Rounded.Share,
+                                contentDescription = "Share",
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("শেয়ার", maxLines = 1)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                if (serverState.loopbackUrl.isNotBlank()) {
+                                    onPreviewPcMode(serverState.loopbackUrl)
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("pc_preview_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Rounded.OpenInBrowser,
+                                contentDescription = "Preview PC Version",
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("প্রিভিউ", maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!serverState.errorMessage.isNullOrBlank()) {
             Text(
-                text = url,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                text = serverState.errorMessage.orEmpty(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
             )
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            OutlinedButton(
-                onClick = {
-                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(url))
-                    onCopySuccess("PC ইনস্টল লিংক কপি হয়েছে!")
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("pc_link_copy_button"),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Rounded.ContentCopy,
-                    contentDescription = "Copy Link",
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text("কপি", maxLines = 1)
-            }
-
-            OutlinedButton(
-                onClick = {
-                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_SUBJECT, "ভূমি সেবা ডিজিটাল — PC / Web App")
-                        putExtra(
-                            android.content.Intent.EXTRA_TEXT,
-                            "ভূমি সেবা ডিজিটাল (ডিজিটাল মৌজা ও ভূমি জরিপ) PC/ল্যাপটপে চালাতে ও ইনস্টল করতে এই লিংক Chrome/Edge-এ খুলুন:\n$url"
-                        )
-                    }
-                    context.startActivity(
-                        android.content.Intent.createChooser(shareIntent, "PC ইনস্টল লিংক শেয়ার করুন")
-                    )
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("pc_link_share_button"),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Rounded.Share,
-                    contentDescription = "Share Link",
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text("শেয়ার", maxLines = 1)
-            }
-
-            OutlinedButton(
-                onClick = {
-                    runCatching {
-                        context.startActivity(
-                            android.content.Intent(
-                                android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse(url)
-                            )
-                        )
-                    }.onFailure {
-                        onCopySuccess("ব্রাউজার খোলা যায়নি — লিংক কপি করে PC-তে ওপেন করুন")
-                    }
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("pc_link_open_browser_button"),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Rounded.OpenInBrowser,
-                    contentDescription = "Open in Browser",
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text("খুলুন", maxLines = 1)
-            }
-        }
-
-        Button(
+        // Method 2: Guaranteed 100% Offline Standalone PC Software File (.html)
+        OutlinedButton(
             onClick = {
                 runCatching {
-                    val res = DesktopAppExporter.saveStandalonePcHtmlApp(context)
-                    onCopySuccess("PC সফটওয়্যার সেভ হয়েছে: ${res.displayPath}")
+                    val res = DesktopAppExporter.saveStandalonePcHtmlApp(context, surveyorProfile)
+                    onCopySuccess("অফলাইন PC সফটওয়্যার সেভ হয়েছে: ${res.displayPath}")
                     if (res.uri != null) {
                         val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                             type = "text/html"
                             putExtra(android.content.Intent.EXTRA_STREAM, res.uri)
-                            putExtra(android.content.Intent.EXTRA_SUBJECT, "BhumiSebaDigital_PC.html — ল্যাপটপ/কম্পিউটার সফটওয়্যার")
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "BhumiSebaDigital_PC.html — কম্পিউটার ভার্সন")
                             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         context.startActivity(
@@ -814,7 +907,7 @@ fun PcInstallLinkCard(
                 modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(6.dp))
-            Text("অফলাইন PC সফটওয়্যার (.html) সেভ ও পাঠান", maxLines = 1)
+            Text("অফলাইন PC সফটওয়্যার (.html) সেভ ও PC-তে পাঠান", maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

@@ -268,7 +268,7 @@ data class KhatianRecord(
     val pageIndex: Int = 0
 )
 
-const val PC_INSTALL_APP_URL = "https://ais-pre-unuuvzicd3jk2gwzkjmqiu-627685175139.asia-east1.run.app"
+const val PC_SERVER_DEFAULT_PORT = 8765
 
 @Serializable
 data class SurveyorProfile(
@@ -332,7 +332,8 @@ data class KhatianOwnerEntry(
     val fatherOrHusband: String = "",
     val address: String = "",
     val shareText: String = "১.০০০",
-    val shareRatio: Double = 1.0
+    val shareRatio: Double = 1.0,
+    val revenue: String = ""
 )
 
 @Serializable
@@ -343,7 +344,8 @@ data class KhatianDagEntry(
     val totalDecimal: Double = 0.0,
     val thisKhatianShare: Double = 1.0,
     val thisKhatianDecimal: Double = 0.0,
-    val remarks: String = ""
+    val remarks: String = "",
+    val revenue: String = ""
 )
 
 @Serializable
