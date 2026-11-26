@@ -53,6 +53,13 @@ object LocalPcWebServer {
     @Volatile
     private var cachedBanners: List<ByteArray> = emptyList()
 
+    @Volatile
+    private var cachedSyncJson: ByteArray = """{"version":1,"khatians":[]}""".toByteArray(Charsets.UTF_8)
+
+    fun updateSyncPayload(jsonPayload: String) {
+        cachedSyncJson = jsonPayload.toByteArray(Charsets.UTF_8)
+    }
+
     private fun decodeDrawablePngBytes(ctx: Context, resId: Int, maxDim: Int = 900, quality: Int = 88, asJpeg: Boolean = false): ByteArray {
         return runCatching {
             val raw = BitmapFactory.decodeResource(ctx.resources, resId) ?: return ByteArray(0)
@@ -198,14 +205,43 @@ object LocalPcWebServer {
                 s.soTimeout = 6000
                 val reader = BufferedReader(InputStreamReader(s.getInputStream()))
                 val requestLine = reader.readLine() ?: return
-                val path = requestLine.split(" ").getOrNull(1)?.substringBefore("?") ?: "/"
+                val parts = requestLine.split(" ")
+                val method = parts.getOrNull(0)?.uppercase() ?: "GET"
+                val path = parts.getOrNull(1)?.substringBefore("?") ?: "/"
+                var contentLength = 0
                 while (true) {
                     val line = reader.readLine() ?: break
                     if (line.isEmpty()) break
+                    if (line.startsWith("Content-Length:", ignoreCase = true)) {
+                        contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                    }
+                }
+                if (method == "POST" && contentLength > 0 && contentLength <= 2_000_000) {
+                    val buf = CharArray(contentLength)
+                    var read = 0
+                    while (read < contentLength) {
+                        val n = reader.read(buf, read, contentLength - read)
+                        if (n <= 0) break
+                        read += n
+                    }
+                    if (path == "/api/sync" && read > 0) {
+                        cachedSyncJson = String(buf, 0, read).toByteArray(Charsets.UTF_8)
+                    }
                 }
 
                 val out = s.getOutputStream()
                 when {
+                    method == "OPTIONS" -> {
+                        writeHttpResponse(out, "204 No Content", "text/plain; charset=utf-8", ByteArray(0))
+                    }
+                    path == "/api/status" -> {
+                        val st = _state.value
+                        val statusJson = """{"ok":true,"mode":"LOCAL_WIFI","port":${st.port},"lanUrl":"${st.lanUrl}"}""".toByteArray(Charsets.UTF_8)
+                        writeHttpResponse(out, "200 OK", "application/json; charset=utf-8", statusJson)
+                    }
+                    path == "/api/sync" -> {
+                        writeHttpResponse(out, "200 OK", "application/json; charset=utf-8", cachedSyncJson)
+                    }
                     path == "/manifest.webmanifest" -> {
                         val manifest = """
                             {

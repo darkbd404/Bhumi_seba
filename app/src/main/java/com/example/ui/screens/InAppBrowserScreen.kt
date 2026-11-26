@@ -6,6 +6,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.util.Base64
+import android.webkit.JavascriptInterface
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -13,6 +17,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import com.example.engine.ExportStreamWriter
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -231,8 +236,20 @@ fun InAppBrowserScreen(
                         }
                     }
 
+                    addJavascriptInterface(
+                        WebViewDownloadBridge(ctx.applicationContext),
+                        "AndroidBridge"
+                    )
+
                     setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
                         try {
+                            if (url.startsWith("data:", ignoreCase = true)) {
+                                val fallbackName = URLUtil.guessFileName(url, contentDisposition, mimetype)
+                                    .ifBlank { "BhumiSeba_${System.currentTimeMillis()}" }
+                                WebViewDownloadBridge(ctx.applicationContext)
+                                    .saveBase64File(url, fallbackName, mimetype.ifBlank { "application/octet-stream" })
+                                return@setDownloadListener
+                            }
                             val req = DownloadManager.Request(Uri.parse(url)).apply {
                                 setMimeType(mimetype)
                                 addRequestHeader("User-Agent", userAgent)
@@ -260,5 +277,38 @@ fun InAppBrowserScreen(
                 .weight(1f)
                 .fillMaxWidth()
         )
+    }
+}
+
+private class WebViewDownloadBridge(
+    private val appContext: Context
+) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    @JavascriptInterface
+    fun saveBase64File(base64OrDataUrl: String, fileName: String, mimeType: String) {
+        try {
+            val cleanB64 = base64OrDataUrl.substringAfter("base64,", base64OrDataUrl)
+            val bytes = Base64.decode(cleanB64, Base64.DEFAULT)
+            val safeName = fileName.ifBlank { "BhumiSeba_${System.currentTimeMillis()}.bin" }
+            val safeMime = mimeType.ifBlank {
+                if (safeName.endsWith(".pdf", ignoreCase = true)) "application/pdf"
+                else if (safeName.endsWith(".png", ignoreCase = true)) "image/png"
+                else "application/octet-stream"
+            }
+            val savedPath = ExportStreamWriter.saveBinaryFileToDownloads(
+                context = appContext,
+                bytes = bytes,
+                fileName = safeName,
+                mimeType = safeMime
+            )
+            mainHandler.post {
+                Toast.makeText(appContext, "সেভ হয়েছে: $savedPath", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            mainHandler.post {
+                Toast.makeText(appContext, "ফাইল সেভ ব্যর্থ: ${e.localizedMessage ?: "ত্রুটি"}", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 }

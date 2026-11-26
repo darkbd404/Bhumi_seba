@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.model.CustomKhatianDocument
+import com.example.model.PcSyncSettings
 import com.example.model.SavedMeasurementRecord
 import com.example.model.SavedSurveyProject
 import com.example.model.SurveyorProfile
@@ -32,6 +33,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_LAST_EXPORT_PATH = stringPreferencesKey("last_export_path")
         private val KEY_SURVEYOR_PROFILE = stringPreferencesKey("surveyor_profile_json")
         private val KEY_CUSTOM_KHATIANS = stringPreferencesKey("custom_khatians_json")
+        private val KEY_PC_SYNC_SETTINGS = stringPreferencesKey("pc_sync_settings_json")
     }
 
     val isDarkModeFlow: Flow<Boolean?> = context.dataStore.data.map { prefs ->
@@ -67,6 +69,17 @@ class AppPreferences(private val context: Context) {
     val customKhatiansFlow: Flow<List<CustomKhatianDocument>> = context.dataStore.data.map { prefs ->
         val raw = prefs[KEY_CUSTOM_KHATIANS] ?: return@map emptyList()
         runCatching { json.decodeFromString<List<CustomKhatianDocument>>(raw) }.getOrDefault(emptyList())
+    }
+
+    val pcSyncSettingsFlow: Flow<PcSyncSettings> = context.dataStore.data.map { prefs ->
+        val raw = prefs[KEY_PC_SYNC_SETTINGS] ?: return@map PcSyncSettings()
+        runCatching { json.decodeFromString<PcSyncSettings>(raw) }.getOrDefault(PcSyncSettings())
+    }
+
+    suspend fun savePcSyncSettings(settings: PcSyncSettings) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_PC_SYNC_SETTINGS] = json.encodeToString(settings)
+        }
     }
 
     suspend fun setDarkMode(enabled: Boolean) {

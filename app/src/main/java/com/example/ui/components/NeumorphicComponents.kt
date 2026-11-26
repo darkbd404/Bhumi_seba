@@ -29,21 +29,30 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -51,16 +60,22 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
@@ -78,13 +93,25 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.data.AppPreferences
+import com.example.engine.CrossNetworkSyncPayload
 import com.example.engine.DesktopAppExporter
 import com.example.engine.LocalPcWebServer
+import com.example.engine.PcNetworkSyncManager
+import com.example.engine.SyncConnectionStatus
+import com.example.model.DEFAULT_CLOUD_RELAY_URL
+import com.example.model.DEFAULT_REMOTE_WEBSITE_URL
+import com.example.model.DetectedNetworkType
+import com.example.model.PcSyncMode
+import com.example.model.PcSyncSettings
 import com.example.model.SurveyorProfile
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -652,7 +679,59 @@ fun PcInstallLinkCard(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    val appPrefs = remember(context) { AppPreferences(context) }
+
     val serverState by LocalPcWebServer.state.collectAsStateWithLifecycle()
+    val pcSyncSettings by appPrefs.pcSyncSettingsFlow.collectAsStateWithLifecycle(initialValue = PcSyncSettings())
+    val savedKhatians by appPrefs.customKhatiansFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val syncState by PcNetworkSyncManager.state.collectAsStateWithLifecycle()
+
+    var showSyncSettingsDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(serverState, pcSyncSettings, savedKhatians, surveyorProfile) {
+        PcNetworkSyncManager.refreshState(context, pcSyncSettings, serverState)
+        val payloadJson = Json { encodeDefaults = true }.encodeToString(
+            CrossNetworkSyncPayload(
+                exportedAtMillis = System.currentTimeMillis(),
+                surveyorProfile = surveyorProfile.copy(photoUri = null),
+                khatians = savedKhatians.take(15).map { it.copy(referenceDocPath = null) }
+            )
+        )
+        LocalPcWebServer.updateSyncPayload(payloadJson)
+    }
+
+    val pulseTransition = rememberInfiniteTransition(label = "sync_pulse")
+    val pulseAlpha by pulseTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sync_pulse_alpha"
+    )
+
+    val statusTint = when (syncState.syncStatus) {
+        SyncConnectionStatus.LOCAL_CONNECTED -> Color(0xFF0F6B54)
+        SyncConnectionStatus.REMOTE_READY, SyncConnectionStatus.CLOUD_RELAY_READY -> Color(0xFF1A73E8)
+        SyncConnectionStatus.NETWORK_MISMATCH_PROMPT -> Color(0xFFD49A17)
+        SyncConnectionStatus.CHECKING -> Color(0xFF1B7B8C)
+        SyncConnectionStatus.ERROR -> MaterialTheme.colorScheme.error
+        SyncConnectionStatus.IDLE -> Color(0xFF0F6B54)
+    }
+
+    val networkBadgeText = when (syncState.detectedNetwork) {
+        DetectedNetworkType.LOCAL_WIFI -> "Wi-Fi / Hotspot"
+        DetectedNetworkType.CELLULAR_REMOTE -> "মোবাইল ডাটা (ভিন্ন নেটওয়ার্ক)"
+        DetectedNetworkType.OFFLINE -> "অফলাইন"
+    }
+
+    val modeBadgeText = when {
+        syncState.activeMode == PcSyncMode.REMOTE_ACCESS && syncState.useCloudRelay -> "ক্লাউড-রিলে মোড"
+        syncState.activeMode == PcSyncMode.REMOTE_ACCESS -> "রিমোট IP / ওয়েবসাইট"
+        else -> "লোকাল Wi-Fi মোড"
+    }
 
     Column(
         modifier = modifier
@@ -674,7 +753,7 @@ fun PcInstallLinkCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Rounded.Computer,
+                    imageVector = Icons.Rounded.Computer,
                     contentDescription = "PC / Laptop Version",
                     tint = Color(0xFF1A73E8),
                     modifier = Modifier.size(22.dp)
@@ -688,10 +767,360 @@ fun PcInstallLinkCard(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Android-এর হুবহু একই ডিজাইন ও সব ফিচার (মৌজা, স্যাটেলাইট, কাস্টম খতিয়ান, ২২ পোর্টাল, ৭ ক্যালকুলেটর) PC ব্রাউজারে চালাতে সার্ভার চালু করুন বা অফলাইন .html ডাউনলোড করুন।",
+                    text = "একই Wi-Fi ছাড়াও যেকোনো নেটওয়ার্ক (ফোন ডাটা + PC Wi-Fi) থেকে খতিয়ান ও PNG/PDF ডাউনলোড চালু রাখুন।",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            IconButton(
+                onClick = { showSyncSettingsDialog = true },
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("pc_sync_settings_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Settings,
+                    contentDescription = "PC সিঙ্ক ও রিমোট অ্যাক্সেস সেটিংস",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        // Visual Connectivity Status Indicator Banner + Switch to Remote Access Toggle
+        Surface(
+            color = statusTint.copy(alpha = 0.10f),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("pc_connectivity_status_banner")
+        ) {
+            Column(
+                modifier = Modifier.padding(11.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .alpha(if (syncState.syncStatus == SyncConnectionStatus.ERROR) 1f else pulseAlpha)
+                            .clip(CircleShape)
+                            .background(statusTint)
+                    )
+                    Icon(
+                        imageVector = when {
+                            syncState.activeMode == PcSyncMode.REMOTE_ACCESS -> Icons.Rounded.Public
+                            syncState.detectedNetwork == DetectedNetworkType.CELLULAR_REMOTE -> Icons.Rounded.SignalCellularAlt
+                            syncState.detectedNetwork == DetectedNetworkType.OFFLINE -> Icons.Rounded.WifiOff
+                            else -> Icons.Rounded.Wifi
+                        },
+                        contentDescription = null,
+                        tint = statusTint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = syncState.statusLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = statusTint,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (syncState.statusSubtext.isNotBlank()) {
+                            Text(
+                                text = syncState.statusSubtext,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            PcNetworkSyncManager.refreshState(context, pcSyncSettings, serverState)
+                            if (syncState.activeMode == PcSyncMode.REMOTE_ACCESS) {
+                                scope.launch {
+                                    val target = if (pcSyncSettings.useCloudRelay) pcSyncSettings.cloudRelayUrl else pcSyncSettings.customRemoteUrl
+                                    val res = PcNetworkSyncManager.probeRemoteEndpoint(target)
+                                    onCopySuccess(res.message)
+                                }
+                            } else {
+                                LocalPcWebServer.refreshNetworkUrl()
+                                onCopySuccess("নেটওয়ার্ক স্ট্যাটাস আপডেট হয়েছে")
+                            }
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("pc_status_refresh_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "সংযোগ স্ট্যাটাস রিফ্রেশ",
+                            tint = statusTint
+                        )
+                    }
+                }
+
+                // Network vs Mode pills + real-time latency badge
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "নেটওয়ার্ক: $networkBadgeText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            maxLines = 1
+                        )
+                    }
+                    Surface(
+                        color = statusTint.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = modeBadgeText + (syncState.lastLatencyMs?.let { " • ${it}ms" } ?: ""),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = statusTint,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                // Instant Toggle: Switch to Remote Access (Cross-Network Mode)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+                        .clickable {
+                            val nextMode = if (pcSyncSettings.mode == PcSyncMode.REMOTE_ACCESS) {
+                                PcSyncMode.LOCAL_WIFI
+                            } else {
+                                PcSyncMode.REMOTE_ACCESS
+                            }
+                            val updated = pcSyncSettings.copy(mode = nextMode)
+                            scope.launch {
+                                appPrefs.savePcSyncSettings(updated)
+                                PcNetworkSyncManager.refreshState(context, updated, serverState)
+                                onCopySuccess(
+                                    if (nextMode == PcSyncMode.REMOTE_ACCESS) {
+                                        "রিমোট অ্যাক্সেস মোড চালু হয়েছে (${syncState.remoteUrl})"
+                                    } else {
+                                        "লোকাল Wi-Fi মোডে ফিরে আসা হয়েছে"
+                                    }
+                                )
+                            }
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (syncState.activeMode == PcSyncMode.REMOTE_ACCESS) {
+                                "রিমোট অ্যাক্সেস চালু (যেকোনো নেটওয়ার্ক)"
+                            } else {
+                                "রিমোট অ্যাক্সেসে সুইচ করুন"
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (syncState.detectedNetwork == DetectedNetworkType.CELLULAR_REMOTE) {
+                                "ফোনে ডাটা ও PC-তে Wi-Fi থাকলে এটি অন করুন (${syncState.remoteUrl})"
+                            } else {
+                                "দূরে বা ভিন্ন নেটওয়ার্কে PC চালাতে: ${syncState.remoteUrl}"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Switch(
+                        checked = syncState.activeMode == PcSyncMode.REMOTE_ACCESS,
+                        onCheckedChange = { enabled ->
+                            val updated = pcSyncSettings.copy(
+                                mode = if (enabled) PcSyncMode.REMOTE_ACCESS else PcSyncMode.LOCAL_WIFI
+                            )
+                            scope.launch {
+                                appPrefs.savePcSyncSettings(updated)
+                                PcNetworkSyncManager.refreshState(context, updated, serverState)
+                                onCopySuccess(
+                                    if (enabled) "রিমোট অ্যাক্সেস মোড সক্রিয়"
+                                    else "লোকাল Wi-Fi মোড সক্রিয়"
+                                )
+                            }
+                        },
+                        modifier = Modifier.testTag("pc_remote_switch_toggle")
+                    )
+                }
+            }
+        }
+
+        // Cross-Network Remote Website / Cloud Relay Card when Remote Access Mode is active
+        if (syncState.activeMode == PcSyncMode.REMOTE_ACCESS) {
+            val activeRemote = syncState.activeTargetUrl.ifBlank { DEFAULT_REMOTE_WEBSITE_URL }
+            val displayUrl = syncState.lastSyncUrl.ifBlank { activeRemote }
+            Surface(
+                color = Color(0xFF1A73E8).copy(alpha = 0.08f),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (syncState.useCloudRelay) Icons.Rounded.CloudDone else Icons.Rounded.Language,
+                            contentDescription = null,
+                            tint = Color(0xFF1A73E8),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = activeRemote,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1A73E8),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(displayUrl))
+                                    onCopySuccess("রিমোট ওয়েবসাইট লিংক কপি হয়েছে!")
+                                }
+                        )
+                    }
+
+                    Text(
+                        text = "খতিয়ান ডাটা সিঙ্ক করে নিচের লিংক PC-তে পাঠান — যেকোনো নেটওয়ার্কে (ফোন ডাটা + PC Wi-Fi) কাস্টম খতিয়ান PNG/PDF ডাউনলোড চলবে।",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val res = PcNetworkSyncManager.syncKhatiansToRemoteEndpoint(
+                                        endpointUrl = activeRemote,
+                                        profile = surveyorProfile,
+                                        khatians = savedKhatians
+                                    )
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(res.shareableSyncUrl))
+                                    onCopySuccess("${res.statusMessage} (লিংক কপি হয়েছে)")
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("pc_remote_sync_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudSync,
+                                contentDescription = "Sync Khatians to Remote URL",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text("খতিয়ান সিঙ্ক ও লিংক কপি", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    val res = PcNetworkSyncManager.probeRemoteEndpoint(activeRemote)
+                                    onCopySuccess(res.message)
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.testTag("pc_remote_probe_button")
+                        ) {
+                            Text("যাচাই", maxLines = 1)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(androidx.compose.ui.text.AnnotatedString(displayUrl))
+                                onCopySuccess("ক্রস-নেটওয়ার্ক URL কপি হয়েছে!")
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("pc_remote_copy_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy Remote URL", modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("কপি", maxLines = 1)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val targetShare = PcNetworkSyncManager.buildCrossNetworkSyncUrl(
+                                    baseUrl = activeRemote,
+                                    profile = surveyorProfile,
+                                    khatians = savedKhatians
+                                )
+                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, "ভূমি সেবা ডিজিটাল — যেকোনো নেটওয়ার্কে PC অ্যাক্সেস")
+                                    putExtra(
+                                        android.content.Intent.EXTRA_TEXT,
+                                        "যেকোনো নেটওয়ার্ক থেকে কম্পিউটার বা মোবাইলের ব্রাউজারে খুলুন:\n$targetShare"
+                                    )
+                                }
+                                context.startActivity(
+                                    android.content.Intent.createChooser(shareIntent, "ক্রস-নেটওয়ার্ক লিংক শেয়ার করুন")
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("pc_remote_share_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Rounded.Share, contentDescription = "Share Remote URL", modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("শেয়ার", maxLines = 1)
+                        }
+
+                        OutlinedButton(
+                            onClick = { onPreviewPcMode(displayUrl) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("pc_remote_preview_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Rounded.OpenInBrowser, contentDescription = "Open Remote URL", modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("খুলুন", maxLines = 1)
+                        }
+                    }
+                }
             }
         }
 
@@ -720,8 +1149,7 @@ fun PcInstallLinkCard(
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Icon(
-                    imageVector = if (serverState.isRunning) androidx.compose.material.icons.Icons.Rounded.Stop
-                    else androidx.compose.material.icons.Icons.Rounded.PlayArrow,
+                    imageVector = if (serverState.isRunning) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
@@ -743,7 +1171,7 @@ fun PcInstallLinkCard(
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Rounded.Refresh,
+                        imageVector = Icons.Rounded.Refresh,
                         contentDescription = "Refresh IP"
                     )
                 }
@@ -765,7 +1193,7 @@ fun PcInstallLinkCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Rounded.Wifi,
+                            imageVector = Icons.Rounded.Wifi,
                             contentDescription = null,
                             tint = Color(0xFF0F6B54),
                             modifier = Modifier.size(16.dp)
@@ -807,7 +1235,7 @@ fun PcInstallLinkCard(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Rounded.ContentCopy,
+                                imageVector = Icons.Rounded.ContentCopy,
                                 contentDescription = "Copy",
                                 modifier = Modifier.size(15.dp)
                             )
@@ -835,7 +1263,7 @@ fun PcInstallLinkCard(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Rounded.Share,
+                                imageVector = Icons.Rounded.Share,
                                 contentDescription = "Share",
                                 modifier = Modifier.size(15.dp)
                             )
@@ -855,7 +1283,7 @@ fun PcInstallLinkCard(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Rounded.OpenInBrowser,
+                                imageVector = Icons.Rounded.OpenInBrowser,
                                 contentDescription = "Preview PC Version",
                                 modifier = Modifier.size(15.dp)
                             )
@@ -875,7 +1303,7 @@ fun PcInstallLinkCard(
             )
         }
 
-        // Method 2: Guaranteed 100% Offline Standalone PC Software File (.html)
+        // Method 2: Guaranteed 100% Offline Standalone PC Software File (.html) — also uploadable to salam.whf.bz
         OutlinedButton(
             onClick = {
                 runCatching {
@@ -902,14 +1330,255 @@ fun PcInstallLinkCard(
             shape = RoundedCornerShape(14.dp)
         ) {
             Icon(
-                imageVector = androidx.compose.material.icons.Icons.Rounded.Download,
+                imageVector = Icons.Rounded.Download,
                 contentDescription = "Save Offline PC Software",
                 modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(6.dp))
             Text("অফলাইন PC সফটওয়্যার (.html) সেভ ও PC-তে পাঠান", maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+
+        Text(
+            text = "টিপস: এই .html ফাইলটি একবার ${syncState.remoteUrl} সাইটে index.html হিসেবে রাখলে যেকোনো নেটওয়ার্ক থেকে PC ও মোবাইলে চালাতে পারবেন।",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
+
+    if (showSyncSettingsDialog) {
+        PcSyncSettingsDialog(
+            initialSettings = pcSyncSettings,
+            onDismiss = { showSyncSettingsDialog = false },
+            onSave = { updated ->
+                scope.launch {
+                    appPrefs.savePcSyncSettings(updated)
+                    PcNetworkSyncManager.refreshState(context, updated, serverState)
+                    showSyncSettingsDialog = false
+                    onCopySuccess(
+                        if (updated.mode == PcSyncMode.REMOTE_ACCESS) {
+                            "রিমোট ওয়েবসাইট মোড সংরক্ষিত: ${updated.customRemoteUrl}"
+                        } else {
+                            "লোকাল Wi-Fi মোড সংরক্ষিত হয়েছে"
+                        }
+                    )
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun PcSyncSettingsDialog(
+    initialSettings: PcSyncSettings,
+    onDismiss: () -> Unit,
+    onSave: (PcSyncSettings) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var selectedMode by remember(initialSettings) { mutableStateOf(initialSettings.mode) }
+    var customRemoteUrl by remember(initialSettings) { mutableStateOf(initialSettings.customRemoteUrl) }
+    var cloudRelayUrl by remember(initialSettings) { mutableStateOf(initialSettings.cloudRelayUrl) }
+    var useCloudRelay by remember(initialSettings) { mutableStateOf(initialSettings.useCloudRelay) }
+    var autoSwitchOnCellular by remember(initialSettings) { mutableStateOf(initialSettings.autoSwitchToRemoteOnCellular) }
+    var probeFeedback by remember { mutableStateOf<String?>(null) }
+    var probing by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Rounded.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text("PC সিঙ্ক ও রিমোট অ্যাক্সেস সেটিংস", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "ফোনে ডাটা ও PC-তে ভিন্ন Wi-Fi থাকলেও কাজ চালাতে লোকাল Wi-Fi অথবা রিমোট ওয়েবসাইট/ক্লাউড-রিলে নির্বাচন করুন:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Mode selector row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    UtilityBarChip(
+                        label = "লোকাল Wi-Fi",
+                        icon = Icons.Rounded.Wifi,
+                        selected = selectedMode == PcSyncMode.LOCAL_WIFI,
+                        testTag = "pc_settings_mode_local",
+                        onClick = { selectedMode = PcSyncMode.LOCAL_WIFI }
+                    )
+                    UtilityBarChip(
+                        label = "রিমোট IP / ওয়েবসাইট",
+                        icon = Icons.Rounded.Public,
+                        selected = selectedMode == PcSyncMode.REMOTE_ACCESS,
+                        testTag = "pc_settings_mode_remote",
+                        onClick = { selectedMode = PcSyncMode.REMOTE_ACCESS }
+                    )
+                }
+
+                OutlinedTextField(
+                    value = customRemoteUrl,
+                    onValueChange = { customRemoteUrl = it },
+                    label = { Text("আপনার ওয়েবসাইট / রিমোট IP URL") },
+                    placeholder = { Text(DEFAULT_REMOTE_WEBSITE_URL) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pc_settings_remote_url_input")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { customRemoteUrl = DEFAULT_REMOTE_WEBSITE_URL },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("ডিফল্ট: salam.whf.bz", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            if (probing) return@OutlinedButton
+                            probing = true
+                            probeFeedback = "সংযোগ যাচাই হচ্ছে..."
+                            scope.launch {
+                                val target = if (useCloudRelay) cloudRelayUrl else customRemoteUrl
+                                val res = PcNetworkSyncManager.probeRemoteEndpoint(target)
+                                probeFeedback = res.message
+                                probing = false
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.testTag("pc_settings_probe_button")
+                    ) {
+                        Text(if (probing) "যাচাই..." else "সংযোগ পরীক্ষা")
+                    }
+                }
+
+                if (!probeFeedback.isNullOrBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = probeFeedback.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "পাবলিক ক্লাউড-রিলে এন্ডপয়েন্ট ব্যবহার করুন",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "ক্রস-নেটওয়ার্ক API ও খতিয়ান ডাউনলোডের জন্য",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = useCloudRelay,
+                        onCheckedChange = { useCloudRelay = it },
+                        modifier = Modifier.testTag("pc_settings_cloud_relay_switch")
+                    )
+                }
+
+                if (useCloudRelay) {
+                    OutlinedTextField(
+                        value = cloudRelayUrl,
+                        onValueChange = { cloudRelayUrl = it },
+                        label = { Text("ক্লাউড-রিলে URL") },
+                        placeholder = { Text(DEFAULT_CLOUD_RELAY_URL) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("pc_settings_relay_url_input")
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "ডাটা নেটওয়ার্কে অটো রিমোট সুইচ",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "ফোন মোবাইল ডাটায় থাকলে স্বয়ংক্রিয় রিমোট মোড হবে",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = autoSwitchOnCellular,
+                        onCheckedChange = { autoSwitchOnCellular = it },
+                        modifier = Modifier.testTag("pc_settings_auto_remote_switch")
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val normalizedCustom = PcNetworkSyncManager.normalizeEndpointUrl(
+                        customRemoteUrl,
+                        DEFAULT_REMOTE_WEBSITE_URL
+                    )
+                    val normalizedRelay = PcNetworkSyncManager.normalizeEndpointUrl(
+                        cloudRelayUrl,
+                        DEFAULT_CLOUD_RELAY_URL
+                    )
+                    onSave(
+                        PcSyncSettings(
+                            mode = selectedMode,
+                            customRemoteUrl = normalizedCustom,
+                            cloudRelayUrl = normalizedRelay,
+                            useCloudRelay = useCloudRelay,
+                            autoSwitchToRemoteOnCellular = autoSwitchOnCellular
+                        )
+                    )
+                },
+                modifier = Modifier.testTag("pc_settings_save_button")
+            ) {
+                Text("সংরক্ষণ করুন")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("pc_settings_cancel_button")
+            ) {
+                Text("বাতিল")
+            }
+        }
+    )
 }
 
 @Composable

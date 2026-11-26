@@ -581,9 +581,104 @@ class ExampleRobolectricTest {
                 assertTrue("Expected non-empty bytes for $assetPath", bytes.isNotEmpty())
                 aConn.disconnect()
             }
+
+            // Verify /api/status and /api/sync endpoints
+            com.example.engine.LocalPcWebServer.updateSyncPayload("""{"version":1,"khatians":[{"id":"kh_test","khatianNumber":"৭৭৭"}]}""")
+            val statusConn = java.net.URL("http://127.0.0.1:$port/api/status").openConnection() as java.net.HttpURLConnection
+            assertEquals(200, statusConn.responseCode)
+            val statusBody = statusConn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertTrue(statusBody.contains("LOCAL_WIFI"))
+            statusConn.disconnect()
+
+            val syncConn = java.net.URL("http://127.0.0.1:$port/api/sync").openConnection() as java.net.HttpURLConnection
+            assertEquals(200, syncConn.responseCode)
+            val syncBody = syncConn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertTrue(syncBody.contains("৭৭৭"))
+            syncConn.disconnect()
         } finally {
             com.example.engine.LocalPcWebServer.stop()
         }
+    }
+
+    @Test
+    fun exportStreamWriter_savesValidPngAndPdfFilesToDesktopFallbackDir() {
+        val tempDir = java.io.File(System.getProperty("java.io.tmpdir"), "bhumi_export_test_${System.currentTimeMillis()}")
+        tempDir.mkdirs()
+        try {
+            val bmpPng = android.graphics.Bitmap.createBitmap(120, 80, android.graphics.Bitmap.Config.ARGB_8888)
+            val pngRes = com.example.engine.ExportStreamWriter.savePngBitmap(
+                context = null,
+                bitmap = bmpPng,
+                fileName = "test_khatian_sheet",
+                desktopFallbackDir = tempDir
+            )
+            val pngFile = java.io.File(pngRes.displayPath)
+            assertTrue("PNG file should exist", pngFile.exists())
+            val pngBytes = pngFile.readBytes()
+            assertTrue("PNG file must not be empty", pngBytes.size > 16)
+            assertEquals(0x89.toByte(), pngBytes[0])
+            assertEquals('P'.code.toByte(), pngBytes[1])
+            assertEquals('N'.code.toByte(), pngBytes[2])
+            assertEquals('G'.code.toByte(), pngBytes[3])
+
+            val bmpPdf = android.graphics.Bitmap.createBitmap(120, 80, android.graphics.Bitmap.Config.ARGB_8888)
+            val pdfRes = com.example.engine.ExportStreamWriter.savePdfBitmap(
+                context = null,
+                bitmap = bmpPdf,
+                fileName = "test_khatian_sheet",
+                desktopFallbackDir = tempDir
+            )
+            val pdfFile = java.io.File(pdfRes.displayPath)
+            assertTrue("PDF file should exist", pdfFile.exists())
+            val pdfHeader = String(pdfFile.readBytes().copyOfRange(0, 5), Charsets.US_ASCII)
+            assertEquals("%PDF-", pdfHeader)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun pcNetworkSyncManager_andPcHtmlKhatianFix_workAcrossNetworks() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertEquals(
+            "https://www.salam.whf.bz/",
+            com.example.engine.PcNetworkSyncManager.normalizeEndpointUrl("www.salam.whf.bz")
+        )
+
+        val sampleKhatian = com.example.model.CustomKhatianDocument(
+            id = "kh_remote_1",
+            khatianNumber = "৯১২",
+            mouzaName = "কাকরাইল",
+            dags = listOf(com.example.model.KhatianDagEntry(id = "d1", dagNumber = "১০১", totalDecimal = 35.0))
+        )
+        val syncUrl = com.example.engine.PcNetworkSyncManager.buildCrossNetworkSyncUrl(
+            baseUrl = "https://www.salam.whf.bz/",
+            profile = com.example.model.SurveyorProfile(),
+            khatians = listOf(sampleKhatian)
+        )
+        assertTrue(syncUrl.startsWith("https://www.salam.whf.bz/#sync="))
+        val encodedPart = syncUrl.substringAfter("#sync=")
+        val decodedJson = String(
+            android.util.Base64.decode(encodedPart, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING),
+            Charsets.UTF_8
+        )
+        assertTrue(decodedJson.contains("৯১২"))
+        assertTrue(decodedJson.contains("Abdus Salam"))
+
+        val remoteState = com.example.engine.PcNetworkSyncManager.refreshState(
+            context = context,
+            settings = com.example.model.PcSyncSettings(mode = com.example.model.PcSyncMode.REMOTE_ACCESS),
+            serverState = com.example.engine.PcServerState(isRunning = false)
+        )
+        assertEquals(com.example.model.PcSyncMode.REMOTE_ACCESS, remoteState.activeMode)
+        assertEquals("https://www.salam.whf.bz/", remoteState.activeTargetUrl)
+
+        val html = com.example.engine.DesktopAppExporter.buildStandaloneDesktopHtml(context, com.example.model.SurveyorProfile())
+        assertTrue("pc_app.html must declare fn in exportKhatianSheet", html.contains("const fn = `Khatian_"))
+        assertTrue("pc_app.html must declare thumb canvas in exportKhatianSheet", html.contains("const thumb = document.createElement(\"canvas\")"))
+        assertTrue("pc_app.html must include downloadCanvasAsPng", html.contains("function downloadCanvasAsPng"))
+        assertTrue("pc_app.html must include cross-network sync parser", html.contains("function applyCrossNetworkSyncFromUrl"))
+        assertTrue("pc_app.html must not contain 5462/5463", !html.contains("৫৪৬২") && !html.contains("৫৪৬৩"))
     }
 }
 

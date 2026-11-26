@@ -269,6 +269,30 @@ data class KhatianRecord(
 )
 
 const val PC_SERVER_DEFAULT_PORT = 8765
+const val DEFAULT_REMOTE_WEBSITE_URL = "https://www.salam.whf.bz/"
+const val DEFAULT_CLOUD_RELAY_URL = "https://www.salam.whf.bz/"
+
+@Serializable
+enum class PcSyncMode {
+    LOCAL_WIFI,
+    REMOTE_ACCESS
+}
+
+@Serializable
+enum class DetectedNetworkType {
+    LOCAL_WIFI,
+    CELLULAR_REMOTE,
+    OFFLINE
+}
+
+@Serializable
+data class PcSyncSettings(
+    val mode: PcSyncMode = PcSyncMode.LOCAL_WIFI,
+    val customRemoteUrl: String = DEFAULT_REMOTE_WEBSITE_URL,
+    val cloudRelayUrl: String = DEFAULT_CLOUD_RELAY_URL,
+    val useCloudRelay: Boolean = false,
+    val autoSwitchToRemoteOnCellular: Boolean = false
+)
 
 @Serializable
 data class SurveyorProfile(

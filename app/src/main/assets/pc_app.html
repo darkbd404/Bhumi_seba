@@ -200,7 +200,11 @@
             <div style="font-size:12px;color:var(--primary);font-weight:600;">স্মার্ট বাংলাদেশ ভূমি জরিপ ও সেবা • PC ভার্সন</div>
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <div id="pcConnBadge" style="display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:99px;background:rgba(15,107,84,0.12);border:1px solid var(--stroke);font-size:11.5px;font-weight:700;color:var(--primary);">
+            <span id="pcConnDot" style="width:8px;height:8px;border-radius:50%;background:#0F6B54;display:inline-block;"></span>
+            <span id="pcConnText">PC সিস্টেম প্রস্তুত</span>
+          </div>
           <button class="neu-btn-sq" onclick="openProfModal()" title="সার্ভেয়ার প্রোফাইল ও লোগো">
             <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
           </button>
@@ -885,7 +889,60 @@ async function dbClear(store) {
   });
 }
 
-// ==================== PURE-JS HIGH-RES PDF DOWNLOADER & CLASSIC SHEET COMPOSER ====================
+// ==================== PURE-JS HIGH-RES PDF & PNG DOWNLOADER & CLASSIC SHEET COMPOSER ====================
+function triggerBlobDownload(blob, fileName) {
+  if (window.AndroidBridge && typeof window.AndroidBridge.saveBase64File === "function") {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      try {
+        window.AndroidBridge.saveBase64File(String(reader.result || ""), fileName, blob.type || "application/octet-stream");
+      } catch (e) { console.error(e); }
+    };
+    reader.readAsDataURL(blob);
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 15000);
+}
+
+function downloadCanvasAsPng(canvas, fileName) {
+  const safeName = fileName.endsWith(".png") ? fileName : (fileName + ".png");
+  if (window.AndroidBridge && typeof window.AndroidBridge.saveBase64File === "function") {
+    window.AndroidBridge.saveBase64File(canvas.toDataURL("image/png"), safeName, "image/png");
+    return;
+  }
+  if (typeof canvas.toBlob === "function") {
+    canvas.toBlob(blob => {
+      if (blob) {
+        triggerBlobDownload(blob, safeName);
+      } else {
+        const a = document.createElement("a");
+        a.href = canvas.toDataURL("image/png");
+        a.download = safeName;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => a.remove(), 5000);
+      }
+    }, "image/png");
+  } else {
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = safeName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 5000);
+  }
+}
+
 function downloadCanvasAsPdf(canvas, fileName) {
   const jpegUrl = canvas.toDataURL("image/jpeg", 0.94);
   const b64 = jpegUrl.split(",")[1];
@@ -919,12 +976,9 @@ function downloadCanvasAsPdf(canvas, fileName) {
   xref += `trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
   pushStr(xref);
 
+  const safeName = fileName.endsWith(".pdf") ? fileName : (fileName + ".pdf");
   const blob = new Blob(parts, { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = fileName.endsWith(".pdf") ? fileName : (fileName + ".pdf");
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  triggerBlobDownload(blob, safeName);
 }
 
 function loadImgSafe(src) {
@@ -1109,28 +1163,27 @@ async function composeClassicMouzaSheet({ mapCanvas, title, subtitle, scaleLabel
   ctx.textAlign = "left";
 
   // Record history thumbnail
-  const thumbCanvas = document.createElement("canvas");
-  thumbCanvas.width = 480; thumbCanvas.height = Math.round(480 * (sheet.height / sheet.width));
-  thumbCanvas.getContext("2d").drawImage(sheet, 0, 0, thumbCanvas.width, thumbCanvas.height);
-  await dbPut("exports", {
-    id: "exp_" + Date.now(),
-    title: title || fileBaseName,
-    subtitle: (rows[0]?.dec ? rows[0].dec + " • " : "") + (scaleLabel || ""),
-    thumbUrl: thumbCanvas.toDataURL("image/jpeg", 0.72),
-    fileName: fileBaseName + "." + fmt,
-    fmt,
-    savedAt: Date.now()
-  });
-  renderHomeHistory();
+  try {
+    const thumbCanvas = document.createElement("canvas");
+    thumbCanvas.width = 480; thumbCanvas.height = Math.round(480 * (sheet.height / sheet.width));
+    thumbCanvas.getContext("2d").drawImage(sheet, 0, 0, thumbCanvas.width, thumbCanvas.height);
+    await dbPut("exports", {
+      id: "exp_" + Date.now(),
+      title: title || fileBaseName,
+      subtitle: (rows[0]?.dec ? rows[0].dec + " • " : "") + (scaleLabel || ""),
+      thumbUrl: thumbCanvas.toDataURL("image/jpeg", 0.72),
+      fileName: fileBaseName + "." + fmt,
+      fmt,
+      savedAt: Date.now()
+    });
+    renderHomeHistory();
+  } catch (e) { console.warn("History save skipped:", e); }
 
   if (fmt === "pdf") {
     downloadCanvasAsPdf(sheet, fileBaseName + ".pdf");
     toast("ক্লাসিক মৌজা PDF ডাউনলোড হয়েছে (আপনার বিবরণসহ)");
   } else {
-    const a = document.createElement("a");
-    a.href = sheet.toDataURL("image/png");
-    a.download = fileBaseName + ".png";
-    document.body.appendChild(a); a.click(); a.remove();
+    downloadCanvasAsPng(sheet, fileBaseName + ".png");
     toast("ক্লাসিক মৌজা PNG ডাউনলোড হয়েছে (আশেপাশের জমিসহ)");
   }
 }
@@ -2723,21 +2776,28 @@ function updateKhSummary() {
 
 function addKhOwner() { khOwners.push({ name: "", father: "", addr: "", share: "1.0", rev: "" }); renderKhTables(); }
 function addKhDag() { khDags.push({ dag: "", cls: "নাল", acre: "", tot: "", part: "1.0", remarks: "" }); renderKhTables(); }
+function khFieldVal(id) {
+  return (document.getElementById(id)?.value || "").trim();
+}
+function setKhFieldVal(id, v) {
+  const el = document.getElementById(id);
+  if (el) el.value = v || "";
+}
 function newBlankKhatian() {
   khCurId = "";
-  khNo.value = khJl.value = khMouza.value = khUpazila.value = khDistrict.value = khDivision.value = khResa.value = khTauzi.value = khKhajna.value = khNotes.value = "";
+  ["khNo","khJl","khMouza","khUpazila","khDistrict","khDivision","khResa","khTauzi","khKhajna","khNotes"].forEach(id => setKhFieldVal(id, ""));
   khOwners = [{ name: "", father: "", addr: "", share: "1.0", rev: "" }];
   khDags = [{ dag: "", cls: "নাল", acre: "", tot: "", part: "1.0", remarks: "" }];
   renderKhTables(); toast("নতুন খতিয়ান ফরম প্রস্তুত");
 }
 function getSavedKhatians() { try { return JSON.parse(localStorage.getItem("bhumi_custom_khatians") || "[]"); } catch { return []; } }
 function saveKhatianDoc() {
-  const no = khNo.value.trim(); if (!no) { toast("খতিয়ান নং লিখুন"); return; }
+  const no = khFieldVal("khNo"); if (!no) { toast("খতিয়ান নং লিখুন"); return; }
   const doc = {
     id: khCurId || ("kh_" + Date.now()),
-    type: khType.value, no, jl: khJl.value, mouza: khMouza.value, upazila: khUpazila.value,
-    district: khDistrict.value, division: khDivision.value, resa: khResa.value, tauzi: khTauzi.value,
-    khajna: khKhajna.value, notes: khNotes.value,
+    type: khFieldVal("khType") || "আরএস (RS) খতিয়ান", no, jl: khFieldVal("khJl"), mouza: khFieldVal("khMouza"), upazila: khFieldVal("khUpazila"),
+    district: khFieldVal("khDistrict"), division: khFieldVal("khDivision"), resa: khFieldVal("khResa"), tauzi: khFieldVal("khTauzi"),
+    khajna: khFieldVal("khKhajna"), notes: khFieldVal("khNotes"),
     owners: khOwners, dags: khDags, savedAt: Date.now()
   };
   khCurId = doc.id;
@@ -2747,9 +2807,18 @@ function saveKhatianDoc() {
 }
 function loadKhDoc(id) {
   const d = getSavedKhatians().find(x => x.id === id); if (!d) return;
-  khCurId = d.id; khType.value = d.type; khNo.value = d.no; khJl.value = d.jl||""; khMouza.value = d.mouza||"";
-  khUpazila.value = d.upazila||""; khDistrict.value = d.district||""; khDivision.value = d.division||"";
-  khResa.value = d.resa||""; khTauzi.value = d.tauzi||""; khKhajna.value = d.khajna||""; khNotes.value = d.notes||"";
+  khCurId = d.id;
+  setKhFieldVal("khType", d.type || "আরএস (RS) খতিয়ান");
+  setKhFieldVal("khNo", d.no || "");
+  setKhFieldVal("khJl", d.jl || "");
+  setKhFieldVal("khMouza", d.mouza || "");
+  setKhFieldVal("khUpazila", d.upazila || "");
+  setKhFieldVal("khDistrict", d.district || "");
+  setKhFieldVal("khDivision", d.division || "");
+  setKhFieldVal("khResa", d.resa || "");
+  setKhFieldVal("khTauzi", d.tauzi || "");
+  setKhFieldVal("khKhajna", d.khajna || "");
+  setKhFieldVal("khNotes", d.notes || "");
   khOwners = d.owners?.length ? d.owners : [{ name:"", father:"", addr:"", share:"1.0", rev:"" }];
   khDags = d.dags?.length ? d.dags : [{ dag:"", cls:"নাল", acre:"", tot:"", part:"1.0", remarks:"" }];
   renderKhTables(); toast(`খতিয়ান ${d.no} লোড হয়েছে`);
@@ -2786,11 +2855,25 @@ function drawFittedText(ctx, text, x, y, maxW, baseFont) {
 }
 
 async function exportKhatianSheet(fmt) {
-  const prof = getProf();
-  const [logoImg, avatarImg] = await Promise.all([
-    loadImgSafe("/icon.png"),
-    loadImgSafe(prof.avatar || FALLBACK_AVATAR)
-  ]);
+  try {
+    toast("খতিয়ান শিট তৈরি হচ্ছে...");
+    const prof = getProf();
+    const [logoImg, avatarImg] = await Promise.all([
+      loadImgSafe("/icon.png").then(im => im || loadImgSafe(FALLBACK_ICON)),
+      loadImgSafe(prof.avatar || FALLBACK_AVATAR).then(im => im || loadImgSafe(FALLBACK_AVATAR))
+    ]);
+
+    const khTypeVal = khFieldVal("khType") || "আরএস (RS) খতিয়ান";
+    const khNoVal = khFieldVal("khNo");
+    const khMouzaVal = khFieldVal("khMouza");
+    const khDivisionVal = khFieldVal("khDivision");
+    const khDistrictVal = khFieldVal("khDistrict");
+    const khUpazilaVal = khFieldVal("khUpazila");
+    const khJlVal = khFieldVal("khJl");
+    const khResaVal = khFieldVal("khResa");
+    const khTauziVal = khFieldVal("khTauzi");
+    const khKhajnaVal = khFieldVal("khKhajna");
+    const khNotesVal = khFieldVal("khNotes");
 
   const sheetW = 2100;
   const rowCount = Math.max(Math.max(khOwners.length, khDags.length), 5);
@@ -2860,7 +2943,7 @@ async function exportKhatianSheet(fmt) {
   ctx.fillText("ডিজিটাল কাস্টম খতিয়ান ফরম (অনুকরণ)", sheetW / 2, y + 34);
   ctx.fillStyle = "#1D2421";
   ctx.font = "bold 36px sans-serif";
-  ctx.fillText(khType.value || "আরএস (RS) খতিয়ান", sheetW / 2, y + 78);
+  ctx.fillText(khTypeVal, sheetW / 2, y + 78);
 
   // Khatian Number Badge
   const khNoBoxW = 270, khNoBoxH = 84;
@@ -2870,7 +2953,7 @@ async function exportKhatianSheet(fmt) {
   ctx.fill();
   ctx.fillStyle = "#FAD165";
   ctx.font = "bold 22px sans-serif";
-  ctx.fillText(`খতিয়ান নং: ${khNo.value || "—"}`, khNoBoxX + khNoBoxW / 2, khNoBoxY + 50);
+  ctx.fillText(`খতিয়ান নং: ${khNoVal || "—"}`, khNoBoxX + khNoBoxW / 2, khNoBoxY + 50);
 
   y += 114;
 
@@ -2883,13 +2966,13 @@ async function exportKhatianSheet(fmt) {
   ctx.strokeRect(cLeft, y, contentW, metaRectH);
 
   const metaFields = [
-    ["বিভাগ", khDivision.value || "—"],
-    ["জেলা", khDistrict.value || "—"],
-    ["উপজেলা/থানা", khUpazila.value || "—"],
-    ["মৌজা", khMouza.value || "—"],
-    ["জে.এল. নং", khJl.value || "—"],
-    ["রেঃ সাঃ নং", khResa.value || "—"],
-    ["তৌজি নং", khTauzi.value || "—"]
+    ["বিভাগ", khDivisionVal || "—"],
+    ["জেলা", khDistrictVal || "—"],
+    ["উপজেলা/থানা", khUpazilaVal || "—"],
+    ["মৌজা", khMouzaVal || "—"],
+    ["জে.এল. নং", khJlVal || "—"],
+    ["রেঃ সাঃ নং", khResaVal || "—"],
+    ["তৌজি নং", khTauziVal || "—"]
   ];
   const fieldW = contentW / metaFields.length;
   ctx.textAlign = "left";
@@ -3033,7 +3116,7 @@ async function exportKhatianSheet(fmt) {
       }
       ctx.fillStyle = "#1D2421";
       ctx.font = "16px sans-serif";
-      ctx.fillText(o.rev || (r === 0 ? (khKhajna.value || "—") : ""), (colXs[2] + colXs[3]) / 2, rowY + 32);
+      ctx.fillText(o.rev || (r === 0 ? (khKhajnaVal || "—") : ""), (colXs[2] + colXs[3]) / 2, rowY + 32);
       ctx.textAlign = "left";
     }
 
@@ -3134,7 +3217,7 @@ async function exportKhatianSheet(fmt) {
   ctx.fillStyle = "#1B4D3E";
   drawFittedText(ctx, summaryLine, cLeft + 16, sumTop + 31, contentW - 32, "bold 22px sans-serif");
 
-  const extraLine = `খাজনা / কর: ${khKhajna.value || "প্রযোজ্য নয়"}   |   বিশেষ মন্তব্য / পূর্ব খতিয়ান: ${khNotes.value || "অরিজিনাল পর্চা অনুসরণে প্রস্তুত"}`;
+  const extraLine = `খাজনা / কর: ${khKhajnaVal || "প্রযোজ্য নয়"}   |   বিশেষ মন্তব্য / পূর্ব খতিয়ান: ${khNotesVal || "অরিজিনাল পর্চা অনুসরণে প্রস্তুত"}`;
   ctx.fillStyle = "#1D2421";
   drawFittedText(ctx, extraLine, cLeft + 16, sumTop + 61, contentW - 32, "17px sans-serif");
 
@@ -3230,28 +3313,166 @@ async function exportKhatianSheet(fmt) {
   ctx.textAlign = "center";
   ctx.fillText("ডিজিটাল কাস্টম খতিয়ান • ভূমি সেবা ডিজিটাল", rightProfX + rightProfW / 2, sealTop + 19);
   ctx.textAlign = "left";
-  await dbPut("exports", {
-    id: "exp_" + Date.now(),
-    title: `খতিয়ান নং ${khNo.value || "১"}`,
-    subtitle: `${khMouza.value || "কাস্টম খতিয়ান"} • ${totalOwnedDec.toFixed(2)} শতক`,
-    thumbUrl: thumb.toDataURL("image/jpeg", 0.72),
-    fileName: `${fn}.${fmt}`,
-    fmt,
-    savedAt: Date.now()
-  });
-  renderHomeHistory();
+
+  const safeKhName = (khNoVal || "custom").replace(/[^\w\u0980-\u09FF-]+/g, "_");
+  const fn = `Khatian_${safeKhName}_${Date.now()}`;
+
+  try {
+    const thumb = document.createElement("canvas");
+    thumb.width = 480;
+    thumb.height = Math.round(480 * (sheetH / sheetW));
+    thumb.getContext("2d").drawImage(c, 0, 0, thumb.width, thumb.height);
+    await dbPut("exports", {
+      id: "exp_" + Date.now(),
+      title: `খতিয়ান নং ${khNoVal || "১"}`,
+      subtitle: `${khMouzaVal || "কাস্টম খতিয়ান"} • ${totalOwnedDec.toFixed(2)} শতক`,
+      thumbUrl: thumb.toDataURL("image/jpeg", 0.72),
+      fileName: `${fn}.${fmt}`,
+      fmt,
+      savedAt: Date.now()
+    });
+    renderHomeHistory();
+  } catch (histErr) {
+    console.warn("History thumbnail save skipped:", histErr);
+  }
 
   if (fmt === "pdf") {
     downloadCanvasAsPdf(c, fn + ".pdf");
     toast("খতিয়ান PDF ডাউনলোড হয়েছে");
   } else {
-    const a = document.createElement("a");
-    a.href = c.toDataURL("image/png");
-    a.download = fn + ".png";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    downloadCanvasAsPng(c, fn + ".png");
     toast("খতিয়ান PNG ডাউনলোড হয়েছে");
+  }
+  } catch (err) {
+    console.error("exportKhatianSheet failed:", err);
+    toast("খতিয়ান ডাউনলোড ব্যর্থ: " + (err?.message || "আবার চেষ্টা করুন"));
+  }
+}
+
+// ==================== CROSS-NETWORK SYNC & CONNECTION STATUS ====================
+function decodeUrlSafeBase64Utf8(b64) {
+  let norm = String(b64 || "").replace(/-/g, "+").replace(/_/g, "/");
+  while (norm.length % 4) norm += "=";
+  const bin = atob(norm);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function applyCrossNetworkSyncPayload(payload) {
+  if (!payload || typeof payload !== "object") return 0;
+  if (payload.surveyorProfile && typeof payload.surveyorProfile === "object") {
+    const sp = payload.surveyorProfile;
+    const cur = getProf();
+    saveProf({
+      name: sp.name || cur.name,
+      phone: sp.phone || cur.phone,
+      email: sp.email || cur.email,
+      desig: sp.designation || sp.desig || cur.desig,
+      avatar: cur.avatar || FALLBACK_AVATAR
+    });
+    syncProfileUI();
+  }
+  const incoming = Array.isArray(payload.khatians) ? payload.khatians : [];
+  if (!incoming.length) return 0;
+  const existing = getSavedKhatians();
+  const byId = new Map();
+  existing.forEach(item => { if (item && item.id) byId.set(item.id, item); });
+
+  let newestId = "";
+  let newestTime = -1;
+  incoming.forEach(doc => {
+    if (!doc) return;
+    const id = doc.id || ("kh_sync_" + Date.now());
+    const mapped = {
+      id,
+      type: doc.khatianType || doc.type || "আরএস (RS) খতিয়ান",
+      no: doc.khatianNumber || doc.no || "",
+      jl: doc.jlNumber || doc.jl || "",
+      mouza: doc.mouzaName || doc.mouza || "",
+      upazila: doc.upazila || "",
+      district: doc.district || "",
+      division: doc.division || "",
+      resa: doc.resaNumber || doc.resa || "",
+      tauzi: doc.tauziNumber || doc.tauzi || "",
+      khajna: doc.totalKhajna || doc.khajna || "",
+      notes: doc.notes || "",
+      owners: Array.isArray(doc.owners) ? doc.owners.map(o => ({
+        name: o.name || "",
+        father: o.fatherOrHusband || o.father || "",
+        addr: o.address || o.addr || "",
+        share: String(o.shareRatio ?? o.share ?? "1.0"),
+        rev: o.revenue || o.rev || ""
+      })) : [],
+      dags: Array.isArray(doc.dags) ? doc.dags.map(d => ({
+        dag: d.dagNumber || d.dag || "",
+        cls: d.landClass || d.cls || "নাল",
+        acre: d.totalDecimal ? (Number(d.totalDecimal) / 100.0).toFixed(4) : (d.acre || ""),
+        tot: d.totalDecimal != null ? String(d.totalDecimal) : (d.tot || ""),
+        part: String(d.thisKhatianShare ?? d.part ?? "1.0"),
+        remarks: d.remarks || ""
+      })) : [],
+      savedAt: doc.updatedAtMillis || doc.savedAt || Date.now()
+    };
+    byId.set(id, mapped);
+    if (mapped.savedAt > newestTime) {
+      newestTime = mapped.savedAt;
+      newestId = id;
+    }
+  });
+
+  const merged = Array.from(byId.values()).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)).slice(0, 40);
+  localStorage.setItem("bhumi_custom_khatians", JSON.stringify(merged));
+  renderKhatianSaved();
+  if (newestId && !khFieldVal("khNo")) {
+    loadKhDoc(newestId);
+  }
+  return incoming.length;
+}
+
+function applyCrossNetworkSyncFromUrl() {
+  try {
+    let encoded = "";
+    const hash = location.hash || "";
+    const search = location.search || "";
+    if (hash.includes("sync=")) {
+      encoded = hash.split("sync=")[1].split("&")[0];
+    } else if (search.includes("sync=")) {
+      encoded = new URLSearchParams(search).get("sync") || "";
+    }
+    if (!encoded) return 0;
+    const jsonText = decodeUrlSafeBase64Utf8(encoded);
+    const payload = JSON.parse(jsonText);
+    const count = applyCrossNetworkSyncPayload(payload);
+    if (count > 0) {
+      toast(`ফোন থেকে ${count}টি খতিয়ান সিঙ্ক হয়েছে (যেকোনো নেটওয়ার্ক)`);
+    }
+    return count;
+  } catch (e) {
+    console.warn("Cross-network sync parse skipped:", e);
+    return 0;
+  }
+}
+
+function updatePcConnBadge(syncedViaServer = false) {
+  const txt = document.getElementById("pcConnText");
+  const dot = document.getElementById("pcConnDot");
+  const badge = document.getElementById("pcConnBadge");
+  if (!txt || !dot || !badge) return;
+  const host = (location.hostname || "").toLowerCase();
+  const proto = location.protocol || "";
+  if (proto === "file:") {
+    txt.textContent = "অফলাইন PC ফাইল";
+    dot.style.background = "#D49A17";
+    badge.style.color = "#8C6B32";
+  } else if (host === "127.0.0.1" || host === "localhost" || /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) {
+    txt.textContent = syncedViaServer ? "লোকাল Wi-Fi সিঙ্ক সক্রিয়" : "লোকাল Wi-Fi সংযুক্ত";
+    dot.style.background = "#0F6B54";
+    badge.style.color = "#0F6B54";
+  } else {
+    txt.textContent = `রিমোট ওয়েবসাইট (${host || "salam.whf.bz"})`;
+    dot.style.background = "#1A73E8";
+    badge.style.color = "#1A73E8";
   }
 }
 
@@ -3262,10 +3483,23 @@ async function exportKhatianSheet(fmt) {
   syncProfileUI();
   renderPortals();
   renderToolBody();
+  applyCrossNetworkSyncFromUrl();
   renderKhTables();
   renderKhatianSaved();
   renderHomeHistory();
   drawMouza();
+  updatePcConnBadge(false);
+  if (location.protocol.startsWith("http")) {
+    fetch("/api/sync").then(r => r.ok ? r.json() : null).then(payload => {
+      if (payload) {
+        const count = applyCrossNetworkSyncPayload(payload);
+        updatePcConnBadge(true);
+        if (count > 0 && !location.hash.includes("sync=")) {
+          toast(`সার্ভার থেকে ${count}টি খতিয়ান সিঙ্ক হয়েছে`);
+        }
+      }
+    }).catch(() => {});
+  }
 })();
 </script>
 </body>

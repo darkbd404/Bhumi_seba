@@ -31,23 +31,64 @@ object KhatianSheetExporter {
     suspend fun exportCustomKhatianPng(
         context: Context,
         doc: CustomKhatianDocument,
-        surveyorProfile: SurveyorProfile
+        surveyorProfile: SurveyorProfile,
+        desktopOutputDir: java.io.File? = null
     ): PngExporter.ExportResult = withContext(Dispatchers.Default) {
         val bmp = buildKhatianSheetBitmap(context, doc, surveyorProfile)
         val safeKh = doc.khatianNumber.ifBlank { "Custom" }.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         val fileName = "Khatian_${safeKh}_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.png"
-        PngExporter.saveBitmapToPictures(context, bmp, fileName)
+        ExportStreamWriter.savePngBitmap(
+            context = context,
+            bitmap = bmp,
+            fileName = fileName,
+            desktopFallbackDir = desktopOutputDir
+        )
     }
 
     suspend fun exportCustomKhatianPdf(
         context: Context,
         doc: CustomKhatianDocument,
-        surveyorProfile: SurveyorProfile
+        surveyorProfile: SurveyorProfile,
+        desktopOutputDir: java.io.File? = null
     ): PngExporter.ExportResult = withContext(Dispatchers.Default) {
         val bmp = buildKhatianSheetBitmap(context, doc, surveyorProfile)
         val safeKh = doc.khatianNumber.ifBlank { "Custom" }.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         val fileName = "Khatian_${safeKh}_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.pdf"
-        PngExporter.saveSheetBitmapAsPdf(context, bmp, fileName)
+        ExportStreamWriter.savePdfBitmap(
+            context = context,
+            bitmap = bmp,
+            fileName = fileName,
+            desktopFallbackDir = desktopOutputDir
+        )
+    }
+
+    suspend fun exportCustomKhatianBytes(
+        context: Context,
+        doc: CustomKhatianDocument,
+        surveyorProfile: SurveyorProfile,
+        asPdf: Boolean
+    ): ByteArray = withContext(Dispatchers.Default) {
+        val bmp = buildKhatianSheetBitmap(context, doc, surveyorProfile)
+        try {
+            if (asPdf) {
+                val pdfDoc = android.graphics.pdf.PdfDocument()
+                val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(bmp.width, bmp.height, 1).create()
+                val page = pdfDoc.startPage(pageInfo)
+                page.canvas.drawBitmap(bmp, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+                pdfDoc.finishPage(page)
+                try {
+                    ExportStreamWriter.encodeToByteArray { out -> pdfDoc.writeTo(out) }
+                } finally {
+                    pdfDoc.close()
+                }
+            } else {
+                ExportStreamWriter.encodeToByteArray { out ->
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+            }
+        } finally {
+            bmp.recycle()
+        }
     }
 
     internal fun buildKhatianSheetBitmap(

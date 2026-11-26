@@ -1566,84 +1566,31 @@ object PngExporter {
         saveBitmapToPictures(context, sheet, fileName)
     }
 
-    internal fun saveBitmapToPictures(context: Context, bitmap: Bitmap, fileName: String): ExportResult {
-        val w = bitmap.width
-        val h = bitmap.height
-        val relativePath = "${Environment.DIRECTORY_PICTURES}/BhumiSebaDigital"
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-            val resolver = context.contentResolver
-            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            if (uri != null) {
-                resolver.openOutputStream(uri)?.use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                }
-                values.clear()
-                values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-            }
-            bitmap.recycle()
-            ExportResult(uri, "Pictures/BhumiSebaDigital/$fileName", w, h)
-        } else {
-            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val targetDir = File(picturesDir, "BhumiSebaDigital").apply { mkdirs() }
-            val file = File(targetDir, fileName)
-            FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
-            bitmap.recycle()
-            ExportResult(Uri.fromFile(file), file.absolutePath, w, h)
-        }
+    internal fun saveBitmapToPictures(
+        context: Context?,
+        bitmap: Bitmap,
+        fileName: String,
+        desktopFallbackDir: File? = null
+    ): ExportResult {
+        return ExportStreamWriter.savePngBitmap(
+            context = context,
+            bitmap = bitmap,
+            fileName = fileName,
+            desktopFallbackDir = desktopFallbackDir
+        )
     }
 
-    internal fun saveSheetBitmapAsPdf(context: Context, bitmap: Bitmap, fileName: String): ExportResult {
-        val w = bitmap.width
-        val h = bitmap.height
-        val pdfDoc = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(w, h, 1).create()
-        val page = pdfDoc.startPage(pageInfo)
-        page.canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
-        pdfDoc.finishPage(page)
-
-        val relativePath = "${Environment.DIRECTORY_DOCUMENTS}/BhumiSebaDigital"
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val values = ContentValues().apply {
-                    put(MediaStore.Files.FileColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.Files.FileColumns.MIME_TYPE, "application/pdf")
-                    put(MediaStore.Files.FileColumns.RELATIVE_PATH, relativePath)
-                    put(MediaStore.Files.FileColumns.IS_PENDING, 1)
-                }
-                val resolver = context.contentResolver
-                val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                val uri = resolver.insert(collection, values)
-                if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { out ->
-                        pdfDoc.writeTo(out)
-                    }
-                    values.clear()
-                    values.put(MediaStore.Files.FileColumns.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                }
-                ExportResult(uri, "Documents/BhumiSebaDigital/$fileName", w, h)
-            } else {
-                val docsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-                val targetDir = File(docsDir, "BhumiSebaDigital").apply { mkdirs() }
-                val file = File(targetDir, fileName)
-                FileOutputStream(file).use { out ->
-                    pdfDoc.writeTo(out)
-                }
-                ExportResult(Uri.fromFile(file), file.absolutePath, w, h)
-            }
-        } finally {
-            pdfDoc.close()
-            bitmap.recycle()
-        }
+    internal fun saveSheetBitmapAsPdf(
+        context: Context?,
+        bitmap: Bitmap,
+        fileName: String,
+        desktopFallbackDir: File? = null
+    ): ExportResult {
+        return ExportStreamWriter.savePdfBitmap(
+            context = context,
+            bitmap = bitmap,
+            fileName = fileName,
+            desktopFallbackDir = desktopFallbackDir
+        )
     }
 }
