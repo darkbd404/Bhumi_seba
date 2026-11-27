@@ -101,6 +101,12 @@ fun HomeScreen(
     onOpenServices: () -> Unit,
     onOpenTools: (initialTab: String) -> Unit,
     onOpenCustomKhatian: () -> Unit = {},
+    onOpenWorkstationHub: () -> Unit = {},
+    onOpenPolygonDivider: () -> Unit = {},
+    onOpenPantograph: () -> Unit = {},
+    onOpenDeedStudio: () -> Unit = {},
+    onOpenReportStudio: () -> Unit = {},
+    onOpenLandDatabase: () -> Unit = {},
     onOpenAiAssistant: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenUrlInApp: (url: String, title: String) -> Unit,
@@ -398,6 +404,30 @@ fun HomeScreen(
                         },
                         { m ->
                             NeuFeatureCard(
+                                title = "১৮ মডিউল ওয়ার্কস্টেশন",
+                                subtitle = "প্যান্টোগ্রাফ, CAD/DXF, বিভাজন, দলিল, OCR, রিপোর্ট ও ভল্ট",
+                                icon = Icons.Rounded.Straighten,
+                                accentColor = Color(0xFF5E35B1),
+                                badge = "18 Modules",
+                                testTag = "card_workstation_hub",
+                                modifier = m,
+                                onClick = onOpenWorkstationHub
+                            )
+                        },
+                        { m ->
+                            NeuFeatureCard(
+                                title = "জমি বিভাজন (Auto Split)",
+                                subtitle = "সমান/শতাংশ/রাস্তা রেখে পলিগন বণ্টন ও চিত্র সেভ",
+                                icon = Icons.Rounded.Map,
+                                accentColor = Color(0xFFD81B60),
+                                badge = "Divider",
+                                testTag = "card_polygon_divider",
+                                modifier = m,
+                                onClick = onOpenPolygonDivider
+                            )
+                        },
+                        { m ->
+                            NeuFeatureCard(
                                 title = "গুগল ভূমি সার্চ",
                                 subtitle = "বড় পেজে সরাসরি Google-এ যেকোনো বিষয় খুঁজুন",
                                 icon = Icons.Rounded.Search,
@@ -450,9 +480,9 @@ fun HomeScreen(
                     )
                     val calcQuick = listOf(
                         Triple("দৈর্ঘ্য কনভার্টার", "ফুট, লিংক, চেইন, গজ", "quick_tool_len" to Pair(EmeraldPrimary) { onOpenTools("len") }),
-                        Triple("আকৃতি মাপ", "আয়ত, ত্রিভুজ ও ৪-বাহু", "quick_tool_shape" to Pair(TealSecondary) { onOpenTools("shape") }),
-                        Triple("স্কেল ও চেইন", "১৬\"/৩২\"/৬৪\" নকশা হিসাব", "quick_tool_scale" to Pair(Color(0xFF1A73E8)) { onOpenTools("scale") }),
-                        Triple("দলিল ও দাম", "মূল্য, স্ট্যাম্প ও বণ্টন", "quick_tool_tax" to Pair(SurveyGold) { onOpenTools("tax") })
+                        Triple("আকৃতি ও ট্র্যাভার্স", "আয়ত, ত্রিভুজ, Shoelace", "quick_tool_shape" to Pair(TealSecondary) { onOpenTools("shape") }),
+                        Triple("দলিল স্টুডিও", "১২ টেমপ্লেট PDF/DOCX", "quick_tool_deed" to Pair(Color(0xFF8E24AA)) { onOpenDeedStudio() }),
+                        Triple("রিপোর্ট ও ভল্ট", "A4/A3 রিপোর্ট ও ব্যাকআপ", "quick_tool_vault" to Pair(SurveyGold) { onOpenLandDatabase() })
                     )
                     calcQuick.chunked(quickCols).forEach { rowItems ->
                         Row(

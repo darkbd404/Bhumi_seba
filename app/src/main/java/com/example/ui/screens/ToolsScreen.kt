@@ -51,23 +51,43 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.WorkstationRepository
 import com.example.engine.LandAreaResult
 import com.example.engine.LandCalculators
 import com.example.engine.LengthUnit
+import com.example.engine.SurveyMathProEngine
+import com.example.engine.TraverseLegInput
+import com.example.model.InheritanceLawType
+import com.example.model.PolygonVertex
+import com.example.model.RegionalUnitProfile
 import com.example.ui.components.NeuPillChip
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
+import com.example.ui.theme.TealSecondary
 import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
 import java.util.Locale
+import java.util.UUID
 
 private enum class SurveyToolTab(val key: String, val titleBn: String) {
     UNIT_CONVERTER("unit", "জমির একক"),
     LENGTH_CONVERTER("len", "দৈর্ঘ্য মাপ"),
     SHAPE_SURVEY("shape", "আকৃতি মাপ"),
+    COORDINATE_TRAVERSE("traverse", "ট্র্যাভার্স ও কোণ"),
     KHATIAN_HISSA("hissa", "খতিয়ান হিস্যা"),
     FARAIZ("faraiz", "ওয়ারিশ/ফারায়েজ"),
-    DEED_TAX("tax", "দলিল ও দাম"),
+    DEED_TAX("tax", "দলিল ও আর্থিক"),
     CHAIN_SCALE("scale", "স্কেল ও চেইন")
 }
 
@@ -140,6 +160,7 @@ fun ToolsScreen(
                     SurveyToolTab.UNIT_CONVERTER -> Icons.Rounded.SwapHoriz
                     SurveyToolTab.LENGTH_CONVERTER -> Icons.Rounded.LinearScale
                     SurveyToolTab.SHAPE_SURVEY -> Icons.Rounded.CropSquare
+                    SurveyToolTab.COORDINATE_TRAVERSE -> Icons.Rounded.Explore
                     SurveyToolTab.KHATIAN_HISSA -> Icons.Rounded.Percent
                     SurveyToolTab.FARAIZ -> Icons.Rounded.Balance
                     SurveyToolTab.DEED_TAX -> Icons.Rounded.AccountBalance
@@ -175,6 +196,7 @@ fun ToolsScreen(
                         SurveyToolTab.UNIT_CONVERTER -> UnitConverterPanel()
                         SurveyToolTab.LENGTH_CONVERTER -> LengthConverterPanel()
                         SurveyToolTab.SHAPE_SURVEY -> ShapeSurveyPanel()
+                        SurveyToolTab.COORDINATE_TRAVERSE -> TraverseCoordPanel()
                         SurveyToolTab.KHATIAN_HISSA -> KhatianHissaPanel()
                         SurveyToolTab.FARAIZ -> FaraizPanel()
                         SurveyToolTab.DEED_TAX -> DeedTaxPanel()
@@ -252,19 +274,34 @@ private fun LengthConverterPanel() {
 
 @Composable
 private fun UnitConverterPanel() {
+    val context = LocalContext.current
+    val repo = remember(context) { WorkstationRepository.getInstance(context) }
+    val snap by repo.snapshot.collectAsStateWithLifecycle()
+    val profiles = snap.regionalUnits
+    var selectedProfileId by remember(profiles) { mutableStateOf(profiles.firstOrNull()?.id ?: "bd_standard") }
+    val activeProfile = profiles.find { it.id == selectedProfileId } ?: SurveyMathProEngine.DEFAULT_REGIONAL_PROFILES.first()
+
     var inputValue by remember { mutableStateOf("10") }
     var inputUnit by remember { mutableIntStateOf(0) }
-    val units = listOf("শতাংশ", "কাঠা", "বিঘা", "একর", "বর্গফুট", "বর্গমিটার")
+    val units = listOf("শতাংশ", "কাঠা (আঞ্চলিক)", "বিঘা (আঞ্চলিক)", "একর", "বর্গফুট", "বর্গমিটার", "কানি (আঞ্চলিক)", "গণ্ডা (আঞ্চলিক)")
+
+    var showCustomDialog by remember { mutableStateOf(false) }
+    var customRegionName by remember { mutableStateOf("নিজস্ব আঞ্চলিক একক") }
+    var customKathaSqFt by remember { mutableStateOf("720") }
+    var customKaniDecimal by remember { mutableStateOf("40") }
 
     val v = inputValue.toDoubleOrNull() ?: 0.0
-    val res = when (inputUnit) {
-        0 -> LandCalculators.fromDecimal(v)
-        1 -> LandCalculators.fromKatha(v)
-        2 -> LandCalculators.fromBigha(v)
-        3 -> LandCalculators.fromAcre(v)
-        4 -> LandCalculators.fromSqFeet(v)
-        else -> LandCalculators.fromSqMeters(v)
+    val sqFeet = when (inputUnit) {
+        0 -> v * LandCalculators.SQ_FT_PER_DECIMAL
+        1 -> v * activeProfile.kathaSqFt
+        2 -> v * activeProfile.bighaSqFt
+        3 -> v * LandCalculators.SQ_FT_PER_ACRE
+        4 -> v
+        5 -> v * LandCalculators.SQ_FT_PER_SQ_METER
+        6 -> v * activeProfile.kaniSqFt
+        else -> v * activeProfile.gondaSqFt
     }
+    val regRes = SurveyMathProEngine.convertSqFeetWithProfile(sqFeet, activeProfile)
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(
@@ -274,7 +311,31 @@ private fun UnitConverterPanel() {
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("পরিমাণ লিখুন ও একক বাছুন", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("আঞ্চলিক প্রোফাইল (Configurable Regional Units)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                OutlinedButton(onClick = { showCustomDialog = true }) {
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Text("নতুন প্রোফাইল", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                profiles.forEach { p ->
+                    FilterChip(
+                        selected = p.id == activeProfile.id,
+                        onClick = { selectedProfileId = p.id },
+                        label = { Text(p.regionNameBn, maxLines = 1) }
+                    )
+                }
+            }
+
             OutlinedTextField(
                 value = inputValue,
                 onValueChange = { inputValue = it },
@@ -300,7 +361,161 @@ private fun UnitConverterPanel() {
             }
         }
 
-        AreaBreakdownCard("ফলাফল (বাংলাদেশ স্ট্যান্ডার্ড)", res)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .neuSurface(cornerRadius = 20.dp, elevation = 5.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("ফলাফল (${activeProfile.regionNameBn})", style = MaterialTheme.typography.titleSmall, color = EmeraldPrimary, fontWeight = FontWeight.Bold)
+            StatRow("শতাংশ (Decimal)", String.format(Locale.US, "%.4f", regRes.decimal), highlight = true)
+            StatRow("অযুতাংশ", String.format(Locale.US, "%.2f", regRes.ajutangsho))
+            StatRow("কাঠা (${activeProfile.kathaSqFt.toInt()} ব.ফু)", String.format(Locale.US, "%.4f", regRes.katha), highlight = true)
+            StatRow("বিঘা (${activeProfile.bighaSqFt.toInt()} ব.ফু)", String.format(Locale.US, "%.4f", regRes.bigha))
+            StatRow("একর (১০০ শতাংশ)", String.format(Locale.US, "%.4f", regRes.acre))
+            StatRow("কানি (${String.format(Locale.US, "%.1f", activeProfile.kaniSqFt / 435.6)} শতক)", String.format(Locale.US, "%.4f", regRes.kani), highlight = true)
+            StatRow("গণ্ডা (১/২০ কানি)", String.format(Locale.US, "%.4f", regRes.gonda))
+            StatRow("কড়া (১/৪ গণ্ডা)", String.format(Locale.US, "%.4f", regRes.kora))
+            StatRow("ক্রান্তি ও তিল", String.format(Locale.US, "%.3f ক্রান্তি / %.1f তিল", regRes.kranti, regRes.til))
+            StatRow("বর্গফুট / বর্গমিটার", String.format(Locale.US, "%.2f ব.ফু / %.2f ব.মি", regRes.sqFeet, regRes.sqMeters))
+            StatRow(activeProfile.customUnitName, String.format(Locale.US, "%.4f", regRes.customUnitValue))
+        }
+    }
+
+    if (showCustomDialog) {
+        AlertDialog(
+            onDismissRequest = { showCustomDialog = false },
+            title = { Text("নতুন আঞ্চলিক একক কনফিগার করুন") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = customRegionName, onValueChange = { customRegionName = it }, label = { Text("অঞ্চলের নাম") }, singleLine = true)
+                    NumField("১ কাঠায় কত বর্গফুট? (যেমন 720 বা 1620)", customKathaSqFt, { customKathaSqFt = it }, Modifier.fillMaxWidth())
+                    NumField("১ কানিতে কত শতাংশ? (যেমন 40 বা 120)", customKaniDecimal, { customKaniDecimal = it }, Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val kSq = customKathaSqFt.toDoubleOrNull()?.coerceAtLeast(100.0) ?: 720.0
+                    val kaniDec = customKaniDecimal.toDoubleOrNull()?.coerceAtLeast(1.0) ?: 40.0
+                    val kaniSq = kaniDec * LandCalculators.SQ_FT_PER_DECIMAL
+                    val newProf = RegionalUnitProfile(
+                        id = "custom_${UUID.randomUUID().toString().take(6)}",
+                        regionNameBn = customRegionName.ifBlank { "কাস্টম এলাকা" },
+                        regionNameEn = "Custom Regional Unit",
+                        kathaSqFt = kSq,
+                        bighaSqFt = kSq * 20.0,
+                        kaniSqFt = kaniSq,
+                        gondaSqFt = kaniSq / 20.0,
+                        koraSqFt = kaniSq / 80.0,
+                        krantiSqFt = kaniSq / 240.0,
+                        tilSqFt = kaniSq / 4800.0,
+                        customUnitName = "কাস্টম কানি (${kaniDec.toInt()} শতক)",
+                        customUnitSqFt = kaniSq
+                    )
+                    repo.saveRegionalUnitProfile(newProf)
+                    selectedProfileId = newProf.id
+                    showCustomDialog = false
+                }) { Text("সংরক্ষণ") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomDialog = false }) { Text("বাতিল") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun TraverseCoordPanel() {
+    var subMode by remember { mutableIntStateOf(0) } // 0=Cosine/Parallel, 1=Shoelace XY, 2=Bowditch Closed Traverse
+    var sideA by remember { mutableStateOf("60") }
+    var sideB by remember { mutableStateOf("50") }
+    var angleC by remember { mutableStateOf("75") }
+    var xyText by remember { mutableStateOf("0,0\n100,0\n105,80\n5,85") }
+    var traverseText by remember { mutableStateOf("AB,90,100\nBC,180,80\nCD,270,100.2\nDA,0,79.9") }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("অজানা বাহু ও সামান্তরিক", "কো-অর্ডিনেট (Shoelace)", "বদ্ধ ট্র্যাভার্স (Bowditch)").forEachIndexed { idx, t ->
+                FilterChip(selected = subMode == idx, onClick = { subMode = idx }, label = { Text(t) })
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .neuSurface(cornerRadius = 20.dp, elevation = 5.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            when (subMode) {
+                0 -> {
+                    Text("কোসাইন সূত্র: অজানা ৩য় বাহু এবং ক্ষেত্রফল", fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NumField("বাহু ১ / ভূমি", sideA, { sideA = it }, Modifier.weight(1f))
+                        NumField("বাহু ২ / উচ্চতা", sideB, { sideB = it }, Modifier.weight(1f))
+                        NumField("অন্তর্ভুক্ত কোণ (°)", angleC, { angleC = it }, Modifier.weight(1f))
+                    }
+                    val tri = SurveyMathProEngine.solveTriangleSideAndArea(
+                        sideA.toDoubleOrNull() ?: 0.0,
+                        sideB.toDoubleOrNull() ?: 0.0,
+                        angleC.toDoubleOrNull() ?: 90.0
+                    )
+                    val para = SurveyMathProEngine.parallelogramSqFeet(sideA.toDoubleOrNull() ?: 0.0, sideB.toDoubleOrNull() ?: 0.0)
+                    if (tri != null) {
+                        StatRow("অজানা ৩য় বাহুর দৈর্ঘ্য", String.format(Locale.US, "%.3f ফু", tri.first), highlight = true)
+                        StatRow("ত্রিভুজ ক্ষেত্রফল", String.format(Locale.US, "%.2f ব.ফু (%.3f শতক)", tri.second, tri.second / LandCalculators.SQ_FT_PER_DECIMAL))
+                        StatRow("সামান্তরিক ক্ষেত্রফল (ভূমি×উচ্চতা)", String.format(Locale.US, "%.2f ব.ফু (%.3f শতক)", para, para / LandCalculators.SQ_FT_PER_DECIMAL))
+                    }
+                }
+                1 -> {
+                    Text("কো-অর্ডিনেট জ্যামিতি (প্রতি লাইনে X,Y লিখুন)", fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = xyText,
+                        onValueChange = { xyText = it },
+                        minLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    val pts = xyText.lines().mapNotNull { ln ->
+                        val p = ln.split(",")
+                        val x = p.getOrNull(0)?.trim()?.toDoubleOrNull()
+                        val y = p.getOrNull(1)?.trim()?.toDoubleOrNull()
+                        if (x != null && y != null) PolygonVertex(x, y) else null
+                    }
+                    val res = SurveyMathProEngine.computeCoordinateGeometry(pts)
+                    if (res != null) {
+                        StatRow("শুলেস ক্ষেত্রফল", String.format(Locale.US, "%.2f ব.ফু (%.4f শতক)", res.sqFeet, res.decimal), highlight = true)
+                        StatRow("মোট পরিসীমা", String.format(Locale.US, "%.2f ফু", res.perimeterFt))
+                        StatRow("ভরকেন্দ্র (Centroid)", String.format(Locale.US, "(%.2f, %.2f)", res.centroid.x, res.centroid.y))
+                    }
+                }
+                else -> {
+                    Text("Bowditch বদ্ধ ট্র্যাভার্স (Label,Bearing°,DistFt)", fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = traverseText,
+                        onValueChange = { traverseText = it },
+                        minLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    val legs = traverseText.lines().mapNotNull { ln ->
+                        val p = ln.split(",")
+                        val lbl = p.getOrNull(0)?.trim().orEmpty()
+                        val brg = p.getOrNull(1)?.trim()?.toDoubleOrNull()
+                        val dst = p.getOrNull(2)?.trim()?.toDoubleOrNull()
+                        if (lbl.isNotBlank() && brg != null && dst != null) TraverseLegInput(lbl, brg, dst) else null
+                    }
+                    val res = SurveyMathProEngine.solveClosedTraverse(legs)
+                    if (res != null) {
+                        StatRow("সমন্বিত ক্ষেত্রফল", String.format(Locale.US, "%.2f ব.ফু (%.4f শতক)", res.adjustedAreaSqFt, res.adjustedDecimal), highlight = true)
+                        StatRow("রৈখিক বন্ধন ত্রুটি (Misclosure)", String.format(Locale.US, "%.3f ফু (%s)", res.linearMisclosureFt, res.precisionRatio))
+                        StatRow("মোট পরিসীমা", String.format(Locale.US, "%.2f ফু", res.totalPerimeterFt))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -445,6 +660,7 @@ private fun KhatianHissaPanel() {
 
 @Composable
 private fun FaraizPanel() {
+    var lawType by remember { mutableStateOf(InheritanceLawType.MUSLIM_SUNNI) }
     var totalDec by remember { mutableStateOf("50") }
     var deceasedMale by remember { mutableStateOf(true) }
     var hasSpouse by remember { mutableStateOf(true) }
@@ -452,15 +668,20 @@ private fun FaraizPanel() {
     var daughters by remember { mutableStateOf("1") }
     var hasFather by remember { mutableStateOf(false) }
     var hasMother by remember { mutableStateOf(true) }
+    var brothers by remember { mutableStateOf("0") }
+    var sisters by remember { mutableStateOf("0") }
 
-    val shares = LandCalculators.calculateFaraiz(
+    val report = SurveyMathProEngine.calculateUniversalInheritance(
+        lawType = lawType,
         totalDecimal = totalDec.toDoubleOrNull() ?: 0.0,
         deceasedIsMale = deceasedMale,
         hasSpouse = hasSpouse,
         sons = (sons.toIntOrNull() ?: 0).coerceAtLeast(0),
         daughters = (daughters.toIntOrNull() ?: 0).coerceAtLeast(0),
         hasFather = hasFather,
-        hasMother = hasMother
+        hasMother = hasMother,
+        brothers = (brothers.toIntOrNull() ?: 0).coerceAtLeast(0),
+        sisters = (sisters.toIntOrNull() ?: 0).coerceAtLeast(0)
     )
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -471,7 +692,19 @@ private fun FaraizPanel() {
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("মুসলিম উত্তরাধিকার (ফারায়েজ) জমি বণ্টন", style = MaterialTheme.typography.titleMedium)
+            Text("উত্তরাধিকার আইন নির্বাচন (Rule-Set Engine)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                InheritanceLawType.entries.forEach { law ->
+                    FilterChip(
+                        selected = lawType == law,
+                        onClick = { lawType = law },
+                        label = { Text(law.titleBn, maxLines = 1) }
+                    )
+                }
+            }
             NumField("মোট জমি (শতাংশ)", totalDec, { totalDec = it }, Modifier.fillMaxWidth())
 
             Row(
@@ -494,6 +727,10 @@ private fun FaraizPanel() {
                 NumField("পুত্র সংখ্যা", sons, { sons = it }, Modifier.weight(1f))
                 NumField("কন্যা সংখ্যা", daughters, { daughters = it }, Modifier.weight(1f))
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NumField("ভাই সংখ্যা", brothers, { brothers = it }, Modifier.weight(1f))
+                NumField("বোন সংখ্যা", sisters, { sisters = it }, Modifier.weight(1f))
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -512,6 +749,13 @@ private fun FaraizPanel() {
             }
         }
 
+        if (report.warnings.isNotEmpty() || report.requiresLegalReview) {
+            LegalPrecisionNoticeBanner(
+                text = (report.warnings + "আইনি সতর্কতা: ওয়ারিশ সংক্রান্ত চূড়ান্ত বণ্টনের আগে বিজ্ঞ আইনজীবী/মুফতির পর্যালোচনা নিন (${report.lawVersion})।")
+                    .joinToString("\n• ")
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -519,30 +763,33 @@ private fun FaraizPanel() {
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("ওয়ারিশদের প্রাপ্য অংশ", style = MaterialTheme.typography.titleMedium, color = EmeraldPrimary)
-            if (shares.isEmpty()) {
+            Text("ওয়ারিশদের প্রাপ্য অংশ (${lawType.titleBn})", style = MaterialTheme.typography.titleSmall, color = EmeraldPrimary, fontWeight = FontWeight.Bold)
+            if (report.shares.isEmpty()) {
                 Text("জমির পরিমাণ ও ওয়ারিশ নির্বাচন করুন।", style = MaterialTheme.typography.bodySmall)
             } else {
-                shares.forEach { item ->
+                report.shares.forEach { item ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(item.relationBn, style = MaterialTheme.typography.titleSmall)
                             if (item.count > 1) {
                                 Text(
-                                    text = String.format(Locale.US, "প্রত্যেকে: %.2f শতক", item.perPersonDecimal),
+                                    text = String.format(Locale.US, "প্রত্যেকে: %.3f শতক", item.perPersonDecimal),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                            if (item.statusNote.isNotBlank()) {
+                                Text(item.statusNote, style = MaterialTheme.typography.labelSmall, color = TealSecondary)
+                            }
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                text = String.format(Locale.US, "%.2f শতাংশ", item.totalDecimal),
+                                text = String.format(Locale.US, "%.3f শতাংশ", item.totalDecimal),
                                 style = MaterialTheme.typography.titleSmall,
                                 color = EmeraldPrimary,
                                 fontWeight = FontWeight.Bold
@@ -562,14 +809,22 @@ private fun FaraizPanel() {
 
 @Composable
 private fun DeedTaxPanel() {
-    var valueText by remember { mutableStateOf("1000000") }
-    var isCity by remember { mutableStateOf(false) }
-    var gainTaxPct by remember { mutableStateOf("4") }
+    val context = LocalContext.current
+    val repo = remember(context) { WorkstationRepository.getInstance(context) }
+    val snap by repo.snapshot.collectAsStateWithLifecycle()
+    var rateCfg by remember(snap.financialRate) { mutableStateOf(snap.financialRate) }
 
-    val breakdown = LandCalculators.estimateDeedCost(
-        deedValueBdt = valueText.toDoubleOrNull() ?: 0.0,
-        isCityArea = isCity,
-        gainTaxPercent = gainTaxPct.toDoubleOrNull() ?: 4.0
+    var areaDecimalText by remember { mutableStateOf("10") }
+    var customSalePriceText by remember { mutableStateOf("3200000") }
+    var otherExpensesText by remember { mutableStateOf("25000") }
+    var ownerSplitText by remember { mutableStateOf("2") }
+
+    val fin = SurveyMathProEngine.calculateFinancialBreakdown(
+        areaDecimal = areaDecimalText.toDoubleOrNull() ?: 0.0,
+        customSalePriceBdt = customSalePriceText.toDoubleOrNull(),
+        otherExpensesBdt = otherExpensesText.toDoubleOrNull() ?: 0.0,
+        ownerShareCount = (ownerSplitText.toIntOrNull() ?: 1).coerceAtLeast(1),
+        rates = rateCfg
     )
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -578,18 +833,41 @@ private fun DeedTaxPanel() {
                 .fillMaxWidth()
                 .neuSurface(cornerRadius = 20.dp, elevation = 5.dp)
                 .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("সাফ-কবলা দলিল খরচ অনুমান (টাকায়)", style = MaterialTheme.typography.titleMedium)
-            NumField("দলিলের মূল্য (টাকা)", valueText, { valueText = it }, Modifier.fillMaxWidth())
-            NumField("উৎস / গেইন কর (%)", gainTaxPct, { gainTaxPct = it }, Modifier.fillMaxWidth())
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Text("আর্থিক মূল্যায়ন, মৌজা রেট, কর ও মালিকানা খরচ ভাগ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NumField("জমির পরিমাণ (শতাংশ)", areaDecimalText, { areaDecimalText = it }, Modifier.weight(1f))
+                NumField("মৌজা রেট / শতক", rateCfg.mouzaRatePerDecimalBdt.toLong().toString(), {
+                    rateCfg = rateCfg.copy(mouzaRatePerDecimalBdt = it.toDoubleOrNull() ?: 0.0)
+                }, Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NumField("বিক্রয় / বাজার মূল্য (টাকা)", customSalePriceText, { customSalePriceText = it }, Modifier.weight(1f))
+                NumField("অন্যান্য/আইনি খরচ", otherExpensesText, { otherExpensesText = it }, Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NumField("অংশীদার সংখ্যা", ownerSplitText, { ownerSplitText = it }, Modifier.weight(0.7f))
+                OutlinedTextField(
+                    value = rateCfg.effectiveDate,
+                    onValueChange = { rateCfg = rateCfg.copy(effectiveDate = it) },
+                    label = { Text("রেট কার্যকরের তারিখ") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1.3f)
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                NumField("স্ট্যাম্প %", rateCfg.stampDutyPct.toString(), { rateCfg = rateCfg.copy(stampDutyPct = it.toDoubleOrNull() ?: 1.5) }, Modifier.weight(1f))
+                NumField("রেজিঃ %", rateCfg.registrationFeePct.toString(), { rateCfg = rateCfg.copy(registrationFeePct = it.toDoubleOrNull() ?: 1.0) }, Modifier.weight(1f))
+                NumField("স্থানীয় কর %", rateCfg.localGovtTaxPct.toString(), { rateCfg = rateCfg.copy(localGovtTaxPct = it.toDoubleOrNull() ?: 3.0) }, Modifier.weight(1f))
+                NumField("উৎস কর %", rateCfg.sourceGainTaxPct.toString(), { rateCfg = rateCfg.copy(sourceGainTaxPct = it.toDoubleOrNull() ?: 4.0) }, Modifier.weight(1f))
+            }
+            Button(
+                onClick = { repo.saveFinancialRate(rateCfg) },
+                colors = ButtonDefaults.buttonColors(containerColor = TealSecondary),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("সিটি কর্পোরেশন / ক্যান্টনমেন্ট এলাকা?")
-                Switch(checked = isCity, onCheckedChange = { isCity = it })
+                Text("এই এলাকার রেট প্রোফাইল সংরক্ষণ করুন")
             }
         }
 
@@ -600,12 +878,19 @@ private fun DeedTaxPanel() {
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text("সরকারি ফি বিবরণ", style = MaterialTheme.typography.titleMedium, color = EmeraldPrimary)
-            StatRow("স্ট্যাম্প শুল্ক (১.৫%)", "${breakdown.stampDuty.toLong()} টাকা")
-            StatRow("রেজিস্ট্রেশন ফি (১.০%)", "${breakdown.registrationFee.toLong()} টাকা")
-            StatRow("স্থানীয় সরকার কর (${if (isCity) "২%" else "৩%"})", "${breakdown.localGovtTax.toLong()} টাকা")
-            StatRow("উৎস কর", "${breakdown.sourceGainTax.toLong()} টাকা")
-            StatRow("সর্বমোট আনুমানিক সরকারি খরচ", "${breakdown.totalGovtCost.toLong()} টাকা", highlight = true)
+            Text("আর্থিক বিশ্লেষণ ফলাফল", style = MaterialTheme.typography.titleMedium, color = EmeraldPrimary)
+            StatRow("মৌজা মূল্যায়ন (Mouza Value)", "${fin.mouzaTotalValueBdt.toLong()} টাকা")
+            StatRow("স্ট্যাম্প + রেজিঃ + স্থানীয় + গেইন কর", "${(fin.stampDutyBdt + fin.registrationFeeBdt + fin.localGovtTaxBdt + fin.gainTaxBdt).toLong()} টাকা")
+            StatRow("ই-নামজারি (Mutation) ফি", "${fin.mutationCostBdt.toLong()} টাকা")
+            StatRow("বার্ষিক ভূমি উন্নয়ন কর (খাজনা)", "${fin.annualLandTaxBdt.toLong()} টাকা")
+            StatRow("সর্বমোট সরকারি ও প্রক্রিয়া খরচ", "${fin.totalGovtAndProcessCostBdt.toLong()} টাকা", highlight = true)
+            StatRow("মোট ক্রয়/অধিগ্রহণ ব্যয়", "${fin.totalAcquisitionCostBdt.toLong()} টাকা", highlight = true)
+            StatRow("জনপ্রতি / অংশীদার প্রতি খরচ", "${fin.perShareCostBdt.toLong()} টাকা", highlight = true)
+            StatRow(
+                "আনুমানিক নিট লাভ / পার্থক্য",
+                "${fin.netProfitOrLossBdt.toLong()} টাকা",
+                highlight = fin.netProfitOrLossBdt >= 0
+            )
         }
     }
 }

@@ -81,26 +81,66 @@ import com.example.data.AppPreferences
 import com.example.firebase.configureAppCheck
 import com.example.model.AboutRoute
 import com.example.model.AiAssistantRoute
+import com.example.model.AreaInvestigationRoute
+import com.example.model.CustomBuilderRoute
 import com.example.model.CustomKhatianRoute
+import com.example.model.CustomServiceEngineRoute
+import com.example.model.DeedLabProRoute
+import com.example.model.DeedStudioRoute
+import com.example.model.FieldInstrumentsRoute
+import com.example.model.GpsGisToolsRoute
 import com.example.model.HomeRoute
+import com.example.model.LandDatabaseRoute
+import com.example.model.LegalLibraryRoute
 import com.example.model.MouzaPdfRoute
+import com.example.model.OldMouzaLabRoute
+import com.example.model.OnlineLandServiceWorkbenchRoute
+import com.example.model.PantographRoute
+import com.example.model.PdfCadStudioRoute
+import com.example.model.PolygonDividerRoute
 import com.example.model.RealMapRoute
+import com.example.model.ReportStudioRoute
+import com.example.model.RevenueDueDiligenceRoute
 import com.example.model.SavedProjectType
 import com.example.model.SavedSurveyProject
+import com.example.model.ScannerOcrRoute
 import com.example.model.ServicesRoute
+import com.example.model.SpecializedSurveyToolsRoute
 import com.example.model.SurveyorProfile
 import com.example.model.ToolsRoute
+import com.example.model.UniversalArchiveExportRoute
 import com.example.model.WebBrowserRoute
+import com.example.model.WorkstationHubRoute
 import com.example.ui.components.ExitConfirmationDialog
 import com.example.ui.screens.AboutScreen
 import com.example.ui.screens.AiAssistantScreen
+import com.example.ui.screens.AreaInvestigationScreen
+import com.example.ui.screens.CustomBuilderScreen
 import com.example.ui.screens.CustomKhatianScreen
+import com.example.ui.screens.CustomServiceEngineScreen
+import com.example.ui.screens.DeedLabProScreen
+import com.example.ui.screens.DeedStudioScreen
+import com.example.ui.screens.FieldInstrumentsScreen
+import com.example.ui.screens.GpsGisToolsScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.InAppBrowserScreen
+import com.example.ui.screens.LandDatabaseScreen
+import com.example.ui.screens.LegalLibraryScreen
 import com.example.ui.screens.MouzaPdfScreen
+import com.example.ui.screens.OldMouzaLabScreen
+import com.example.ui.screens.OnlineLandServiceWorkbenchScreen
+import com.example.ui.screens.PantographScreen
+import com.example.ui.screens.PdfCadStudioScreen
+import com.example.ui.screens.PolygonDividerScreen
 import com.example.ui.screens.RealMapScreen
+import com.example.ui.screens.ReportStudioScreen
+import com.example.ui.screens.RevenueDueDiligenceScreen
+import com.example.ui.screens.ScannerOcrScreen
 import com.example.ui.screens.ServicesScreen
+import com.example.ui.screens.SpecializedSurveyToolsScreen
 import com.example.ui.screens.ToolsScreen
+import com.example.ui.screens.UniversalArchiveExportScreen
+import com.example.ui.screens.WorkstationHubScreen
 import com.example.ui.theme.BhumiSurveyTheme
 import com.example.ui.theme.LocalNeuPalette
 import kotlinx.coroutines.launch
@@ -332,6 +372,12 @@ private fun BhumiSurveyApp(
                             onOpenServices = { navigateTopLevel(ServicesRoute) },
                             onOpenTools = { tab -> navController.navigate(ToolsRoute(initialTab = tab)) },
                             onOpenCustomKhatian = { navController.navigate(CustomKhatianRoute()) },
+                            onOpenWorkstationHub = { navController.navigate(WorkstationHubRoute) },
+                            onOpenPolygonDivider = { navController.navigate(PolygonDividerRoute) },
+                            onOpenPantograph = { navController.navigate(PantographRoute) },
+                            onOpenDeedStudio = { navController.navigate(DeedStudioRoute) },
+                            onOpenReportStudio = { navController.navigate(ReportStudioRoute) },
+                            onOpenLandDatabase = { navController.navigate(LandDatabaseRoute) },
                             onOpenAiAssistant = { navController.navigate(AiAssistantRoute) },
                             onOpenAbout = { navController.navigate(AboutRoute) },
                             onOpenUrlInApp = { url, title ->
@@ -375,7 +421,9 @@ private fun BhumiSurveyApp(
                             onNavigateBack = { navController.popBackStack() },
                             onOpenUrlInApp = { url, title ->
                                 navController.navigate(WebBrowserRoute(url = url, title = title))
-                            }
+                            },
+                            onOpenServiceWorkbench = { navController.navigate(OnlineLandServiceWorkbenchRoute) },
+                            onOpenCustomServiceEngine = { navController.navigate(CustomServiceEngineRoute) }
                         )
                     }
 
@@ -424,6 +472,125 @@ private fun BhumiSurveyApp(
                                 navController.navigate(WebBrowserRoute(url = url, title = title))
                             }
                         )
+                    }
+
+                    composable<WorkstationHubRoute> {
+                        WorkstationHubScreen(
+                            onBack = { navController.popBackStack() },
+                            onOpenMouzaPdf = { navigateTopLevel(MouzaPdfRoute()) },
+                            onOpenPdfCad = { navController.navigate(PdfCadStudioRoute) },
+                            onOpenPantograph = { navController.navigate(PantographRoute) },
+                            onOpenRealMap = { navigateTopLevel(RealMapRoute()) },
+                            onOpenGpsGis = { navController.navigate(GpsGisToolsRoute) },
+                            onOpenTools = { tab -> navController.navigate(ToolsRoute(initialTab = tab)) },
+                            onOpenPolygonDivider = { navController.navigate(PolygonDividerRoute) },
+                            onOpenCustomKhatian = { navController.navigate(CustomKhatianRoute()) },
+                            onOpenDeedStudio = { navController.navigate(DeedStudioRoute) },
+                            onOpenScannerOcr = { navController.navigate(ScannerOcrRoute) },
+                            onOpenReportStudio = { navController.navigate(ReportStudioRoute) },
+                            onOpenLandDatabase = { navController.navigate(LandDatabaseRoute) },
+                            onOpenLegalLibrary = { navController.navigate(LegalLibraryRoute) },
+                            onOpenCustomBuilder = { navController.navigate(CustomBuilderRoute) },
+                            onOpenServices = { navigateTopLevel(ServicesRoute) },
+                            onOpenOldMouzaLab = { navController.navigate(OldMouzaLabRoute) },
+                            onOpenFieldInstruments = { navController.navigate(FieldInstrumentsRoute) },
+                            onOpenOnlineServiceWorkbench = { navController.navigate(OnlineLandServiceWorkbenchRoute) },
+                            onOpenRevenueDueDiligence = { navController.navigate(RevenueDueDiligenceRoute) },
+                            onOpenDeedLabPro = { navController.navigate(DeedLabProRoute) },
+                            onOpenAreaInvestigation = { navController.navigate(AreaInvestigationRoute) },
+                            onOpenSpecializedTools = { navController.navigate(SpecializedSurveyToolsRoute) },
+                            onOpenCustomServiceEngine = { navController.navigate(CustomServiceEngineRoute) },
+                            onOpenUniversalArchive = { navController.navigate(UniversalArchiveExportRoute) }
+                        )
+                    }
+
+                    composable<PolygonDividerRoute> {
+                        PolygonDividerScreen(onBack = { navController.popBackStack() })
+                    }
+
+                    composable<PantographRoute> {
+                        PantographScreen(onBack = { navController.popBackStack() })
+                    }
+
+                    composable<PdfCadStudioRoute> {
+                        PdfCadStudioScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<GpsGisToolsRoute> {
+                        GpsGisToolsScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<DeedStudioRoute> {
+                        DeedStudioScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<ScannerOcrRoute> {
+                        ScannerOcrScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<ReportStudioRoute> {
+                        ReportStudioScreen(
+                            surveyorProfile = surveyorProfile,
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable<LandDatabaseRoute> {
+                        LandDatabaseScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<CustomBuilderRoute> {
+                        CustomBuilderScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<LegalLibraryRoute> {
+                        LegalLibraryScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<OldMouzaLabRoute> {
+                        OldMouzaLabScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<FieldInstrumentsRoute> {
+                        FieldInstrumentsScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<OnlineLandServiceWorkbenchRoute> {
+                        OnlineLandServiceWorkbenchScreen(
+                            onNavigateBack = { navController.popBackStack() },
+                            onOpenUrlInApp = { url, title ->
+                                navController.navigate(WebBrowserRoute(url = url, title = title))
+                            }
+                        )
+                    }
+
+                    composable<RevenueDueDiligenceRoute> {
+                        RevenueDueDiligenceScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<DeedLabProRoute> {
+                        DeedLabProScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<AreaInvestigationRoute> {
+                        AreaInvestigationScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<SpecializedSurveyToolsRoute> {
+                        SpecializedSurveyToolsScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<CustomServiceEngineRoute> {
+                        CustomServiceEngineScreen(
+                            onNavigateBack = { navController.popBackStack() },
+                            onOpenUrlInApp = { url, title ->
+                                navController.navigate(WebBrowserRoute(url = url, title = title))
+                            }
+                        )
+                    }
+
+                    composable<UniversalArchiveExportRoute> {
+                        UniversalArchiveExportScreen(onNavigateBack = { navController.popBackStack() })
                     }
                 }
 

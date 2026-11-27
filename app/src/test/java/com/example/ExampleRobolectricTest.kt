@@ -728,7 +728,338 @@ class ExampleRobolectricTest {
         assertTrue("pc_app.html must include Cloud Relay modal", html.contains("function openRelayModal"))
         assertTrue("pc_app.html must not contain 5462/5463", !html.contains("৫৪৬২") && !html.contains("৫৪৬৩"))
     }
+
+    @Test
+    fun surveyMathProEngine_regionalUnitsTraverseCosineFormulaAndInheritanceWork() {
+        // 1. Regional units: Chattogram (40-dec Kani) vs Noakhali (120-dec Shahi Kani)
+        val ctgProfile = com.example.engine.SurveyMathProEngine.DEFAULT_REGIONAL_PROFILES.first { it.id == "chattogram_40" }
+        val noaProfile = com.example.engine.SurveyMathProEngine.DEFAULT_REGIONAL_PROFILES.first { it.id == "noakhali_shahi_120" }
+        val sqFt120Dec = 120.0 * com.example.engine.LandCalculators.SQ_FT_PER_DECIMAL
+        val ctgRes = com.example.engine.SurveyMathProEngine.convertSqFeetWithProfile(sqFt120Dec, ctgProfile)
+        val noaRes = com.example.engine.SurveyMathProEngine.convertSqFeetWithProfile(sqFt120Dec, noaProfile)
+        assertEquals(3.0, ctgRes.kani, 0.0001)
+        assertEquals(1.0, noaRes.kani, 0.0001)
+
+        // 2. Unknown side (3-4-5 right triangle: sideA=30, sideB=40, angle=90 -> sideC=50, area=600)
+        val tri = com.example.engine.SurveyMathProEngine.solveTriangleSideAndArea(30.0, 40.0, 90.0)!!
+        assertEquals(50.0, tri.first, 0.001)
+        assertEquals(600.0, tri.second, 0.001)
+
+        // 3. Coordinate Geometry (Shoelace) on 100x80 rectangle
+        val cg = com.example.engine.SurveyMathProEngine.computeCoordinateGeometry(
+            listOf(
+                com.example.model.PolygonVertex(0.0, 0.0),
+                com.example.model.PolygonVertex(100.0, 0.0),
+                com.example.model.PolygonVertex(100.0, 80.0),
+                com.example.model.PolygonVertex(0.0, 80.0)
+            )
+        )!!
+        assertEquals(8000.0, cg.sqFeet, 0.01)
+
+        // 4. Bowditch Closed Traverse adjustment
+        val trav = com.example.engine.SurveyMathProEngine.solveClosedTraverse(
+            listOf(
+                com.example.engine.TraverseLegInput("AB", 0.0, 100.0),
+                com.example.engine.TraverseLegInput("BC", 90.0, 80.0),
+                com.example.engine.TraverseLegInput("CD", 180.0, 100.0),
+                com.example.engine.TraverseLegInput("DA", 270.0, 80.0)
+            )
+        )!!
+        assertEquals(8000.0, trav.adjustedAreaSqFt, 0.05)
+        assertEquals(0.0, trav.linearMisclosureFt, 0.001)
+
+        // 5. Multi-Law Inheritance: Hindu Dayabhaga & Christian Succession Act 1925
+        val hinduRep = com.example.engine.SurveyMathProEngine.calculateUniversalInheritance(
+            lawType = com.example.model.InheritanceLawType.HINDU_DAYABHAGA,
+            totalDecimal = 60.0,
+            deceasedIsMale = true,
+            hasSpouse = true,
+            sons = 2,
+            daughters = 1,
+            hasFather = false,
+            hasMother = false
+        )
+        assertEquals(20.0, hinduRep.shares.first().totalDecimal, 0.01) // Widow gets 1/3
+        assertTrue(hinduRep.requiresLegalReview)
+
+        val christianRep = com.example.engine.SurveyMathProEngine.calculateUniversalInheritance(
+            lawType = com.example.model.InheritanceLawType.CHRISTIAN_BD,
+            totalDecimal = 90.0,
+            deceasedIsMale = true,
+            hasSpouse = true,
+            sons = 1,
+            daughters = 1,
+            hasFather = false,
+            hasMother = false
+        )
+        assertEquals(30.0, christianRep.shares[0].totalDecimal, 0.01) // Spouse 1/3 = 30
+        assertEquals(30.0, christianRep.shares[1].totalDecimal, 0.01) // Son 1/3 = 30
+        assertEquals(30.0, christianRep.shares[2].totalDecimal, 0.01) // Daughter 1/3 = 30
+
+        // 6. Custom Formula Evaluator
+        val formulaVal = com.example.engine.FormulaExpressionEvaluator.evaluate("((n+s)/2)*e/435.6", mapOf("n" to 100.0, "s" to 100.0, "e" to 43.56))!!
+        assertEquals(10.0, formulaVal, 0.001)
+    }
+
+    @Test
+    fun polygonDividerEngine_splitsEqualAndRoadWithAreaConservation() {
+        val plot = listOf(
+            com.example.model.PolygonVertex(0.0, 0.0),
+            com.example.model.PolygonVertex(120.0, 0.0),
+            com.example.model.PolygonVertex(120.0, 90.0),
+            com.example.model.PolygonVertex(0.0, 90.0)
+        )
+        val divRes = com.example.engine.PolygonDividerEngine.dividePolygon(
+            id = "test_split_1",
+            title = "Test Split",
+            vertices = plot,
+            mode = com.example.model.LandSplitMode.EQUAL,
+            shares = listOf(
+                com.example.model.DivisionShareSpec("মালিক ১", 1.0),
+                com.example.model.DivisionShareSpec("মালিক ২", 1.0),
+                com.example.model.DivisionShareSpec("মালিক ৩", 1.0)
+            ),
+            roadWidthFt = 10.0,
+            cutAngleDeg = 0.0
+        )!!
+        assertEquals(10800.0, divRes.originalAreaSqFt, 0.5)
+        assertTrue(divRes.roadReservedSqFt > 800.0)
+        assertTrue("Area conservation must hold", divRes.isValidConservation)
+        assertEquals(3, divRes.parcels.size)
+        assertEquals(divRes.usableAreaSqFt / 3.0, divRes.parcels[0].areaSqFt, 1.5)
+    }
+
+    @Test
+    fun gisCoordinateEngine_utmRoundTripNmeaParsingSpatialExportsAndPantographAffine() {
+        // 1. WGS84 <-> UTM Zone 46N Dhaka round-trip within 1cm
+        val lat = 23.8103
+        val lon = 90.4125
+        val utm = com.example.engine.GisCoordinateEngine.latLonToUtm(lat, lon)
+        assertEquals(46, utm.zone)
+        val (backLat, backLon) = com.example.engine.GisCoordinateEngine.utmToLatLon(utm)
+        assertEquals(lat, backLat, 0.0001)
+        assertEquals(lon, backLon, 0.0001)
+
+        // 2. NMEA-0183 GGA parsing (RTK fix quality = 4)
+        val nmea = "\$GNGGA,061500.00,2348.6180,N,09024.7500,E,4,12,0.7,11.5,M,-46.2,M,,*61\n" +
+            "\$GNGGA,061510.00,2348.6180,N,09024.7720,E,4,12,0.7,11.6,M,-46.2,M,,*62\n" +
+            "\$GNGGA,061520.00,2348.6000,N,09024.7720,E,4,12,0.8,11.5,M,-46.2,M,,*63"
+        val parsed = com.example.engine.GisCoordinateEngine.parseNmeaLog(nmea)
+        assertEquals(3, parsed.validFixes)
+        assertEquals(3, parsed.rtkFixCount)
+
+        // 3. Spatial exports (GeoJSON, KML, KMZ, GPX, DXF)
+        assertTrue(com.example.engine.GisCoordinateEngine.exportGeoJson("Plot1", parsed.waypoints).contains("\"Polygon\""))
+        assertTrue(com.example.engine.GisCoordinateEngine.exportKml("Plot1", parsed.waypoints).contains("<Polygon>"))
+        val kmz = com.example.engine.GisCoordinateEngine.exportKmzBytes("Plot1", parsed.waypoints)
+        assertEquals('P'.code.toByte(), kmz[0]) // ZIP magic
+        assertEquals('K'.code.toByte(), kmz[1])
+        assertTrue(com.example.engine.GisCoordinateEngine.exportGpx("Plot1", parsed.waypoints).contains("<gpx"))
+        assertTrue(com.example.engine.GisCoordinateEngine.exportPlanarDxf("Plot1", listOf(0.0 to 0.0, 10.0 to 0.0, 10.0 to 10.0)).contains("LWPOLYLINE"))
+
+        // 4. Pantograph 2D Affine fit with zero error on exact scaled/shifted pairs
+        val cp = listOf(
+            com.example.model.ControlPointPair("1", "CP1", 100.0, 100.0, 50.0, 50.0),
+            com.example.model.ControlPointPair("2", "CP2", 300.0, 100.0, 150.0, 50.0),
+            com.example.model.ControlPointPair("3", "CP3", 300.0, 300.0, 150.0, 150.0)
+        )
+        val panto = com.example.engine.GisCoordinateEngine.computePantographTransform(
+            baseStage = com.example.model.CadastralSurveyStage.CS,
+            overlayStage = com.example.model.CadastralSurveyStage.RS,
+            transformType = com.example.model.TransformModelType.AFFINE,
+            pairs = cp
+        )
+        assertEquals(2.0, panto.scaleX, 0.001)
+        assertTrue(panto.rmseErrorPx < 0.01)
+    }
+
+    @Test
+    fun documentAndReportEngine_docxOcrAesEncryptionAndReportRenderWork() {
+        // 1. OpenXML DOCX archive
+        val docx = com.example.engine.DocumentAndReportEngine.buildDocxBytes("খসড়া দলিল", "১. প্রথম পক্ষ\n২. দ্বিতীয় পক্ষ")
+        assertEquals('P'.code.toByte(), docx[0])
+        assertEquals('K'.code.toByte(), docx[1])
+        assertTrue(docx.size > 200)
+
+        // 2. Bangla OCR field extraction
+        val raw = "মৌজা: পুবাইল\nজে.এল. নং: ৮৫\nখতিয়ান নং: ৪১২\nদাগ নং: ১০৪২\nজমির পরিমাণ: ৩৩.৫০ শতাংশ"
+        val fields = com.example.engine.DocumentAndReportEngine.extractKhatianFieldsFromText(raw)
+        assertEquals("412", fields.first { it.key == "khatian" }.value)
+        assertEquals("1042", fields.first { it.key == "dag" }.value)
+        assertEquals("পুবাইল", fields.first { it.key == "mouza" }.value)
+
+        // 3. AES-256-GCM Vault encryption/decryption
+        val secretJson = "{\"project\":\"Pubail\"}"
+        val enc = com.example.engine.DocumentAndReportEngine.encryptVaultJson(secretJson, "myPass2026")
+        assertTrue(enc.startsWith("BHUMI_VAULT_V1|"))
+        val dec = com.example.engine.DocumentAndReportEngine.decryptVaultJson(enc, "myPass2026")
+        assertEquals(secretJson, dec)
+        assertEquals(null, com.example.engine.DocumentAndReportEngine.decryptVaultJson(enc, "wrongPass"))
+
+        // 4. A4 Report bitmap render
+        val reportBmp = com.example.engine.DocumentAndReportEngine.renderSurveyReportBitmap(
+            com.example.model.SurveyReportConfig(id = "r1", mouza = "পুবাইল", pageSize = "A4", orientation = "Portrait")
+        )
+        assertEquals(1240, reportBmp.width)
+        assertEquals(1754, reportBmp.height)
+        reportBmp.recycle()
+    }
+
+    @Test
+    fun workstationRepository_seedSampleAndBackupRestoreRoundTrip() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = com.example.data.AppPreferences(context)
+        val repo = com.example.data.WorkstationRepository.getInstance(context)
+        repo.seedSampleBangladeshProject()
+        assertTrue(repo.snapshot.value.unifiedProjects.any { it.id == "sample_bd_pubail_2026" })
+
+        val backup = repo.exportBackupJson(prefs)
+        assertTrue(backup.contains("sample_bd_pubail_2026"))
+        val (ok, _) = repo.restoreFromBackupJson(backup, prefs)
+        assertTrue(ok)
+    }
+
+    @Test
+    fun expansionMathAndSurveyEngine_partsABCFCalculationsAndChecksWork() {
+        // Part A02 Old Map calibration + distortion
+        val cal = com.example.engine.ExpansionMathAndSurveyEngine.analyzeOldMapMeasurement(
+            pixelSpanMeasured = 420.0,
+            knownGroundDistFt = 100.0,
+            secondaryPixelSpan = 400.0,
+            secondaryKnownDistFt = 100.0,
+            polygonPixelArea = 168100.0
+        )
+        assertEquals(4.1, cal.pixelsPerFoot, 0.01)
+        assertTrue(cal.scaleDistortionPct > 4.0)
+        assertTrue(cal.mapAreaDecimal > 20.0)
+
+        // Part B01 Total Station Shot & MLM
+        val shot = com.example.engine.ExpansionMathAndSurveyEngine.computeTotalStationShot(
+            stationN = 1000.0, stationE = 1000.0, stationRl = 10.0,
+            instrumentHeight = 5.0, prismHeight = 5.0,
+            horizontalAzimuthDeg = 90.0, verticalAngleFromHorizDeg = 0.0,
+            slopeDistFt = 100.0
+        )
+        assertEquals(1000.0, shot.targetNorthFt, 0.01)
+        assertEquals(1100.0, shot.targetEastFt, 0.01)
+        assertEquals(10.0, shot.targetElevationFt, 0.01)
+
+        val mlm = com.example.engine.ExpansionMathAndSurveyEngine.computeMissingLine(1000.0, 1000.0, 10.0, 1030.0, 1040.0, 10.0)
+        assertEquals(50.0, mlm.horizontalDistFt, 0.01)
+
+        // Part B02 Angular Misclosure
+        val (theo, mis, _) = com.example.engine.ExpansionMathAndSurveyEngine.checkPolygonAngularMisclosure(listOf(90.0, 90.0, 90.0, 90.5))
+        assertEquals(360.0, theo, 0.001)
+        assertEquals(0.5, mis, 0.001)
+
+        // Part B03 Auto Level Book Arithmetic Check (Sum BS - Sum FS == Sum Rise - Sum Fall == Last RL - First RL)
+        val lvl = com.example.engine.ExpansionMathAndSurveyEngine.computeLevelBook(
+            benchmarkRl = 10.0,
+            entries = listOf(
+                com.example.model.LevelReadingEntry("1", "BM1", 0.0, bs = 1.500),
+                com.example.model.LevelReadingEntry("2", "IS1", 50.0, intermediateSight = 1.200),
+                com.example.model.LevelReadingEntry("3", "BM2", 100.0, fs = 1.800)
+            ),
+            knownClosingBenchmarkRl = 9.700
+        )
+        assertTrue("Level book arithmetic check must balance", lvl.arithmeticBalanced)
+        assertEquals(9.700, lvl.rows.last().rl, 0.001)
+        assertEquals(0.0, lvl.closingError, 0.001)
+
+        // Part B07 Cut & Fill
+        val ew = com.example.engine.ExpansionMathAndSurveyEngine.computeEarthworkCutFill(100.0, 20.0, 10.0, 10.0, 12.0, 12.0)
+        assertTrue(ew.isFill)
+        assertEquals(4000.0, ew.netVolumeCuFt, 0.1)
+
+        // Part C05 Duplicate Holdings Detection
+        val dupes = com.example.engine.ExpansionMathAndSurveyEngine.detectDuplicateHoldings(
+            listOf(
+                com.example.model.KhajnaHoldingRecord("1", "H1", "A", "পুবাইল", khatianNo = "412", dagNo = "1042", areaDecimal = 10.0),
+                com.example.model.KhajnaHoldingRecord("2", "H2", "B", "পুবাইল", khatianNo = "412", dagNo = "1042", areaDecimal = 10.0)
+            )
+        )
+        assertEquals(1, dupes.size)
+
+        // Part F01 & F05 Reconciliation & Net Usable Land
+        val rec = com.example.engine.ExpansionMathAndSurveyEngine.reconcileLandRecords(40.0, 20.0, 5.0, 14.5)
+        assertEquals(15.0, rec.netRecordDecimal, 0.001)
+        assertEquals(-0.5, rec.differenceDecimal, 0.001)
+
+        val usable = com.example.engine.ExpansionMathAndSurveyEngine.computeNetUsableLand(
+            grossSqFt = 10000.0, roadLengthFt = 100.0, roadWidthFt = 10.0,
+            pondSqFt = 500.0, canalSqFt = 0.0, buildingSqFt = 500.0, otherRestrictionSqFt = 0.0
+        )
+        assertEquals(8000.0, usable.netUsableSqFt, 0.01)
+    }
+
+    @Test
+    fun universalExportEngine_xlsxCsvShapefileZipAndCadastralBitmapsWork() {
+        val headers = listOf("Dag", "AreaDec")
+        val rows = listOf(listOf("1042", "33.5"), listOf("1043", "18.2"))
+
+        val xlsx = com.example.engine.UniversalExportEngine.buildXlsxBytes("Plots", headers, rows)
+        assertEquals('P'.code.toByte(), xlsx[0])
+        assertEquals('K'.code.toByte(), xlsx[1])
+        assertTrue(xlsx.size > 300)
+
+        val csv = com.example.engine.UniversalExportEngine.buildCsvText(headers, rows)
+        assertTrue(csv.contains("Dag,AreaDec"))
+        assertTrue(csv.contains("1042,33.5"))
+
+        val shpZip = com.example.engine.UniversalExportEngine.buildShapefileZipBytes(
+            "pubail_plot",
+            listOf(
+                com.example.model.GeoWaypoint("1", "P1", 23.810, 90.412),
+                com.example.model.GeoWaypoint("2", "P2", 23.810, 90.413),
+                com.example.model.GeoWaypoint("3", "P3", 23.811, 90.413)
+            )
+        )
+        assertEquals('P'.code.toByte(), shpZip[0])
+        assertEquals('K'.code.toByte(), shpZip[1])
+        assertTrue(shpZip.size > 200)
+
+        val a4 = com.example.engine.UniversalExportEngine.renderCadastralPrintBitmap("Test", "A4", "16\"=1M", "1042", true, true)
+        assertEquals(1240, a4.width)
+        assertEquals(1754, a4.height)
+        a4.recycle()
+
+        val docBmp = com.example.engine.UniversalExportEngine.renderDocumentReportBitmap("Title", "Sub", "Line 1\nLine 2")
+        assertEquals(1240, docBmp.width)
+        assertTrue(docBmp.height >= 1754)
+        docBmp.recycle()
+    }
+
+    @Test
+    fun expansionRepository_crudServiceCasesCustomWorkflowAndArchiveWork() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = com.example.data.ExpansionRepository.getInstance(context)
+
+        assertTrue(repo.snapshot.value.legalClauses.isNotEmpty())
+        assertTrue(repo.snapshot.value.customServices.isNotEmpty())
+
+        repo.saveServiceCase(
+            com.example.model.ServiceApplicationCase(
+                id = "case_test_1",
+                serviceKind = com.example.model.LandServiceWorkflowKind.E_MUTATION,
+                title = "পুবাইল নামজারি টেস্ট"
+            )
+        )
+        assertTrue(repo.snapshot.value.serviceCases.any { it.id == "case_test_1" })
+
+        repo.saveArchiveDoc(
+            com.example.model.UniversalArchiveDocument(
+                id = "arch_test_1",
+                docType = "দলিল",
+                title = "সাফ-কবলা নথি",
+                dagNo = "1042"
+            )
+        )
+        assertTrue(repo.snapshot.value.archiveDocs.any { it.id == "arch_test_1" })
+        repo.deleteArchiveDoc("arch_test_1")
+        assertTrue(repo.snapshot.value.archiveDocs.none { it.id == "arch_test_1" })
+    }
 }
+
 
 
 

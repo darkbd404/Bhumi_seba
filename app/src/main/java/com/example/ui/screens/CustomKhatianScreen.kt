@@ -103,6 +103,7 @@ import java.util.Locale
 private val KHATIAN_TYPES = listOf(
     "আরএস (RS) খতিয়ান",
     "বিএস (BS) খতিয়ান",
+    "বিআরএস (BRS) খতিয়ান",
     "সিএস (CS) খতিয়ান",
     "এসএ (SA) খতিয়ান",
     "নামজারি খতিয়ান"

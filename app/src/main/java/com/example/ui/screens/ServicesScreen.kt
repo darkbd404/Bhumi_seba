@@ -240,6 +240,30 @@ private val allBangladeshLandPortals = listOf(
         url = "https://www.grs.gov.bd",
         category = LandServiceCategory.SURVEY_HELP,
         badgeText = "GRS"
+    ),
+    LandServicePortal(
+        id = "settlement_map_official",
+        titleBn = "মৌজা ম্যাপ ক্রয় পোর্টাল (Settlement Map)",
+        subtitleBn = "সরকারি মৌজা ম্যাপ ও সিট সংগ্রহ পোর্টাল",
+        url = "https://map.settlement.gov.bd/",
+        category = LandServiceCategory.GOVT_LAND,
+        badgeText = "Official"
+    ),
+    LandServicePortal(
+        id = "bdlaws_official",
+        titleBn = "বাংলাদেশ আইন (BD Laws - আইন মন্ত্রণালয়)",
+        subtitleBn = "মূল ভূমি ও রেজিস্ট্রেশন আইন ও ধারা অনুসন্ধান",
+        url = "https://bdlaws.minlaw.gov.bd/",
+        category = LandServiceCategory.SURVEY_HELP,
+        badgeText = "Law"
+    ),
+    LandServicePortal(
+        id = "case_gov_bd",
+        titleBn = "অনলাইন মামলা ব্যবস্থাপনা (Case / Hearing)",
+        subtitleBn = "রাজস্ব ও ভূমি সংক্রান্ত মামলার তথ্য ও শুনানি",
+        url = "https://case.gov.bd/",
+        category = LandServiceCategory.SURVEY_HELP,
+        badgeText = "Case"
     )
 )
 
@@ -247,6 +271,8 @@ private val allBangladeshLandPortals = listOf(
 fun ServicesScreen(
     onNavigateBack: () -> Unit,
     onOpenUrlInApp: (url: String, title: String) -> Unit,
+    onOpenServiceWorkbench: () -> Unit = {},
+    onOpenCustomServiceEngine: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -326,6 +352,55 @@ fun ServicesScreen(
                     .fillMaxWidth()
                     .testTag("services_search_input")
             )
+        }
+
+        // Quick Launch Cards: Online Land Service Workbench (Part C+I) & Custom Service Engine (Part H)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("services_open_workbench_card")
+                        .neuClickable(
+                            cornerRadius = 16.dp,
+                            elevation = 4.dp,
+                            backgroundColor = Color(0xFF1565C0).copy(alpha = 0.12f),
+                            onClick = onOpenServiceWorkbench
+                        )
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Rounded.Description, contentDescription = null, tint = Color(0xFF1565C0))
+                    Column {
+                        Text("সেবা প্রস্তুতি ও নামজারি ওয়ার্কবেঞ্চ", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        Text("Part C01–C08 আবেদন ও খাজনা", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("services_open_custom_engine_card")
+                        .neuClickable(
+                            cornerRadius = 16.dp,
+                            elevation = 4.dp,
+                            backgroundColor = Color(0xFF283593).copy(alpha = 0.12f),
+                            onClick = onOpenCustomServiceEngine
+                        )
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Rounded.AccountBalance, contentDescription = null, tint = Color(0xFF283593))
+                    Column {
+                        Text("কাস্টম সেবা অটোমেশন", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        Text("Part H নিজস্ব ওয়ার্কফ্লো ও ফি", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
         }
 
         // Helpline 16122 Quick Call Card

@@ -1,0 +1,1309 @@
+MEGA EXPANSION PROMPT 02
+
+COMPLETE BANGLADESH LAND SERVICE, SURVEYOR & LAND RECORD WORKSTATION
+
+Additional Tools, Advanced Functions, Online Land Services and Custom Workflow Engine
+
+MASTER INSTRUCTION
+
+Extend my existing Digital Land Surveyor application.
+
+The previous 18 modules have already been added. Do not recreate or duplicate those modules. Add every additional function listed below as a new tool, sub-tool, workflow, or extension to an existing module.
+
+The objective is to provide a complete professional toolkit for:
+
+- Land surveyors and amin.
+- Land measurement professionals.
+- Mouza map analysts.
+- Deed writers.
+- Land record researchers.
+- Mutation application assistants.
+- Khatian and land tax service assistants.
+- Landowners.
+- Property documentation professionals.
+
+All functions must be operational, not decorative buttons or dummy screens.
+
+Every tool must have its own inputs, calculations, validation, result, document output, history and custom configuration wherever applicable.
+
+PART A: ADVANCED OLD MOUZA MAP AND DAG SURVEY TOOLS
+
+A01. Historical Mouza Map Recovery
+
+- Import old, faded and damaged cadastral maps.
+- Scan at high resolution.
+- Restore faded boundary lines.
+- Detect broken boundary lines.
+- Remove stains, folds and background noise.
+- Improve handwritten dag numbers.
+- Separate map annotations from boundary lines.
+- Restore missing portions using manually supplied reference information.
+- Compare restored and original maps.
+- Maintain original scan integrity.
+
+A02. Old Map Measurement Laboratory
+
+- Measure land from old paper maps.
+- Measure from scanned PDF.
+- Measure from JPG and TIFF.
+- Identify map scale from printed scale.
+- Calibrate using known distances.
+- Calibrate using known coordinates.
+- Calibrate with multiple reference distances.
+- Calculate area from map pixels.
+- Convert pixel measurements into real-world dimensions.
+- Calculate scale distortion.
+- Calculate scanning distortion.
+- Calculate measurement uncertainty.
+- Calculate area after correcting map rotation.
+- Calculate area after correcting image perspective.
+
+A03. Dag Boundary Reconstruction
+
+- Trace an old dag boundary.
+- Reconstruct missing boundary segments.
+- Identify adjacent dag boundaries.
+- Identify shared boundaries.
+- Detect gaps.
+- Detect overlapping polygons.
+- Detect unclosed polygons.
+- Identify disconnected boundary segments.
+- Compare hand-drawn and digitized boundaries.
+- Create a reconstructed dag polygon.
+- Generate reconstruction notes.
+- Preserve the source and reconstructed versions separately.
+
+A04. Former and Current Dag Relationship
+
+- Former dag number.
+- Current dag number.
+- Multiple former dags merged into one current dag.
+- One former dag split into multiple current dags.
+- Partial dag transfer.
+- Dag renumbering history.
+- Dag conversion table.
+- Survey-wise dag relationship.
+- Khatian-wise dag relationship.
+- Ownership relationship.
+- Manual relationship verification.
+- Historical dag genealogy report.
+
+Never assume that similar dag numbers prove the same land identity.
+
+A05. Adjacent Dag Analysis
+
+- Find surrounding dags.
+- Generate neighbouring dag lists.
+- Identify common boundary owners.
+- Calculate shared boundary lengths.
+- Identify missing neighbouring dags.
+- Compare four-side boundary descriptions.
+- Check whether a described neighbour exists in the digitized map.
+- Generate adjacency reports.
+
+A06. Multi-Sheet Mouza Map Tools
+
+- Join neighbouring map sheets.
+- Match common boundary points.
+- Match road intersections.
+- Match rivers and canals.
+- Match common dag lines.
+- Remove duplicated joining lines.
+- Detect sheet overlap.
+- Detect sheet gaps.
+- Align sheets using control points.
+- Create a single combined mouza map.
+- Maintain sheet numbers and original references.
+
+A07. Dag-Based Land Search
+
+Search by:
+
+- Dag number.
+- Former dag number.
+- Current dag number.
+- Khatian number.
+- Owner name.
+- JL number.
+- Mouza name.
+- Survey type.
+- Map sheet number.
+
+Display matching results with source, survey type and verification status.
+
+A08. Dag Measurement Tools
+
+- Total area of a dag.
+- Area occupied by an owner.
+- Area sold.
+- Area remaining.
+- Area transferred.
+- Area recorded in khatian.
+- Area measured from map.
+- Area measured on ground.
+- Difference between recorded and measured area.
+- Dag-wise area comparison.
+- Multiple-owner area calculation.
+- Multiple-polygon calculation.
+- Dag boundary measurement sheet.
+
+A09. Cadastral Map Printing
+
+- Print individual dag.
+- Print selected dags.
+- Print neighbouring dags.
+- Print entire mouza sheet.
+- Print combined sheets.
+- Print with dag numbers.
+- Print with area labels.
+- Print with boundary dimensions.
+- Print at selected scale.
+- A0, A1, A2, A3 and A4 output where supported.
+- Custom map legend.
+- North direction.
+- Scale bar.
+- Coordinate grid.
+
+PART B: ADVANCED FIELD SURVEYOR INSTRUMENT TOOLS
+
+B01. Total Station Calculator
+
+- Station setup.
+- Instrument height.
+- Prism height.
+- Horizontal angle.
+- Vertical angle.
+- Slope distance.
+- Horizontal distance.
+- Vertical difference.
+- Coordinate calculation.
+- Missing line measurement.
+- Remote elevation measurement.
+- Resection calculation.
+- Intersection calculation.
+- Traverse calculation.
+- Closed traverse adjustment.
+- Open traverse.
+- Bowditch adjustment.
+- Transit rule adjustment.
+- Misclosure calculation.
+- Station coordinate management.
+
+B02. Digital Theodolite Tools
+
+- Horizontal angle measurement.
+- Vertical angle measurement.
+- Bearing calculation.
+- Azimuth calculation.
+- Deflection angle.
+- Interior angle.
+- Exterior angle.
+- Included angle.
+- Angle conversion.
+- Angular misclosure.
+- Traverse angle adjustment.
+
+B03. Auto Level and Digital Level
+
+- Height of instrument method.
+- Rise and fall method.
+- Back sight.
+- Intermediate sight.
+- Fore sight.
+- Reduced level.
+- Benchmark management.
+- Temporary benchmark.
+- Closing error.
+- Level book.
+- Level correction.
+- Profile leveling.
+- Cross-section leveling.
+- Longitudinal leveling.
+
+B04. EDM and Distance Tools
+
+- Slope distance.
+- Horizontal distance.
+- Vertical distance.
+- Inclination correction.
+- Prism constant.
+- Atmospheric correction fields.
+- Missing line calculation.
+- Offset distance.
+- Chainage.
+- Chain survey booking.
+
+B05. GNSS and RTK Survey
+
+- Base and rover setup.
+- NMEA receiver connection.
+- RTK fix and float status.
+- Coordinate logging.
+- Point averaging.
+- Static point recording.
+- Differential correction metadata.
+- Horizontal and vertical accuracy.
+- Coordinate transformation.
+- Survey point export.
+- Field observation log.
+
+B06. Traditional Survey Tools
+
+- Chain survey.
+- Tape survey.
+- Compass survey.
+- Plane table survey.
+- Offset measurement.
+- Perpendicular offset.
+- Oblique offset.
+- Tie line.
+- Check line.
+- Baseline calculation.
+- Triangulation.
+- Trilateration.
+- Radiation method.
+- Intersection method.
+- Ranging calculations.
+- Chainage calculation.
+
+B07. Topographic Survey
+
+- Spot levels.
+- Contour generation.
+- Contour interval.
+- Elevation profile.
+- Longitudinal section.
+- Cross section.
+- Ground slope.
+- Gradient.
+- Cut and fill calculation.
+- Earthwork volume.
+- Existing ground versus proposed ground.
+- Surface area.
+- Terrain visualization.
+
+B08. Survey Field Book
+
+- Digital field notebook.
+- Station number.
+- Point number.
+- Instrument details.
+- Observation time.
+- Distance.
+- Bearing.
+- Angle.
+- Elevation.
+- Sketch.
+- Photo.
+- Surveyor remarks.
+- Correction notes.
+- Exportable field book.
+
+PART C: COMPLETE ONLINE LAND SERVICE WORKBENCH
+
+Build a unified service preparation and tracking system for Bangladesh.
+
+Each service must have:
+
+1. A requirements checklist.
+2. An information collection form.
+3. A document preparation workspace.
+4. A fee calculator with dated rates.
+5. A submission preparation checklist.
+6. Official portal link.
+7. Application tracking fields.
+8. Objection and correction management.
+9. Final document storage.
+10. Customizable service workflow.
+
+C01. Online Khatian Services
+
+- CS Khatian search assistance.
+- SA Khatian search assistance.
+- RS Khatian search assistance.
+- BS Khatian search assistance.
+- BRS Khatian search assistance.
+- BDS Khatian search assistance.
+- Khatian number search.
+- Dag number search.
+- Mouza-wise search.
+- JL number search.
+- Owner name-based search where supported.
+- Khatian comparison.
+- Khatian ownership extraction.
+- Certified copy application preparation.
+- Online application checklist.
+- Application number storage.
+- Certified copy order tracking.
+- Delivery status recording.
+- Khatian PDF archive.
+- Khatian authenticity verification checklist.
+
+Extract the following fields:
+
+- Survey type.
+- District.
+- Upazila.
+- Mouza.
+- JL number.
+- Khatian number.
+- Dag number.
+- Owner name.
+- Father's or spouse's name.
+- Recorded land.
+- Ownership share.
+- Land classification.
+- Remarks.
+
+Clearly distinguish online search results, uncertified copies and certified records.
+
+C02. Official Mouza Map Purchase and Collection
+
+- District selection.
+- Upazila selection.
+- Mouza selection.
+- JL number.
+- Survey type.
+- Sheet number.
+- Adjacent sheet selection.
+- Map availability check.
+- Map order preparation.
+- Official map purchase link.
+- Order number.
+- Payment reference.
+- Delivery tracking.
+- Downloaded map storage.
+- Map issue reporting.
+- Request for unavailable map scanning.
+- Certified map document checklist.
+
+C03. E-Mutation / Namjari Complete Assistant
+
+Create separate workflows for:
+
+1. Mutation through purchase.
+2. Mutation through inheritance.
+3. Mutation through gift or heba.
+4. Mutation through exchange.
+5. Mutation through court decree.
+6. Mutation through auction.
+7. Mutation through settlement.
+8. Mutation through other legally recognized sources.
+
+For each workflow, implement:
+
+Applicant information
+
+- Applicant name.
+- Father or spouse name.
+- Address.
+- Contact information.
+- NID information, when required.
+- Applicant relationship to the property.
+- Multiple applicants.
+
+Previous ownership
+
+- Previous owner.
+- Previous khatian.
+- Previous dag.
+- Previous land area.
+- Previous ownership share.
+- Former survey information.
+
+New ownership
+
+- New owner.
+- Acquisition source.
+- Deed number.
+- Deed date.
+- Registration office.
+- Transfer area.
+- Transferred ownership share.
+- Remaining area.
+- Multiple khatian records.
+- Multiple dag records.
+
+Inheritance-specific information
+
+- Deceased owner's name.
+- Date of death.
+- Heir list.
+- Relationship.
+- Inheritance certificate information.
+- Individual shares.
+- Multiple heirs.
+
+Supporting documents checklist
+
+- Registered deed or relevant title document.
+- Previous khatian.
+- Updated khatian, where available.
+- Warish certificate where applicable.
+- Death certificate where applicable.
+- NID documents.
+- Tax payment receipt.
+- Court decree where applicable.
+- Other required documents according to the application category.
+
+Mutation processing tools
+
+- Application form preparation.
+- Multiple khatian entry.
+- Multiple dag entry.
+- Total applied land calculation.
+- Acre-based conversion.
+- Owner-wise area calculation.
+- Supporting document indexing.
+- Missing document detection.
+- Information mismatch detection.
+- Application checklist.
+- Application fee recording.
+- Notice fee recording.
+- DCR fee recording.
+- Online payment reference recording.
+- Application number.
+- Hearing date.
+- Hearing notice.
+- Objection management.
+- Case status history.
+- Application tracking.
+- Rejected application analysis.
+- Correction checklist.
+- Reapplication preparation.
+- Final mutation khatian storage.
+- DCR receipt storage.
+
+Never automatically assume that an application is approved because a form was prepared or payment was made.
+
+C04. Land Partition and Record Separation
+
+Create a separate advanced workflow for:
+
+- Mutation through partition.
+- Share-based land separation.
+- Registered partition deed preparation.
+- Inheritance-based division.
+- Multiple co-sharer division.
+- Separate khatian preparation assistance.
+- Individual dag-wise land allocation.
+- Land area reconciliation.
+- Co-sharer consent record.
+- Partition map preparation.
+- Partition schedule generation.
+- Separate ownership calculation.
+- Partition application checklist.
+- Record correction preparation.
+
+Support জমাভাগ, জমা একত্রীকরণ and record correction as separate workflows, with their respective requirements.
+
+C05. Land Development Tax / Khajna Workbench
+
+Implement:
+
+- Land holding information.
+- Holding registration checklist.
+- Landowner information.
+- NID field.
+- Mobile number.
+- District.
+- Upazila.
+- Mouza.
+- JL number.
+- Khatian number.
+- Dag number.
+- Land classification.
+- Total land area.
+- Ownership share.
+- Annual tax rate configuration.
+- Current tax calculation.
+- Previous arrears.
+- Outstanding dues.
+- Year-wise tax calculation.
+- Payment history.
+- Online payment preparation.
+- Official payment portal opening.
+- Transaction reference.
+- Dakhila receipt archive.
+- Payment verification checklist.
+- Tax discrepancy report.
+- Duplicate holding detection.
+- Multiple holding management.
+- Tax closing checklist.
+- Tax clearance document archive.
+
+Do not fabricate a tax payment or dakhila. Only mark a payment as verified after a real receipt or authoritative confirmation is recorded.
+
+C06. Land Registration and Sub-Registry Assistant
+
+Build a complete deed preparation and registration assistance workspace.
+
+Support:
+
+- Sale deed.
+- Gift deed.
+- Heba deed.
+- Exchange deed.
+- Partition deed.
+- Mortgage deed.
+- Lease deed.
+- Power of attorney.
+- Agreement for sale.
+- Bayna deed.
+- Cancellation or correction document drafts where legally appropriate.
+
+Registration preparation tools
+
+- Buyer information.
+- Seller information.
+- Multiple parties.
+- Attorney information.
+- Witness information.
+- Property identification.
+- Ownership source.
+- Title history.
+- Previous deed references.
+- Khatian references.
+- Dag references.
+- Mouza.
+- JL number.
+- Property boundaries.
+- Land classification.
+- Area.
+- Consideration value.
+- Payment details.
+- Schedule preparation.
+- Document attachment.
+- Required paper checklist.
+- Draft deed generation.
+- Draft proofreading.
+- Duplicate information detection.
+- Missing information detection.
+- Schedule consistency checking.
+- Signature and thumbprint spaces.
+- Print-ready PDF.
+- Editable DOCX.
+
+Registration cost engine
+
+- Stamp duty.
+- Registration fee.
+- Local government tax where applicable.
+- Source tax or applicable tax.
+- VAT where applicable.
+- Other government charges.
+- Custom fee rules.
+- Effective date.
+- Area-specific rate.
+- Total estimated cost.
+
+Registration workflow
+
+- Deed draft.
+- Legal review.
+- Document verification.
+- Fee estimate.
+- Sub-registry office information.
+- Appointment preparation where supported.
+- Registration submission checklist.
+- Registration reference.
+- Registered deed number.
+- Registration date.
+- Book, volume and page reference fields where applicable.
+- Certified copy collection checklist.
+- Registered deed archive.
+
+Support digital registration only through officially approved systems and legally authorized procedures.
+
+C07. Online Land Record Correction
+
+Build separate workflows for:
+
+- Name correction.
+- Father's or spouse's name correction.
+- Khatian information correction.
+- Dag number discrepancy.
+- Land area discrepancy.
+- Ownership share discrepancy.
+- Record of rights correction.
+- Clerical error.
+- Survey-related objection.
+- Missing owner information.
+- Duplicate record identification.
+- Record comparison.
+- Supporting document preparation.
+- Application tracking.
+- Hearing notes.
+- Order and final correction archive.
+
+C08. Land Survey Objection and Appeal Assistant
+
+- Preliminary survey objection.
+- Draft publication objection.
+- Record correction request.
+- Boundary discrepancy report.
+- Dag mismatch report.
+- Ownership discrepancy report.
+- Evidence attachment.
+- Supporting map.
+- Written objection draft.
+- Hearing preparation.
+- Decision recording.
+- Appeal document checklist.
+- Appeal timeline management.
+- Case history.
+
+Do not provide an automatic legal conclusion on disputed ownership.
+
+PART D: ADVANCED LAND OFFICE AND REVENUE TOOLS
+
+D01. Land Revenue Case Manager
+
+- Revenue case number.
+- Case category.
+- Applicant.
+- Opposite party.
+- Land details.
+- Case dates.
+- Hearing dates.
+- Notice information.
+- Evidence.
+- Orders.
+- Appeal references.
+- Case document archive.
+- Custom case notes.
+
+D02. Land Acquisition and Compensation
+
+- Acquisition notice archive.
+- Acquisition case number.
+- Project information.
+- Mouza and dag details.
+- Owner identification.
+- Acquired land area.
+- Remaining land.
+- Compensation estimate.
+- Award information.
+- Payment status.
+- Objection preparation.
+- Document checklist.
+- Acquisition map.
+- Compensation calculation history.
+
+D03. Government Lease and Settlement
+
+- Lease application.
+- Settlement application.
+- Khas land information.
+- Lease period.
+- Land classification.
+- Mouza and dag.
+- Applicant eligibility checklist.
+- Lease agreement draft.
+- Renewal reminder.
+- Rent calculation.
+- Payment record.
+- Settlement history.
+- Document archive.
+
+D04. Land Possession and Boundary Dispute
+
+- Physical possession report.
+- Existing boundary description.
+- Occupied area.
+- Encroached area estimate.
+- Boundary comparison.
+- Site photographs.
+- Neighbour information.
+- Field inspection report.
+- Notice draft.
+- Dispute timeline.
+- Evidence register.
+- Survey sketch.
+- Joint survey report.
+
+D05. Land Ownership Due Diligence
+
+Create a property verification checklist that combines:
+
+- Registered deed history.
+- Khatian history.
+- Dag history.
+- Mutation status.
+- Land tax receipt.
+- Mouza map.
+- Possession information.
+- Inheritance chain.
+- Co-sharer information.
+- Court case information supplied by the user.
+- Acquisition information.
+- Lease information.
+- Boundary discrepancies.
+- Encumbrance or mortgage information where independently verified.
+
+Generate a risk report with separate categories:
+
+- Verified.
+- Document supplied.
+- Not verified.
+- Conflicting information.
+- Requires legal review.
+
+Never claim that a land title is clear merely because the database has no matching record.
+
+PART E: PROFESSIONAL DEED WRITING AND DOCUMENT LABORATORY
+
+E01. Advanced Deed Composer
+
+- Unlimited custom deed templates.
+- Bangla and English.
+- Custom legal paragraphs.
+- Variable fields.
+- Conditional clauses.
+- Automatic property schedule.
+- Multiple seller and buyer.
+- Multiple land parcels.
+- Multiple dag schedules.
+- Share-based descriptions.
+- Automatic total area.
+- Boundary descriptions.
+- Custom numbering.
+- Paragraph formatting.
+- Custom fonts.
+- Custom margins.
+- Reusable clauses.
+- Document version history.
+
+E02. Land Schedule Generator
+
+Generate:
+
+- মৌজা তফসিল।
+- দাগভিত্তিক তফসিল।
+- খতিয়ানভিত্তিক তফসিল।
+- চার সীমানা।
+- সাবেক দাগ ও হাল দাগ।
+- জমির শ্রেণি।
+- জমির পরিমাণ।
+- অংশের পরিমাণ।
+- মোট জমি।
+- জমির মূল্য।
+- Multiple schedule pages.
+
+E03. Deed Verification Assistant
+
+- Seller name comparison.
+- Buyer name comparison.
+- Khatian name comparison.
+- Dag comparison.
+- Area comparison.
+- Boundary comparison.
+- Deed date comparison.
+- Previous deed chain.
+- Duplicate schedule detection.
+- Inconsistent area warning.
+- Missing signature field warning.
+- Missing witness field warning.
+- Spelling mismatch report.
+
+E04. Legal Clause Library
+
+Create a searchable collection of reusable clauses for:
+
+- Sale.
+- Purchase.
+- Partition.
+- Inheritance.
+- Gift.
+- Possession.
+- Payment.
+- Boundary.
+- Indemnity.
+- Witness.
+- Default.
+- Dispute resolution.
+- Termination.
+- Custom conditions.
+
+Every clause must be editable and reviewed before use.
+
+E05. Custom Document Automation
+
+Allow a user to define:
+
+- Document type.
+- Input fields.
+- Required fields.
+- Calculated fields.
+- Formula rules.
+- Paragraphs.
+- Tables.
+- Signature areas.
+- Output format.
+- Validation conditions.
+
+A user should be able to create an entirely new document type without modifying the source code.
+
+PART F: LAND MEASUREMENT AND AREA INVESTIGATION TOOLS
+
+F01. Old Record Versus New Survey Reconciliation
+
+- Old khatian area.
+- New khatian area.
+- Old dag area.
+- New dag area.
+- Deed area.
+- Inherited area.
+- Sold area.
+- Remaining area.
+- Physically measured area.
+- Total discrepancy.
+- Excess area.
+- Shortage area.
+- Reconciliation table.
+- Evidence and source references.
+
+F02. Land Share Reconciliation
+
+- Recorded share.
+- Acquired share.
+- Inherited share.
+- Transferred share.
+- Retained share.
+- Remaining ownership.
+- Multiple transaction calculation.
+- Co-owner share.
+- Fraction calculation.
+- Decimal conversion.
+- Owner-wise summary.
+
+F03. Area Difference Analyzer
+
+Compare:
+
+1. Deed area.
+2. Khatian area.
+3. Mouza map area.
+4. Satellite estimated area.
+5. GPS field area.
+6. Total station area.
+
+Display differences, source reliability and possible reasons.
+
+F04. Boundary Dimension Analyzer
+
+- North length.
+- South length.
+- East length.
+- West length.
+- Diagonal.
+- Internal boundary.
+- Common boundary.
+- Irregular boundary.
+- Side-by-side comparison.
+- Dimension labels.
+- Area consistency check.
+
+F05. Road and Access Analyzer
+
+- Road width.
+- Road length.
+- Road frontage.
+- Access path.
+- Shared road.
+- Road reservation.
+- Remaining usable land.
+- Road area deduction.
+- Access distance.
+- Plot connectivity.
+- Road frontage comparison.
+
+F06. Waterbody and Obstruction Tools
+
+- Pond area.
+- Canal area.
+- River boundary.
+- Drain.
+- Building footprint.
+- Tree area.
+- Restricted area.
+- Usable land calculation.
+- Exclusion polygon.
+- Multiple exclusion areas.
+- Remaining usable land.
+
+F07. Land Subdivision Advanced
+
+- Frontage-based division.
+- Depth-based division.
+- Proportional division.
+- Value-based division.
+- Road-access-based division.
+- Shape-balanced division.
+- Equal area with unequal frontage.
+- Custom access corridor.
+- Reserved common passage.
+- Multiple access points.
+- Minimum plot frontage constraint.
+- Minimum plot area constraint.
+- Division feasibility report.
+
+F08. Plot Consolidation
+
+- Combine adjacent plots.
+- Combine multiple dags.
+- Merge ownership parcels.
+- Remove internal boundaries.
+- Retain source dag references.
+- Calculate combined area.
+- Calculate combined perimeter.
+- Detect disconnected parcels.
+- Generate consolidated map.
+
+F09. Land Valuation and Comparison
+
+- Area-based valuation.
+- Unit price.
+- Road frontage adjustment.
+- Location adjustment.
+- Land classification adjustment.
+- Comparable transaction records supplied by the user.
+- Price per decimal.
+- Price per katha.
+- Price per acre.
+- Historical price record.
+- Estimated market value range.
+
+Clearly label estimates and user-supplied market information.
+
+PART G: ADDITIONAL SPECIALIZED LAND TOOLS
+
+G01. River and Erosion Monitoring
+
+- Riverbank boundary recording.
+- Historical river line comparison.
+- Erosion area estimate.
+- Accretion area estimate.
+- Seasonal map comparison.
+- Waterbody boundary.
+- Historical image attachment.
+- Change detection.
+- Measurement uncertainty.
+
+G02. Land Use Classification
+
+- Agricultural.
+- Residential.
+- Commercial.
+- Industrial.
+- Waterbody.
+- Road.
+- Forest.
+- Public land.
+- Other custom classifications.
+
+Support manual classification and externally sourced GIS data where legally available.
+
+G03. Building and Structure Measurement
+
+- Building footprint.
+- Room area.
+- Floor area.
+- Plot coverage.
+- Setback distance.
+- Boundary-to-building distance.
+- Road-to-building distance.
+- Multiple building measurement.
+- Building sketch.
+- Construction area report.
+
+G04. Utility and Asset Mapping
+
+- Electricity poles.
+- Water lines.
+- Drainage.
+- Roads.
+- Culverts.
+- Boundary walls.
+- Public infrastructure.
+- GPS point collection.
+- Asset inventory.
+- Photograph attachment.
+- Condition assessment.
+- Exportable GIS layer.
+
+G05. Survey Team and Instrument Register
+
+- Surveyor information.
+- Assistant information.
+- Instrument serial number.
+- Total station register.
+- GNSS receiver register.
+- Level instrument register.
+- Calibration records.
+- Maintenance records.
+- Survey equipment checklist.
+- Project assignment.
+- Fieldwork log.
+
+G06. Professional Survey Quotation
+
+- Site visit charge.
+- Map digitization charge.
+- Per-dag survey charge.
+- Area-based survey charge.
+- GPS survey charge.
+- Total station charge.
+- Pantograph charge.
+- Report preparation charge.
+- Travel expenses.
+- Custom pricing.
+- Quotation PDF.
+- Customer approval.
+- Invoice.
+- Payment history.
+- Work completion receipt.
+
+G07. Surveyor Measurement Certificate Draft
+
+- Surveyor details.
+- Project reference.
+- Measurement date.
+- Instrument used.
+- Map source.
+- Survey method.
+- Coordinate reference system.
+- Accuracy statement.
+- Measured area.
+- Boundary description.
+- Limitations.
+- Signature area.
+
+Only allow a genuine authorized professional to issue a signed certificate. Clearly distinguish an unofficial draft from an official survey certificate.
+
+PART H: CUSTOM LAND SERVICE AUTOMATION ENGINE
+
+This is a critical additional feature.
+
+Build a user-controlled Custom Service Builder.
+
+A user must be able to create any new land-related service without requiring a software developer.
+
+For example:
+
+- Online mutation assistance.
+- Khatian collection.
+- Certified mouza map collection.
+- Khajna payment preparation.
+- Land registration preparation.
+- Deed writing.
+- Survey service.
+- Partition preparation.
+- Land record correction.
+- Court case document organization.
+- Government lease application.
+- Land acquisition document preparation.
+- Any future government land service.
+
+For every custom service, allow:
+
+1. Service name.
+2. Service category.
+3. Service description.
+4. Applicant information fields.
+5. Property information fields.
+6. Required document list.
+7. Optional document list.
+8. Eligibility conditions.
+9. Step-by-step workflow.
+10. Custom fee calculation.
+11. Formula builder.
+12. Application checklist.
+13. Official portal URL.
+14. Tracking reference.
+15. Status management.
+16. Reminder settings.
+17. Document generator.
+18. Report generator.
+19. Completion checklist.
+20. Archive.
+
+Custom Workflow Builder
+
+Support:
+
+- Drag-and-drop workflow steps.
+- Conditional steps.
+- Yes/no decisions.
+- Multiple approval stages.
+- Document verification stage.
+- Payment stage.
+- Hearing stage.
+- Final decision stage.
+- Rejection stage.
+- Correction stage.
+- Reapplication stage.
+
+Custom Formula Builder
+
+Support:
+
+- Addition.
+- Subtraction.
+- Multiplication.
+- Division.
+- Percentage.
+- Fraction.
+- Area conversion.
+- Date calculation.
+- Conditional calculation.
+- Owner-wise allocation.
+- Custom rounding.
+- Validation conditions.
+
+Allow exporting and importing custom workflows in JSON format.
+
+PART I: ONLINE PORTAL AND SERVICE INTEGRATION
+
+Create a portal directory and integration manager.
+
+Official source directory:
+
+- Ministry of Land: https://land.gov.bd/
+- E-Mutation: https://mutation.land.gov.bd/
+- E-Porcha: https://eporcha.gov.bd/
+- Land Development Tax: https://ldtax.gov.bd/
+- DLRS Map Portal: https://map.settlement.gov.bd/
+- DLRS: https://dlrs.gov.bd/
+- Bangladesh Laws: https://bdlaws.minlaw.gov.bd/
+- Land Revenue Case Portal: https://case.gov.bd/
+
+Integration features:
+
+- Open official service.
+- Store portal references.
+- Store application number.
+- Store payment reference.
+- Store downloaded documents.
+- Store screenshots and receipts supplied by the user.
+- Track status manually.
+- Display portal instructions.
+- Maintain service-specific checklists.
+- Alert user when a portal URL changes.
+- Record the last verified date of portal instructions.
+
+Where an authorized API exists, implement the API.
+
+Where no authorized API exists, provide a browser handoff and guided manual workflow.
+
+Do not bypass CAPTCHA, OTP, authentication or payment protections. Never store user passwords or OTPs.
+
+PART J: DOCUMENT, DATA AND VERIFICATION SYSTEM
+
+J01. Universal Document Archive
+
+- Deeds.
+- Khatian.
+- Porcha.
+- Dakhila.
+- Mutation orders.
+- DCR.
+- Mouza maps.
+- Survey reports.
+- Court orders.
+- Notices.
+- Receipts.
+- Agreements.
+- Inheritance documents.
+- Certificates.
+
+J02. Universal Document Search
+
+Search by:
+
+- Owner.
+- NID reference.
+- Mouza.
+- Dag.
+- Khatian.
+- Deed number.
+- Date.
+- Application number.
+- Document type.
+- Project.
+
+J03. Document Comparison
+
+- Compare two deeds.
+- Compare two khatians.
+- Compare two land schedules.
+- Compare ownership names.
+- Compare area.
+- Compare boundaries.
+- Compare dates.
+- Highlight differences.
+- Generate comparison report.
+
+J04. Universal Data Export
+
+- PDF.
+- DOCX.
+- XLSX.
+- CSV.
+- JSON.
+- GeoJSON.
+- KML.
+- KMZ.
+- DXF.
+- GPX.
+- Shapefile where supported.
+
+PART K: REQUIRED FUNCTIONALITY FOR EVERY TOOL
+
+Every new tool must contain:
+
+1. Actual working logic.
+2. Clearly labelled input fields.
+3. Bangla and English labels.
+4. Input validation.
+5. Correct formulas.
+6. Custom settings.
+7. Save and edit functionality.
+8. Calculation history.
+9. Project attachment.
+10. Document attachment.
+11. PDF export.
+12. Print support.
+13. Error reporting.
+14. Help instructions.
+15. Sample data.
+16. Offline support where possible.
+17. Source and verification status.
+18. Relevant legal and technical warnings.
+
+Do not create fake government databases or claim access to official records without authorization.
+
+PART L: FINAL IMPLEMENTATION TASK
+
+Add these new functions to my existing application without removing or breaking the previously implemented modules.
+
+First, identify which features already exist.
+
+Then:
+
+- Identify missing tools.
+- Identify overlapping tools.
+- Integrate related functions.
+- Build the new calculation engines.
+- Build the new land service workflows.
+- Build the document automation system.
+- Connect the new tools to existing project records.
+- Add all required export formats.
+- Test all calculation and document workflows.
+- Verify every button and operation.
+
+The final application must be a complete professional land survey and land service workstation for Bangladesh, capable of handling old cadastral maps, modern GIS, field surveying, khatian research, mutation preparation, khajna assistance, registration document preparation, land division, land records and custom land service workflows.
+
+Do not omit a tool simply because it is uncommon. If a tool is technically or legally unavailable, provide the closest lawful alternative and identify the limitation.
+
+Do not stop after writing a plan. Implement the tools in working development stages and maintain a feature completion checklist.
