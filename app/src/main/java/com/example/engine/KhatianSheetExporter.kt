@@ -71,15 +71,19 @@ object KhatianSheetExporter {
         val bmp = buildKhatianSheetBitmap(context, doc, surveyorProfile)
         try {
             if (asPdf) {
-                val pdfDoc = android.graphics.pdf.PdfDocument()
-                val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(bmp.width, bmp.height, 1).create()
-                val page = pdfDoc.startPage(pageInfo)
-                page.canvas.drawBitmap(bmp, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
-                pdfDoc.finishPage(page)
-                try {
-                    ExportStreamWriter.encodeToByteArray { out -> pdfDoc.writeTo(out) }
-                } finally {
-                    pdfDoc.close()
+                runCatching {
+                    val pdfDoc = android.graphics.pdf.PdfDocument()
+                    try {
+                        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(bmp.width, bmp.height, 1).create()
+                        val page = pdfDoc.startPage(pageInfo)
+                        page.canvas.drawBitmap(bmp, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+                        pdfDoc.finishPage(page)
+                        ExportStreamWriter.encodeToByteArray { out -> pdfDoc.writeTo(out) }
+                    } finally {
+                        runCatching { pdfDoc.close() }
+                    }
+                }.getOrElse {
+                    ExportStreamWriter.encodeBitmapsAsPortablePdfBytes(listOf(bmp))
                 }
             } else {
                 ExportStreamWriter.encodeToByteArray { out ->
@@ -110,19 +114,24 @@ object KhatianSheetExporter {
 
         val bmp = Bitmap.createBitmap(sheetW, sheetH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        canvas.drawColor(COLOR_PAPER)
+        com.example.ui.components.VintagePaperRenderer.drawAgedStampPaperBackground(
+            canvas = canvas,
+            w = sheetW,
+            h = sheetH,
+            showStampCrest = false
+        )
 
         // Subtle Diagonal Watermark
         val wmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(12, 27, 77, 62)
+            color = Color.argb(14, 107, 76, 37)
             textSize = 92f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
         canvas.save()
         canvas.translate(sheetW / 2f, sheetH / 2f)
         canvas.rotate(-22f)
-        canvas.drawText("ভূমি সেবা ডিজিটাল • ডিজিটাল খতিয়ান", 0f, 0f, wmPaint)
+        canvas.drawText("ভূমি সেবা ডিজিটাল • প্রাচীন খতিয়ান শৈলী (খসড়া)", 0f, 0f, wmPaint)
         canvas.restore()
 
         // Outer Double Cartographic Ledger Border
@@ -202,15 +211,16 @@ object KhatianSheetExporter {
         canvas.drawRect(metaRect, metaBg)
         canvas.drawRect(metaRect, metaStroke)
 
-        val metaFields = listOf(
-            "বিভাগ" to doc.division.ifBlank { "-" },
-            "জেলা" to doc.district.ifBlank { "-" },
-            "উপজেলা/থানা" to doc.upazila.ifBlank { "-" },
-            "মৌজা" to doc.mouzaName.ifBlank { "-" },
-            "জে.এল. নং" to doc.jlNumber.ifBlank { "-" },
-            "রেঃ সাঃ নং" to doc.resaNumber.ifBlank { "-" },
-            "তৌজি নং" to doc.tauziNumber.ifBlank { "-" }
-        )
+        val metaFields = buildList {
+            add("বিভাগ" to doc.division.ifBlank { "-" })
+            add("জেলা" to doc.district.ifBlank { "-" })
+            add("উপজেলা/থানা" to doc.upazila.ifBlank { "-" })
+            if (doc.unionName.isNotBlank()) add("ইউনিয়ন" to doc.unionName)
+            add("মৌজা" to doc.mouzaName.ifBlank { "-" })
+            add("জে.এল. নং" to doc.jlNumber.ifBlank { "-" })
+            add("রেঃ সাঃ নং" to doc.resaNumber.ifBlank { "-" })
+            add("তৌজি নং" to doc.tauziNumber.ifBlank { "-" })
+        }
         val fieldW = contentW / metaFields.size
         val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = COLOR_INK_MUTED
@@ -444,7 +454,11 @@ object KhatianSheetExporter {
 
         val extraLine = buildString {
             append("খাজনা / কর: ${doc.totalKhajna.ifBlank { "প্রযোজ্য নয়" }}")
-            if (doc.notes.isNotBlank()) append("   |   বিশেষ মন্তব্য / পূর্ব খতিয়ান: ${doc.notes}")
+            if (doc.possessionNote.isNotBlank()) append("   |   দখল মন্তব্য: ${doc.possessionNote}")
+            if (doc.notes.isNotBlank()) append("   |   পূর্ব খতিয়ান ও বিশেষ নোট: ${doc.notes}")
+            if (doc.customFields.isNotEmpty()) {
+                append("   |   অন্যান্য: " + doc.customFields.joinToString(", ") { "${it.label}: ${it.value}" })
+            }
         }
         PngExporter.drawFittedText(canvas, extraLine, cLeft + 16f, sumRect.top + 61f, contentW - 32f, cellPaint)
 
@@ -549,6 +563,14 @@ object KhatianSheetExporter {
             sealRect.centerY() + 6f,
             Paint(badgeTextPaint).apply { textSize = 17f }
         )
+
+        val disclaimerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#8C1D18")
+            textSize = 15f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText("ব্যক্তিগত ব্যবহারের কপি — সরকারি রেজিস্টার/রেকর্ড নয়; নিবন্ধিত দলিল/সরকারি পর্চাই আইনত গ্রাহ্য", sheetW / 2f, sheetH - 8f, disclaimerPaint)
 
         return bmp
     }

@@ -283,41 +283,74 @@ Prepared via Digital Survey Workstation • ${profile.name} (${profile.phone})
 
     fun renderDeedDraftBitmap(doc: DeedDraftDocument, profile: SurveyorProfile = SurveyorProfile()): Bitmap {
         val text = buildDeedText(doc, profile)
-        val lines = text.lines()
+        return renderVintageLegalBitmap(
+            title = doc.title.ifBlank { if (doc.languageBn) doc.templateType.titleBn else doc.templateType.titleEn },
+            stampValueLabel = if (doc.languageBn) "১০০ টাকা (নন-জুডিশিয়াল নমুনা)" else "BDT 100 Non-Judicial Draft",
+            serialTag = "নং- ${doc.id.take(8).uppercase()}",
+            bodyText = text,
+            disclaimer = if (doc.languageBn) LEGAL_DRAFT_DISCLAIMER_BN else LEGAL_DRAFT_DISCLAIMER_EN
+        )
+    }
+
+    /** Renders any Deed, Historical Reproduction, Agreement, Contract, or Land Schedule on Authentic Vintage Aged Paper */
+    fun renderVintageLegalBitmap(
+        title: String,
+        stampValueLabel: String = "১০০ টাকা (প্রাচীন কাগজ শৈলী)",
+        serialTag: String = "BD-DEED-DRAFT",
+        bodyText: String,
+        disclaimer: String = LEGAL_DRAFT_DISCLAIMER_BN
+    ): Bitmap {
+        val wrappedLines = mutableListOf<String>()
+        bodyText.lines().forEach { raw ->
+            if (raw.length <= 80) {
+                wrappedLines.add(raw)
+            } else {
+                var idx = 0
+                while (idx < raw.length) {
+                    val end = (idx + 80).coerceAtMost(raw.length)
+                    wrappedLines.add(raw.substring(idx, end))
+                    idx = end
+                }
+            }
+        }
         val w = 1654
         val lineH = 34
-        val h = maxOf(2339, 260 + lines.size * lineH)
+        val h = maxOf(2339, 320 + wrappedLines.size * lineH)
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        canvas.drawColor(Color.WHITE)
 
-        val border = Paint().apply {
-            color = Color.parseColor("#0F6B54")
-            style = Paint.Style.STROKE
-            strokeWidth = 4f
-        }
-        canvas.drawRect(36f, 36f, w - 36f, h - 36f, border)
+        var y = com.example.ui.components.VintagePaperRenderer.drawAgedStampPaperBackground(
+            canvas = canvas,
+            w = w,
+            h = h,
+            headerLabelBn = title.take(66),
+            stampValueLabel = stampValueLabel,
+            serialTag = serialTag,
+            showStampCrest = true
+        ) + 26f
 
         val noticePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#B71C1C")
-            textSize = 24f
+            color = com.example.ui.components.VintagePaperRenderer.INK_RED_SEAL
+            textSize = 22f
             isFakeBoldText = true
         }
-        canvas.drawText(
-            if (doc.languageBn) LEGAL_DRAFT_DISCLAIMER_BN else LEGAL_DRAFT_DISCLAIMER_EN,
-            64f,
-            84f,
-            noticePaint
-        )
+        canvas.drawText(disclaimer.take(96), 68f, y, noticePaint)
+        y += 42f
 
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.BLACK
+            color = com.example.ui.components.VintagePaperRenderer.INK_SEPIA_DARK
             textSize = 24f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.NORMAL)
         }
-        var y = 138f
-        lines.forEach { ln ->
-            bodyPaint.isFakeBoldText = ln.startsWith("===") || ln.matches(Regex("^[১২৩৪৫৬৭1-7]\\.\\s.*"))
-            canvas.drawText(ln, 64f, y, bodyPaint)
+        wrappedLines.forEach { ln ->
+            val isHeading = ln.startsWith("===") || ln.matches(Regex("^[১২৩৪৫৬৭৮৯1-9]\\.\\s.*"))
+            bodyPaint.isFakeBoldText = isHeading
+            bodyPaint.color = if (isHeading) {
+                com.example.ui.components.VintagePaperRenderer.INK_STAMP_GREEN
+            } else {
+                com.example.ui.components.VintagePaperRenderer.INK_SEPIA_DARK
+            }
+            canvas.drawText(ln, 68f, y, bodyPaint)
             y += lineH
         }
         return bmp

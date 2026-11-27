@@ -1,0 +1,280 @@
+################################################################
+#  FINAL MASTER PROMPT — ALL-IN-ONE SURVEYOR & LAND SERVICE APP
+#  (Part 1 + Part 2 + নতুন রেফারেন্স সব একত্রে | ব্যক্তিগত ব্যবহার)
+################################################################
+
+ROLE
+তুমি একজন Senior Mobile/Desktop Engineer (Flutter/Kotlin/React Native), GIS Developer, Computational Geometry Engineer এবং বাংলাদেশের ভূমি ব্যবস্থার (মৌজা ম্যাপ, CS/SA/RS/BS জরিপ, খতিয়ান, দাগ, দলিল, নামজারি, বণ্টন) Domain Expert।
+আমার একটি existing app আছে। নিচের সব module সেখানে ধাপে ধাপে যোগ করবে। এটা শুধু আমার নিজের ব্যবহারের জন্য।
+
+GOLDEN RULES
+❌ No demo ❌ No test version ❌ No "coming soon" ❌ No fake/unavailable service ❌ No placeholder data
+✅ প্রতিটি ফিচারে real গণিত/real logic, real export
+✅ সব কিছু Custom ও Editable (unit, scale, লেখা, ফরম্যাট, টেমপ্লেট, ধারা, রং, হার)
+✅ Offline-first (মাপ, গণনা, ড্রয়িং, দলিল, খতিয়ান, প্রিন্ট সবই ইন্টারনেট ছাড়া)। Online শুধু satellite tile / ম্যাপ ডাউনলোড / backup-এর জন্য
+✅ বাংলা + English, বাংলা সংখ্যা (০-৯) ↔ ইংরেজি সংখ্যা সুইচ
+✅ Design নিয়ে আলাদা কিছু লাগবে না; শুধু tools + logic + কাজের flow। UI সহজ ও দ্রুত হবে
+✅ নিজের কোড, নিজের ডিজাইন। অন্য কোনো অ্যাপের কোড/ছবি/লোগো/ব্র্যান্ড কপি করবে না — শুধু ফাংশনের ধারণা নিয়ে নিজে বানাবে
+✅ যা বাস্তবে সম্ভব নয় (সরকারি সার্ভারের private API/data scrape, DWG native লেখা ইত্যাদি) সেটা বানিও না; সৎভাবে জানাও এবং বিকল্প দাও (manual entry / file import / official link খোলা / DXF)
+✅ প্রতিটি module শেষে: ফিচার তালিকা + পূর্ণ কোড (ফাইল path সহ) + dependency + known-answer test + কী সম্ভব হয়নি ও বিকল্প। তারপর আমার confirmation চাও
+✅ আগে আমার existing code দেখে মিলিয়ে নাও, duplicate বানিও না। কোড না পেলে ১টি প্রশ্ন করে framework জেনে নাও
+
+================================================================
+M01 — CORE GEOMETRY & MEASUREMENT ENGINE
+================================================================
+1.1 Geometry
+ - Area: Shoelace (planar) + Geodesic (WGS84) — দুটোই, user বাছবে; Perimeter, Centroid, Bounding box, অন্তঃকোণ, বাহুর দৈর্ঘ্য
+ - Self-intersection check, hole/cut-out polygon (পুকুর/বাদ অংশ বিয়োগ), multi-polygon, multi-plot (প্লট ১,২,৩… আলাদা নাম/রং/ট্যাব) ও মোট যোগফল
+ - Undo/Redo unlimited, point drag/insert/delete, snap (vertex/edge/midpoint/perpendicular/intersection), Ortho lock
+ - **Lock side length (Provide Manual Distances):** কোনো বাহুর দৈর্ঘ্য হাতে দিলে polygon সেই অনুযায়ী adjust হবে (±/+ বাটন সহ)
+ - **Edit mode:** "দরকারে হাতে এডজাস্ট" — প্রতিটি কোণা টেনে সরানো, বাহুর মাপ live update
+1.2 Modes
+ - Line, Path (বাঁকা), Polygon, Circle, Rectangle, Triangle, Quad
+ - ফিতা মাপ (Tape): প্রতিটি বাহুর মাপ হাতে লিখে polygon তৈরি (ফুট-ইঞ্চি-সুতা, হাত, গজ, মিটার)
+ - Pan/Zoom mode ↔ Draw mode আলাদা সুইচ; Magnifier loupe (আঙুলের নিচের অংশ বড়)
+ - Measure label: বাহুর মাপ on/off, ফুট-ইঞ্চি/মিটার/হাত সিলেক্টেবল, text size ও রং editable, "মাপ লুকান" toggle, "এই প্লট হাইলাইট" toggle
+1.3 Units & Converter (সব দুই-দিক, সব editable)
+ - ক্ষেত্রফল: বর্গফুট, বর্গইঞ্চি, বর্গগজ, বর্গমিটার, বর্গহাত, শতক/শতাংশ, ডেসিমেল, কাঠা, বিঘা, কানি, গণ্ডা, ছটাক, একর, হেক্টর, sq.yd, guntha
+ - দৈর্ঘ্য: ইঞ্চি, ফুট, হাত, গজ, মিটার, সেমি, চেইন, লিংক, রশি, মাইল, কিমি
+ - Region presets (Standard: ১ শতক=৪৩৫.৬ ft², ১ একর=১০০ শতক, ১ কাঠা=৭২০ ft², ১ বিঘা=২০ কাঠা=১৪৪০০ ft²) + Custom preset (এলাকাভেদে আলাদা মান নিজে বসানো, নাম দিয়ে save)
+ - ফল একসাথে সব unit-এ; দশমিক ফুট ↔ ফুট-ইঞ্চি-সুতা রূপান্তর; Copy/Share
+ - আনা-গণ্ডা-কড়া-ক্রান্তি-তিল ক্যালকুলেটর (১ টাকা=১৬ আনা, ১ আনা=২০ গণ্ডা, ১ গণ্ডা=৪ কড়া, ১ কড়া=৩ ক্রান্তি, ১ ক্রান্তি=২০ তিল) — ভগ্নাংশ ↔ দশমিক ↔ শতাংশ
+1.4 Precision: দশমিক ঘর (২/৩/৪/৬), rounding rule
+
+================================================================
+M02 — ± ACCURACY & ERROR ENGINE
+================================================================
+ - প্রতিটি মাপের সাথে সম্ভাব্য ভুল (±) দেখাবে: বাহুতে ও ক্ষেত্রফলে (শতক/কাঠা/বর্গফুট)
+ - Error source: GPS accuracy, ছবির scale calibration error, ছবির resolution (১ pixel = কত ফুট), zoom অনুযায়ী point বসানোর বিচ্যুতি
+ - Error propagation (analytic বা Monte-Carlo), Confidence badge (ভরসাযোগ্য/মধ্যম/কম — threshold আমি ঠিক করব)
+ - Accuracy report পাতা; রিপোর্টে "সরকারি/আইনি জরিপের বিকল্প নয়" লাইন toggle (ডিফল্ট on)
+
+================================================================
+M03 — মৌজা ম্যাপ ও ছবি ভিত্তিক পরিমাপ (মূল মডিউল)
+================================================================
+3.1 Map Import: Gallery/Camera/PDF/ZIP/JPG/PNG/TIFF; multi-page PDF; high-DPI render
+3.2 **Map Converter + Cleaner (এক ক্লিকে ম্যাপ পরিষ্কার):**
+ - পুরোনো কালচে/হলুদ/দাগযুক্ত ম্যাপ → সাদা-কালো পরিষ্কার রেখা (adaptive threshold, background removal, shadow removal, denoise, line sharpen, deskew, crop)
+ - **Before/After slider** (আগে ও পরে এক ছবিতে টেনে তুলনা)
+ - Brightness/Contrast/Gamma/Threshold manual slider, Invert, Grayscale/Binary, রেখা মোটা-চিকন করা, ছোট দাগ/ময়লা মোছা (eraser brush), লেখা (দাগ নম্বর) যতটা সম্ভব সংরক্ষণ
+ - PDF → JPG/PNG (DPI নির্বাচন) ও batch convert
+3.3 **Scale Calibration (সবচেয়ে গুরুত্বপূর্ণ):**
+ - Preset: ১৬"=১ মাইল, ৩২"=১ মাইল, ৬৪"=১ মাইল, ১ ইঞ্চি=X ফুট, ১:X অনুপাত; সব editable, নাম দিয়ে save (CS/SA/RS/BS/BRS/সিটি জরিপ)
+ - বা ছবির দুই বিন্দুতে জানা দূরত্ব বসিয়ে calibrate; ≥২ reference line দিলে cross-check ও পার্থক্য সতর্কতা
+ - ছবি rotate/skew/perspective correct (৪ কোণ টেনে)
+ - **কাগজ সংকোচন সংশোধন:** X ও Y অক্ষে আলাদা scale factor, known দূরত্ব থেকে auto-calc
+3.4 **Auto Plot Select (অটো প্লট সিলেক্ট):** দাগের ভেতরে ট্যাপ করলেই সীমানা রেখা ধরে সেই দাগের polygon auto তৈরি (flood-fill + contour detection + simplify)। একাধিক দাগ ট্যাপ করে select; আবার ট্যাপে বাদ। "N টি প্লট বাছা হয়েছে — যোগ করুন/বাতিল"। যোগের পর কোণা টেনে ঠিক করা যাবে। ভুল ধরলে manual trace fallback
+3.5 **Plot Menu (প্রতি প্লটে long-press/⋮ মেনু):** প্লট প্ল্যানার · রেখা টেনে ভাগ করুন · নাম/দাগ সম্পাদনা · ভাগ করুন/রাস্তা দিন · কোণ থেকে কোণ মাপ · দাগ থেকে দাগ মাপ/বক্স · প্লট থেকে প্লট (দাগ টু দাগ) · রাস্তা হিসেবে চিহ্নিত · মাপ লুকান · এই প্লট হাইলাইট · প্লট মুছুন
+3.6 **Measure between:** কোণ↔কোণ, দাগ↔দাগ (দুই দাগের মাঝে দূরত্ব/বক্স-সীমানার মাপ), প্লট↔প্লট, বিন্দু↔রেখা (লম্ব দূরত্ব), দাগের রাস্তার দিকের মুখ (frontage) মাপ — ফুট-ইঞ্চিতে
+3.7 Result bar (নিচে সবসময়): পয়েন্ট সংখ্যা · স্কেল/মাইল · সক্রিয় প্লটের শতক+বর্গফুট · মোট শতক+বর্গফুট (১ শতক=৪৩৫.৬ ফুট² editable)
+3.8 প্লট ট্যাব: নাম, রং, দাগ নং, মালিক, মন্তব্য; দাগের উপর লেবেল (দাগ নম্বর, শতক) সরানো/ফন্ট বদলানো (Aa tool)
+3.9 PDF নকশা: vector snap, scale bar থেকে calibration, annotated PDF export
+3.10 **মৌজা শিট জোড়া (Sheet Join / Map Joint):** একাধিক শিটে common বিন্দু/রেখা মিলিয়ে (multi-map point matching) move/rotate/scale/affine; edge-matching snap; জোড়া শিট একটি project; ফাঁক/ওভারল্যাপ মাপ
+3.11 **তুলনামূলক প্যান্টোগ্রাফ (Comparative Pantograph, মোবাইলে):** দুই ম্যাপ (যেমন CS ও RS) এর একই দাগ মিলিয়ে প্লট ট্রেস; পুরোনো দাগ → নতুন দাগের তুলনা; দাগ নম্বর overlay (সবুজ outline + নম্বর); পাশাপাশি/উপর-নিচ/opacity swipe compare; ম্যাপ enlarge/reduce নির্দিষ্ট অনুপাতে ও নতুন স্কেলে প্রিন্ট
+3.12 মৌজা ম্যাপ ↔ Satellite Overlay (Georeference): ≥৩ control point, Affine/Helmert, opacity, swipe; polygon Lat/Long-এ save
+3.13 **KMZ Maker (গুগল ম্যাপ/আর্থে মৌজা নকশা):** georeferenced দাগ/প্লট → KML/KMZ (দাগ নম্বর label, মালিক নাম, শতক info-box সহ); Google Earth-এ খোলার উপযোগী; ছবি overlay (GroundOverlay) ও polygon দুই ধরনের KMZ; সীমানার অবস্থান সহ জেলা/থানা/মৌজা/JL/স্কেলের লেখা box (ডিজিটাল ডিমার্কেশনের ছবির মতো)
+3.14 সকল মৌজা ম্যাপ Library: জেলা>উপজেলা>মৌজা>শিট; JL/মৌজা নাম/শিট নং দিয়ে search; tag, favorite; bulk import (ছবি/PDF/ZIP); অনলাইন সরকারি ম্যাপ সাইটের link in-app browser-এ খোলা (আমি নিজে লগইন করব); আমার save করা ফাইল offline
+
+================================================================
+M04 — SATELLITE / GPS MEASURE
+================================================================
+ - Layers: Satellite/Hybrid/Terrain/Street; API key settings থেকে আমি দেব
+ - Live GPS walk, auto-point per N মিটার, manual point, accuracy filter, ১০ সেকেন্ড averaging
+ - Coordinate input: DD, DMS, UTM, BTM; coordinate list paste → polygon; search (গ্রাম/মৌজা/coordinate)
+ - Satellite-এ মৌজা overlay, দাগ নম্বর label, জমি খোঁজা
+ - External GNSS (Bluetooth NMEA/RTK), NTRIP client (credential আমি দেব), Fix status Float/Fixed
+ - Stakeout (M14) ও Navigate-to-point
+
+================================================================
+M05 — CAD-STYLE DIMENSION & DRAWING TOOLS
+================================================================
+ - Dimension: Linear, Aligned, Angular, Radius, Diameter, Jogged, Arc length, Ordinate, Baseline, Continue, Quick dimensions, Leader (নোট+তীর); style (তীর, size, precision, unit ফুট-ইঞ্চি/মিটার, রং) editable
+ - Drawing: Line, Polyline, Rect, Circle, Arc, Ellipse, Polygon, Freehand, Text, Note, Layers (on/off/lock/colour), Grid+Snap, Ortho, Move/Copy/Rotate/Scale/Mirror/Offset/Trim/Extend/Fillet/Divide/Measure, Hatch (জমি/পুকুর/রাস্তা/ঘর), Symbol library (উত্তর তীর, গাছ, ঘর, পুকুর, রাস্তা, কূপ, খুঁটি, পিলার)
+ - AutoCAD DWG/DXF Viewer: DXF open (সম্পূর্ণ), DWG open সম্ভব হলে (library দিয়ে/convert করে; না হলে সৎভাবে জানাও ও DXF convert পথ দাও); দাগ select করে মাপ দেখা, layer on/off, DXF export (CAD-এ খোলা যাবে)
+
+================================================================
+M06 — জমি ভাগ-বণ্টন (Land Division — সব ধরনের)
+================================================================
+ - **AnyShape Divider:** যেকোনো আকৃতির polygon (হোল সহ) সমান/অনুপাতে/নির্দিষ্ট শতকে ভাগ; parallel line / radial / from corner / through point / angle
+ - **QuadMaster:** চতুর্ভুজ (৪ বাহু+কর্ণ বা ৪ বাহু+কোণ) পরিমাপ ও ভাগ (সমান্তরাল ভাগ, ট্র্যাপিজিয়াম ভাগ, ভাগের মাপ ফুট-ইঞ্চিতে)
+ - **রেখা টেনে ভাগ করুন:** নিজে আঙুল দিয়ে কাটার রেখা টানলে দুই অংশের ক্ষেত্রফল live; রেখা সরালে আপডেট
+ - Area-based cut: কোণ থেকে ঠিক X শতক কাটা; Fixed-frontage (রাস্তায় প্রতি প্লটের মুখ ১৫ ফুট); Ratio (৩:২:১ / আনা অংশ)
+ - **ভাগ করুন / রাস্তা দিন:** রাস্তার চওড়া দিয়ে strip কেটে বাদ, "রাস্তা হিসেবে চিহ্নিত" দাগ বাদ দিয়ে হিসাব; পুকুর/ঘর বাদ
+ - **রাস্তা-সামনের জমি রিপোর্ট ("রাস্তায় কত ফুট জমি"):** প্রতিটি প্লটের রাস্তার দিকের মুখ ফুটে দেখানো, ভাগের আগে-পরে তুলনা
+ - **প্লট প্ল্যানার (Plot Planner):** বড় জমিতে প্লট grid (যেমন ৩ কাঠার প্লট), রাস্তা/ড্রেন/খোলা জায়গা কেটে প্লট সংখ্যা, বিক্রয়যোগ্য জমি, অবশিষ্ট; Option A/B/C তুলনা
+ - Location-based allocation (কে কোন দিক পাবে) ও Value-weighted ভাগ (রাস্তার পাশের দাম বেশি — weight আমি দেব)
+ - ভাগের পর প্রতিটির বাহুর মাপ, coordinate, চারপাশের চৌহদ্দি (উত্তর/দক্ষিণ/পূর্ব/পশ্চিম) auto-suggest ও edit
+ - **তফসিল বন্টন:** তফসিলভুক্ত জমি (একাধিক দাগ/খতিয়ান) থেকে মালিকদের অংশ অনুযায়ী ভাগ ও দাগভিত্তিক হিসাব
+ - জমির ভাগ-বণ্টন (সাধারণ): মোট জমি ÷ অংশীদার, অংশ অনুযায়ী (আনা-গণ্ডা/শতক/ভগ্নাংশ)
+
+================================================================
+M07 — হিস্যা, উত্তরাধিকার, অনুপাত ও জমির সূত্র
+================================================================
+ - উত্তরাধিকার (মুসলিম): ওয়ারিশ (স্বামী/স্ত্রী/পুত্র/কন্যা/পিতা/মাতা/ভাই/বোন/দাদা/দাদি/নাতি-নাতনি ইত্যাদি), আউল ও রাদ্দ নিয়মসহ, মৃত ওয়ারিশের অংশের পুনর্বণ্টন (ধাপে ধাপে); fraction editable; প্রতিজনের অংশ আনা-গণ্ডা/শতক/কাঠা/বিঘায়
+ - উত্তরাধিকার (হিন্দু): দায়ভাগ/মিতাক্ষরা পদ্ধতির যেকোনো একটির নিয়ম selectable ও editable; ধাপে ধাপে ব্যাখ্যা
+ - হিস্যা ক্যালকুলেটর: একাধিক মালিক, ক্রয়-বিক্রয়ের পর অবশিষ্ট অংশ, দাগে মোট অংশ, একাধিক খতিয়ানে একই ব্যক্তির অংশ যোগ
+ - **দাগের মধ্যে তার অংশ:** একটি দাগের মোট জমিতে কারও আনা-গণ্ডা অংশ কত শতক
+ - অনুপাত ক্যালকুলেটর, আনা-গণ্ডা কনভার্টার (দুই-দিক)
+ - **ক্ষেত্রফল/অজানা বাহু:** ক্ষেত্রফল ও কিছু বাহু জানা থাকলে অজানা বাহু বের করা (আয়তক্ষেত্র, ট্র্যাপিজিয়াম, ত্রিভুজ, সামান্তরিক, চতুর্ভুজ কর্ণসহ)
+ - **জমির সকল সূত্র:** ত্রিভুজ (Heron, ভূমি-উচ্চতা), চতুর্ভুজ, ট্র্যাপিজিয়াম, বৃত্ত/বৃত্তচাপ/সেক্টর, বহুভুজ — ধাপে ধাপে উদাহরণসহ offline cheat-sheet
+ - জমি পরিমাপ ক্যালকুলেটর (চতুর্ভুজ·ত্রিভুজ·বহুভুজ): বাহু ফুট-ইঞ্চিতে দিয়ে দ্রুত ফল
+
+================================================================
+M08 — খতিয়ান বিশ্লেষণ ও রেকর্ড ম্যানেজার
+================================================================
+ - **খতিয়ান বিশ্লেষণ (এক ক্লিকে সকল মালিকের হিসাব):** খতিয়ানের মালিক ও অংশ (আনা-গণ্ডা/ভগ্নাংশ/শতক) এন্ট্রি দিলে সবার জমির পরিমাণ (শতক/কাঠা/বিঘা), যোগফল ১৬ আনা মিলছে কিনা check, ভুল হলে highlight
+ - Record types (সব editable টেমপ্লেট): CS, SA, RS, BS/সিটি জরিপ, নামজারি (মিউটেশন) খতিয়ান, পর্চা
+ - Fields add/remove/rename: জেলা, উপজেলা/থানা, ইউনিয়ন, মৌজা, JL, খতিয়ান নং, দাগ নং, শ্রেণি, মালিক (পিতা/স্বামী, ঠিকানা), অংশ, মোট জমি, খাজনা, দখল, মন্তব্য
+ - একটি খতিয়ানে একাধিক দাগ/মালিক; দাগ সূচি (দাগ ↔ খতিয়ান ↔ মালিক cross-reference ও search)
+ - হাত-বদল ইতিহাস (Chain of Title) টাইমলাইন: CS → SA → RS → BS → নামজারি
+ - খতিয়ান ছবি import করে পাশে data entry; on-device বাংলা OCR optional (ভুল manual edit)
+ - **নকশা বনাম খতিয়ান বনাম মাঠ তুলনা:** তিন মাপের পার্থক্য (শতাংশ ও পরিমাণ), tolerance editable, চার্ট
+ - **দাগ ম্যাচিং (CS/SA দাগ → নতুন দাগ):** পুরোনো দাগের নকশা নতুন নকশায় মিলিয়ে কোন দাগ কোন দাগে পড়েছে, "ডিজিটাল ডিমার্কেশন রিপোর্ট" বানানো (hatch, বাহুর মাপ, রাস্তা/পাশের জমির মাপ, তুলনামূলক টেবিল)
+ - ওভারল্যাপ/ফাঁক/দখল (encroachment) detection: দুই দাগের overlap area highlight ও মাপ
+
+================================================================
+M09 — দলিল, খতিয়ান ও কাগজপত্র — OLD-PAPER STYLE ENGINE (বিশেষ গুরুত্বপূর্ণ)
+================================================================
+দলিল ও খতিয়ান — দুটোই **একদম পুরোনো কাগজে** তৈরি হবে (অফলাইনে procedural/asset দিয়ে)।
+9.1 Old Paper Renderer (সব slider/option editable):
+ - কাগজের ধরন: হলদেটে পুরোনো, বাদামী, ধূসর-সাদা, স্ট্যাম্প-পেপার, ব্রিটিশ/পাকিস্তান আমলের সরকারি খাতার মতো লাইনযুক্ত পাতা
+ - Texture: ফাইবার grain, paper noise, আলোর অসমতা (vignette), কিনারা কালচে/ছেঁড়া/ক্ষয়, কোণা ভাঁজ, মাঝের ভাঁজ-দাগ, ছোট ছিদ্র/পিন-দাগ, পানি/চা-এর দাগ, foxing (বাদামী ছোপ), পোকার ক্ষয় (ঐচ্ছিক), বিবর্ণতা — প্রতিটির তীব্রতা ০–১০০% slider
+ - কালি: কালো/নীল/গাঢ় বাদামী কালি, ঘনত্ব, ink bleed (ফোঁটা ছড়ানো), অসম চাপ, ফিকে অংশ, কলমের স্ট্রোক
+ - ফন্ট: প্রাচীন বাংলা হাতের লেখা (একাধিক), টাইপরাইটার/লেটারপ্রেস-ধাঁচ, বাংলা ও ইংরেজি; লেখার সামান্য এলোমেলো কম্পন, লাইন বাঁকা — editable
+ - পাতার লে-আউট: মার্জিন, বর্ডার, খতিয়ানের ছক (কলাম/সারি) হাতে-আঁকা রেখার মতো, পাতা নম্বর, ফোল্ড লাইন
+ - স্ট্যাম্প/সিল: **শুধু আমার নিজের বানানো সাধারণ সিল/লোগো আপলোড** করা যাবে; কোনো সরকারি অফিসের আসল সিল, মনোগ্রাম, জাতীয় প্রতীক, আসল কর্মকর্তার স্বাক্ষর কপি/নকল করার ফিচার থাকবে না
+ - Output: A4/Legal/A3/Stamp size, 300/600 DPI PNG, PDF, multi-page; কাগজের দুই-পাশ (সামনে/পেছনে) ঐচ্ছিক
+ - "পুরোনো লুক" on/off এক ক্লিকে (পরিষ্কার সংস্করণও export হবে)
+ - ব্যক্তিগত খসড়া চিহ্ন: প্রতিটি দলিল/খতিয়ানের নিচে ছোট লাইন "ব্যক্তিগত ব্যবহারের কপি — সরকারি রেজিস্টার/রেকর্ড নয়; নিবন্ধিত দলিল/সরকারি পর্চাই আইনত গ্রাহ্য" ডিফল্ট চালু থাকবে; লেখা বদলানো/ছোট করা যাবে কিন্তু স্থায়ীভাবে মুছে ফেলার অপশন থাকবে না
+9.2 দলিল টেমপ্লেট (সব সম্পাদনযোগ্য, বাংলা, ধারা-ভিত্তিক):
+ সাফ কবলা, হেবা/দানপত্র, বন্টননামা (লিখিত/মৌখিক বণ্টন লিপিবদ্ধ), আম-মোক্তারনামা/বিশেষ মোক্তারনামা, বায়নানামা/বিক্রয় চুক্তি, ভাড়া/ইজারা/লিজ, বন্ধকী ও বন্ধক ফেরত, অছিয়তনামা/উইল, ওয়ারিশান সনদ আবেদন ও ওয়ারিশ তালিকা, নামজারি আবেদন, ভূমি উন্নয়ন কর/ডিসিআর আবেদন, হলফনামা/না-দাবি পত্র, সীমানা চুক্তি, চলাচল/পানি নিষ্কাশন ইজমেন্ট চুক্তি, চুক্তি ভঙ্গ নোটিশ, **Custom Blank Deed** (নিজে শিরোনাম, ধারা, field বানাব ও save)
+9.3 দলিল সুবিধা:
+ - Form → auto-fill (মালিক, দাগ, খতিয়ান, পরিমাণ, চৌহদ্দি, মূল্য, সাক্ষী) → editable preview → Old-paper PDF/Print
+ - ধারা লাইব্রেরি (বর্ণনা, তফসিল, স্বত্ব ঘোষণা, দখল হস্তান্তর, ঋণমুক্ত ঘোষণা, সাক্ষী, দস্তখত) drag-reorder, নিজের ধারা যোগ
+ - তফসিল auto (জেলা/থানা/মৌজা/দাগ/খতিয়ান/পরিমাণ/চৌহদ্দি) M06/M08 থেকে
+ - কথায় টাকা (বাংলা), বঙ্গাব্দ ↔ ইংরেজি তারিখ কনভার্টার
+ - পক্ষ/সাক্ষী সংখ্যা dynamic, স্বাক্ষর/টিপসই জায়গা
+ - সংযুক্ত নকশা (স্কেলসহ) দলিলের সাথে এক ফাইলে
+ - Local DB-তে save, search, duplicate, versioning; Export PDF/DOCX/PNG
+9.4 পুরোনো-কাগজ খতিয়ান: M08-এর যেকোনো খতিয়ান data → CS/SA/RS ধাঁচের পুরোনো খাতার পাতায় (কলামসহ ছক) render করে PDF/ছবি; বণ্টননামা, তফসিল, ওয়ারিশ তালিকাও একই
+
+================================================================
+M10 — PRINT STUDIO (ধাপে ধাপে রিপোর্ট) ও সার্ভেয়ার মেমো
+================================================================
+ - Wizard: ধাপ ১ প্রজেক্ট বেছে নাও → ২ নকশা layer বাছো → ৩ স্কেল/কাগজ → ৪ তফসিল ও মাপ টেবিল → ৫ Title block/সিল/স্বাক্ষর → ৬ Preview → Print/PDF/Share
+ - A4/A3/Legal/Custom, Portrait/Landscape, multi-sheet (বড় জমি অনেক পাতায়, মিলানো চিহ্নসহ)
+ - Auto scale (১:১০০, ১:২০০, ১:৫০০ বা custom), Scale bar, North arrow, Grid ticks
+ - নকশায়: প্লট নং, বাহুর মাপ (ফুট-ইঞ্চি), কোণ, দাগ নং, মালিক, রাস্তা, পুকুর, চৌহদ্দি
+ - তফসিল টেবিল একই পাতায়: দাগ, খতিয়ান, মোট জমি, প্রতি ভাগের ক্ষেত্রফল (শতক/কাঠা/বিঘা/বর্গফুট)
+ - Title block editable (সার্ভেয়ার নাম, লাইসেন্স নং [আমার নিজের], তারিখ, প্রজেক্ট, স্কেল, drawing no), লোগো/সিল/স্বাক্ষর image
+ - **সার্ভেয়ার মেমো:** ক্লায়েন্টের নাম, কাজের বিবরণ, মাপ-হিসাব, ফি, advance/বকেয়া, A4 প্রিন্ট; পেশাদার লেআউট, কথায় টাকা
+ - Layer-wise print; Print template save/load (নকশা সংযুক্তি, বণ্টন নকশা, জরিপ রিপোর্ট, ডিজিটাল ডিমার্কেশন রিপোর্ট)
+ - Export: vector PDF, PNG 300/600 DPI, DXF, SVG
+
+================================================================
+M11 — SURVEY COMPUTATION (সার্ভেয়ারের গণিত)
+================================================================
+ - Area methods: Coordinate/Shoelace, Heron, Trapezoidal, Simpson 1/3, Offset-from-baseline (অফসেট বই), Mid-ordinate, DMD
+ - Chain/Offset survey field book → auto polygon + area
+ - Traverse: Bearing/Azimuth/Angle, Lat-Dep, Closing error, precision ratio, Bowditch/Transit adjust, adjusted coordinates
+ - Bearing ↔ Azimuth ↔ Quadrant, DMS ↔ Decimal
+ - COGO: Inverse, Forward, Intersection (BB, DD, BD), Perpendicular offset, point at distance on line, area division
+ - Curves: Simple curve (R, Δ, T, L, C, M), setting-out table
+ - Level: Rise-Fall, HI method, arithmetic check, contour interpolation
+ - Volume: Cut/Fill (cross-section ও grid), মাটি কাজ ঘনফুট/ঘনমিটার, পুকুর আয়তন
+ - Triangle solver (SSS, SAS, ASA, AAS), Slope/Gradient, Height by angle
+ - Coordinate transform: WGS84 ↔ UTM ↔ BTM ↔ Local; Helmert/Affine
+ - প্রতিটি গণনার step-by-step workings ও PDF-এ যোগ
+
+================================================================
+M12 — SURVEY FILE (TOTAL STATION / GPS) ও FIELD BOOK
+================================================================
+ - **সার্ভে ফাইল (Total Station/GPS):** পয়েন্ট ফাইল (CSV/TXT/GSI/JobXML/RAW/DXF/KML/Excel) খুলে দাগ বানানো ও শতাংশে মাপা
+ - Point DB: ID, N, E, Z, Code, Description; edit/merge/renumber
+ - Survey codes → auto line/polygon/symbol (BDY, Fence, Road, Pond, Building, Tree, Pillar)
+ - Instrument entry: Station, Backsight, HA, VA, slope dist → coordinate; prism/instrument height; correction
+ - Resection (Free Station), Backsight orientation, Hidden point, Trig levelling, Traverse network adjust
+ - Export: CSV, DXF, GeoJSON, KML/KMZ, stakeout list
+
+================================================================
+M13 — DEED CALLS ও DESCRIPTION
+================================================================
+ - দলিলের "উত্তর-পূর্ব ৪৫°৩০′, ১২০ ফুট" ধরনের বর্ণনা থেকে polygon আঁকা; closure error, area, perimeter
+ - উল্টোটাও: polygon → দলিলে বসানোর বর্ণনা/চৌহদ্দি লেখা (বাংলায়)
+
+================================================================
+M14 — STAKEOUT ও DIGITAL DEMARCATION
+================================================================
+ - Corner stakeout list; GPS stakeout (দিক+দূরত্ব live arrow); Tape/Offset stakeout (দুই known কোণ থেকে দুই দূরত্ব, ফুট-ইঞ্চিতে নির্দেশ); Total Station stakeout table (angle+distance)
+ - Line stakeout (প্রতি N ফুটে চিহ্ন); Offset/setback line
+ - ডিজিটাল ডিমার্কেশন রিপোর্ট: কোণার পয়েন্ট, সীমানার মাপ, চারপাশের দাগ ও মাপ, ছবি/নকশা, GPS coordinate, তারিখ; Print Studio-তে template
+ - Stakeout report (নির্দেশিত vs আসল)
+
+================================================================
+M15 — জমির দাম, ডিল ও খরচ
+================================================================
+ - আমার নিজের দেওয়া এলাকাভিত্তিক দাম (প্রতি শতক/কাঠা) ম্যাপে pin; মোট দাম, তুলনা
+ - কেনাবেচার মোট খরচ (মূল্য, স্ট্যাম্প, রেজিস্ট্রেশন, কর, মিউটেশন, সার্ভেয়ার ফি — সব হার editable)
+ - Profit/Loss (কিনে প্লট করে বিক্রি), কিস্তি/EMI
+
+================================================================
+M16 — ভূমি সেবা WORKFLOW (নামজারি, খাজনা)
+================================================================
+ - Mutation tracker: আবেদন → নোটিশ → শুনানি → অনুমোদন → ডিসিআর → খতিয়ান; তারিখ, নম্বর, নোট, সংযুক্তি, reminder
+ - কেস অনুযায়ী কাগজের চেকলিস্ট (ক্রয়/ওয়ারিশ/দান/বণ্টন) ও আবেদন ড্রাফট auto-fill
+ - ভূমি উন্নয়ন কর ক্যালকুলেটর (হার table editable), বকেয়া সুদ, রসিদ রেকর্ড
+ - সরকারি লিংক shortcut (মিউটেশন, ভূমি উন্নয়ন কর, ভূমি রেকর্ড ও ম্যাপ portal) in-app browser-এ খোলা; আমি নিজে লগইন করব; কোনো bypass/scrape নয়
+ - Case File: প্রতিটি জমির জন্য এক ফাইল (নকশা, খতিয়ান, দলিল, ছবি, scan, নোট, মাপ, বণ্টন)
+ - Document Scanner: ক্যামেরায় কাগজ scan (edge detect, perspective fix, enhance, multi-page PDF)
+
+================================================================
+M17 — প্রজেক্ট, ক্লায়েন্ট, ব্যবসা
+================================================================
+ - Home screen: "পিন করা টুল" (আমার বেশি ব্যবহারের টুল পিন), সংরক্ষিত প্রজেক্ট, বণ্টননামা, ভিডিও/টিউটোরিয়াল, সেটিংস ট্যাব
+ - Project = জমির কাজ (সাইট, ক্লায়েন্ট, ফি, advance, বকেয়া); Client list; আয়-ব্যয় খাতা; মাসিক রিপোর্ট; Calendar/Reminder
+ - জরিপ রিপোর্ট PDF (লোগো, নকশা, বাহুর টেবিল, coordinate টেবিল, ক্ষেত্রফল সব unit-এ, চৌহদ্দি, মন্তব্য, স্বাক্ষর)
+ - ইনভয়েস/রসিদ জেনারেটর
+ - Backup/Restore (লোকাল + optional Drive, encrypted), PIN/Fingerprint lock
+
+================================================================
+M18 — EXTRA UTILITIES
+================================================================
+ - Compass, Spirit level, Inclinometer, Camera measure (reference scale দিয়ে)
+ - Site Photo: GPS+তারিখ stamp, annotation
+ - Pin drop, favorite place, Navigate (Google Maps intent), Coordinate share (WhatsApp/Messenger)
+ - ফুট-ইঞ্চি calculator (যোগ-বিয়োগ-গুণ-ভাগ), বাড়ি/ছাদ/ফ্লোর এরিয়া, বেড়া খরচ, ঢাল/elevation profile (DEM import হলে), Batch measure (CSV থেকে অনেক দাগ)
+ - Measure history (একই জমির আগে-পরে মাপ তুলনা), Voice note
+ - Guide/Notes: প্রতিটি tool-এর ছোট নোট, আমার নিজের ভিডিও/ছবি/লিংক (ইউটিউব/ব্লগ) যোগ করার জায়গা; Formula & Unit reference offline
+
+================================================================
+M19 — CROSS-DEVICE, DATA ও EXPORT
+================================================================
+ - Project = portable ফাইল (JSON+ছবি+PDF ZIP): ফোন ↔ কম্পিউটার
+ - Optional cloud sync (আমার নিজের অ্যাকাউন্ট), বড়-স্ক্রিন layout, keyboard shortcut/mouse wheel zoom (Desktop build হলে)
+ - Import/Export: DXF, DWG (সম্ভব হলে), KML/KMZ, GeoJSON, Shapefile, GPX, CSV, PDF, PNG, SVG, DOCX
+ - Template import/export (দলিল, রিপোর্ট, প্রিন্ট, paper preset)
+
+================================================================
+TECHNICAL REQUIREMENTS
+================================================================
+ - Modular architecture (প্রতিটি module আলাদা package), clean state management, local DB (SQLite/Room/Isar)
+ - Geometry/GIS: প্রতিষ্ঠিত library (Turf/JTS/proj4/GeographicLib বা সমতুল্য); image processing: OpenCV বা সমতুল্য (cleaner, auto plot select, perspective)
+ - Accuracy: ছোট জমিতে geodesic/projection error < ০.১%; প্রতি গণনার known-answer unit test
+ - Performance: বড় ছবি/PDF tile-wise render, heavy কাজ background thread, লেখা/overlay ৬০fps zoom/pan
+ - Crash-safe autosave; Permissions শুধু Location, Camera, Storage
+ - Settings: ভাষা, সংখ্যা (বাংলা/ইংরেজি), unit preset, precision, label style, কাগজ style, নিজের নাম/ঠিকানা/লোগো (রিপোর্ট ও দলিল header), template import/export, map API key
+
+================================================================
+কাজের ক্রম (Roadmap — এই ক্রমেই করবে)
+================================================================
+ ধাপ ১: M01, M02, M03 (মূল মাপ + মৌজা ম্যাপ + cleaner + auto plot select)
+ ধাপ ২: M06, M07, M08 (ভাগ-বণ্টন, হিস্যা, খতিয়ান)
+ ধাপ ৩: M09, M10 (Old-paper দলিল/খতিয়ান + Print Studio)
+ ধাপ ৪: M04, M05, M11–M14 (GPS, CAD, গণিত, survey file, stakeout)
+ ধাপ ৫: M15–M19 (বাকি সব)
+প্রতিটি ধাপের শেষে সম্পূর্ণ কোড + test + আমার confirmation।
+
+শুরু করো ধাপ ১ থেকে।
+################################################################
+# END OF FINAL MASTER PROMPT
+################################################################

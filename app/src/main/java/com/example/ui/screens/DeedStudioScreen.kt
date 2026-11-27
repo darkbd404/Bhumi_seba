@@ -48,6 +48,7 @@ import com.example.engine.ExportStreamWriter
 import com.example.model.DeedDraftDocument
 import com.example.model.DeedTemplateType
 import com.example.ui.components.BottomSwipeToastBanner
+import com.example.ui.components.VintageStampPaperCard
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.TealSecondary
@@ -306,12 +307,20 @@ fun DeedStudioScreen(
                             .padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("খসড়া প্রিভিউ ও রপ্তানি (PDF / DOCX)", fontWeight = FontWeight.Bold)
-                        Text(
-                            text = previewText,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Text("প্রাচীন কাগজ প্রিভিউ ও রপ্তানি (PDF / PNG / DOCX)", fontWeight = FontWeight.Bold)
+                        VintageStampPaperCard(
+                            headerTitle = doc.title.ifBlank { doc.templateType.titleBn },
+                            stampBadge = "১০০ টাকা স্ট্যাম্প শৈলী (খসড়া)",
+                            serialNumber = "নং- ${doc.id.take(8).uppercase()}",
+                            disclaimerText = if (doc.languageBn) DocumentAndReportEngine.LEGAL_DRAFT_DISCLAIMER_BN else DocumentAndReportEngine.LEGAL_DRAFT_DISCLAIMER_EN
+                        ) {
+                            Text(
+                                text = previewText,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Serif,
+                                color = androidx.compose.ui.graphics.Color(0xFF2B1C10)
+                            )
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)

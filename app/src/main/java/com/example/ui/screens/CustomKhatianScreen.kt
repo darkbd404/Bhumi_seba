@@ -88,8 +88,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.model.ChainOfTitleEntry
+import com.example.model.KhatianCustomField
 import com.example.model.KhatianDagEntry
+import com.example.model.KhatianOneClickAnalysis
 import com.example.model.KhatianOwnerEntry
+import com.example.ui.components.VintageStampPaperCard
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.SurveyGold
@@ -106,7 +110,8 @@ private val KHATIAN_TYPES = listOf(
     "বিআরএস (BRS) খতিয়ান",
     "সিএস (CS) খতিয়ান",
     "এসএ (SA) খতিয়ান",
-    "নামজারি খতিয়ান"
+    "নামজারি খতিয়ান",
+    "কাস্টম পর্চা"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -127,6 +132,9 @@ fun CustomKhatianScreen(
     var showOwnerDialog by remember { mutableStateOf(false) }
     var editingDag by remember { mutableStateOf<KhatianDagEntry?>(null) }
     var showDagDialog by remember { mutableStateOf(false) }
+    var showOcrDialog by remember { mutableStateOf(false) }
+    var showCustomFieldDialog by remember { mutableStateOf(false) }
+    var showChainDialog by remember { mutableStateOf(false) }
 
     val refDocPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -143,11 +151,14 @@ fun CustomKhatianScreen(
         }
     }
 
-    BackHandler(enabled = showSavedSheet || showOwnerDialog || showDagDialog) {
+    BackHandler(enabled = showSavedSheet || showOwnerDialog || showDagDialog || showOcrDialog || showCustomFieldDialog || showChainDialog) {
         when {
             showOwnerDialog -> showOwnerDialog = false
             showDagDialog -> showDagDialog = false
             showSavedSheet -> showSavedSheet = false
+            showOcrDialog -> showOcrDialog = false
+            showCustomFieldDialog -> showCustomFieldDialog = false
+            showChainDialog -> showChainDialog = false
         }
     }
 
@@ -237,6 +248,19 @@ fun CustomKhatianScreen(
                         Icons.Rounded.UploadFile,
                         contentDescription = "অরিজিনাল খতিয়ান আপলোড",
                         tint = EmeraldPrimary
+                    )
+                }
+
+                IconButton(
+                    onClick = { showOcrDialog = true },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("khatian_ocr_autofill_button")
+                ) {
+                    Icon(
+                        Icons.Rounded.CenterFocusStrong,
+                        contentDescription = "OCR টেক্সট অটো-ফিল",
+                        tint = TealSecondary
                     )
                 }
             }
@@ -361,6 +385,16 @@ fun CustomKhatianScreen(
                         }
                     }
 
+                    if (doc.khatianType !in KHATIAN_TYPES.take(6)) {
+                        OutlinedTextField(
+                            value = doc.khatianType,
+                            onValueChange = { viewModel.updateHeaderFields(khatianType = it) },
+                            label = { Text("কাস্টম রেকর্ড / পর্চার ধরণ নাম") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = doc.khatianNumber,
@@ -382,6 +416,13 @@ fun CustomKhatianScreen(
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
+                            value = doc.unionName,
+                            onValueChange = { viewModel.updateHeaderFields(unionName = it) },
+                            label = { Text("ইউনিয়ন / পৌরসভা") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
                             value = doc.mouzaName,
                             onValueChange = { viewModel.updateHeaderFields(mouzaName = it) },
                             label = { Text("মৌজার নাম") },
@@ -390,6 +431,9 @@ fun CustomKhatianScreen(
                                 .weight(1f)
                                 .testTag("khatian_mouza_input")
                         )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = doc.upazila,
                             onValueChange = { viewModel.updateHeaderFields(upazila = it) },
@@ -397,9 +441,6 @@ fun CustomKhatianScreen(
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = doc.district,
                             onValueChange = { viewModel.updateHeaderFields(district = it) },
@@ -407,6 +448,9 @@ fun CustomKhatianScreen(
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = doc.division,
                             onValueChange = { viewModel.updateHeaderFields(division = it) },
@@ -533,6 +577,41 @@ fun CustomKhatianScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    val analysis = remember(doc.owners, doc.dags) { viewModel.computeOneClickAnalysis() }
+                    Surface(
+                        color = if (analysis.isSixteenAnaExact) EmeraldPrimary.copy(alpha = 0.08f) else Color(0xFFD97706).copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (analysis.isSixteenAnaExact) "✓ এক ক্লিকে ১৬-আনা হিস্যা বিশ্লেষণ: নির্ভুল" else "⚠ হিস্যা যাচাই: অসমতা / ঘাটতি",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (analysis.isSixteenAnaExact) EmeraldPrimary else Color(0xFFB45309)
+                                )
+                                Text(
+                                    text = "মোট: ${String.format(Locale.US, "%.4f", analysis.totalOwnerRatio)} / ১.০০০",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = analysis.discrepancyNote,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -668,6 +747,104 @@ fun CustomKhatianScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    OutlinedTextField(
+                        value = doc.possessionNote,
+                        onValueChange = { viewModel.updateHeaderFields(possessionNote = it) },
+                        label = { Text("দখলদারিত্ব ও সীমানা নোট (Possession Note)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "অতিরিক্ত কাস্টম ফিল্ড (${doc.customFields.size})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(onClick = { showCustomFieldDialog = true }) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("+ ফিল্ড যোগ")
+                        }
+                    }
+                    doc.customFields.forEach { cf ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${cf.label}: ${cf.value}",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { viewModel.removeCustomField(cf.id) }, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "মালিকানার ধারাবাহিকতা / বায়া রেকর্ড (${doc.chainOfTitle.size})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(onClick = { showChainDialog = true }) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("+ বায়া যোগ")
+                        }
+                    }
+                    doc.chainOfTitle.forEach { cot ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${cot.stage}: খতিয়ান নং ${cot.khatianNo.ifBlank { "-" }} • দাগ নং ${cot.dagNo.ifBlank { "-" }}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    val meta = listOfNotNull(
+                                        cot.deedOrCaseNo.takeIf { it.isNotBlank() }?.let { "দলিল/কেস: $it" },
+                                        cot.yearStr.takeIf { it.isNotBlank() }?.let { "সাল: $it" },
+                                        cot.partiesSummary.takeIf { it.isNotBlank() }?.let { "পক্ষ: $it" },
+                                        if (cot.areaDecimal > 0.0) "${cot.areaDecimal} শতক" else null
+                                    ).joinToString(" | ")
+                                    if (meta.isNotBlank()) {
+                                        Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                IconButton(onClick = { viewModel.removeChainOfTitleEntry(cot.id) }, modifier = Modifier.size(36.dp)) {
+                                    Icon(Icons.Rounded.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    }
+
                     Surface(
                         color = EmeraldPrimary.copy(alpha = 0.08f),
                         shape = RoundedCornerShape(14.dp),
@@ -691,12 +868,44 @@ fun CustomKhatianScreen(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "PNG বা PDF সেভ করলে খতিয়ানের নিচে আপনার নাম, ছবি, মোবাইল ও Gmail স্বয়ংক্রিয়ভাবে যুক্ত হবে।",
+                                text = "PNG বা PDF সেভ করলে প্রাচীন খতিয়ান কাগজে আপনার নাম, ছবি, মোবাইল ও Gmail স্বয়ংক্রিয়ভাবে যুক্ত হবে।",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = SurveyGold
                             )
                         }
                     }
+                }
+            }
+
+            // Section E: Live Vintage Parchment Khatian Preview
+            item {
+                VintageStampPaperCard(
+                    headerTitle = "${doc.khatianType.ifBlank { "আরএস (RS) খতিয়ান" }} — খতিয়ান নং: ${doc.khatianNumber.ifBlank { "-" }}",
+                    stampBadge = "প্রাচীন খতিয়ান পর্চা শৈলী (খসড়া)",
+                    serialNumber = "মৌজা: ${doc.mouzaName.ifBlank { "-" }} (JL ${doc.jlNumber.ifBlank { "-" }})",
+                    disclaimerText = "অস্বীকৃতি: এটি হাতে প্রস্তুতকৃত ডিজিটাল কাস্টম খতিয়ান (অনুকরণ); সরকারি সার্টিফায়েড পর্চা নয়।"
+                ) {
+                    Text(
+                        text = "জেলা: ${doc.district.ifBlank { "-" }} | উপজেলা: ${doc.upazila.ifBlank { "-" }} | তৌজি: ${doc.tauziNumber.ifBlank { "-" }}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF2B1C10)
+                    )
+                    Text(
+                        text = "মালিক (${doc.owners.size}): " + if (doc.owners.isEmpty()) "যোগ করা হয়নি" else doc.owners.joinToString("; ") { "${it.name} (${it.shareText})" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF2B1C10)
+                    )
+                    Text(
+                        text = "দাগসমূহ (${doc.dags.size}): " + if (doc.dags.isEmpty()) "যোগ করা হয়নি" else doc.dags.joinToString("; ") { "দাগ ${it.dagNumber} (${it.landClass}: ${String.format(Locale.US, "%.2f", it.thisKhatianDecimal)} শতক)" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF2B1C10)
+                    )
+                    Text(
+                        text = "মোট জমি: ${String.format(Locale.US, "%.2f", totalDec)} শতাংশ (${String.format(Locale.US, "%.4f", totalAcre)} একর) • খাজনা: ${doc.totalKhajna.ifBlank { "-" }}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF174E3D)
+                    )
                 }
             }
         }
@@ -876,6 +1085,36 @@ fun CustomKhatianScreen(
                 }
             }
         }
+    }
+
+    if (showOcrDialog) {
+        OcrAutoFillDialog(
+            onDismiss = { showOcrDialog = false },
+            onApply = { rawText ->
+                viewModel.applyOcrTextToHeaderAndDags(rawText)
+                showOcrDialog = false
+            }
+        )
+    }
+
+    if (showCustomFieldDialog) {
+        AddCustomFieldDialog(
+            onDismiss = { showCustomFieldDialog = false },
+            onAdd = { label, value ->
+                viewModel.addCustomField(label, value)
+                showCustomFieldDialog = false
+            }
+        )
+    }
+
+    if (showChainDialog) {
+        AddChainOfTitleDialog(
+            onDismiss = { showChainDialog = false },
+            onAdd = { stage, khatianNo, dagNo, deedNo, year, parties, dec, note ->
+                viewModel.addChainOfTitleEntry(stage, khatianNo, dagNo, deedNo, year, parties, dec, note)
+                showChainDialog = false
+            }
+        )
     }
 }
 
@@ -1309,3 +1548,197 @@ private fun DagEntryDialog(
         }
     )
 }
+
+@Composable
+private fun OcrAutoFillDialog(
+    onDismiss: () -> Unit,
+    onApply: (rawText: String) -> Unit
+) {
+    var ocrText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("OCR টেক্সট থেকে খতিয়ান অটো-ফিল", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "খতিয়ানের স্ক্যান করা বা ফটো থেকে প্রাপ্ত বাংলা টেক্সট এখানে পেস্ট করুন। মৌজা, জেএল, খতিয়ান নং, দাগ ও মালিকানা স্বয়ংক্রিয়ভাবে পার্স হবে।",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = ocrText,
+                    onValueChange = { ocrText = it },
+                    label = { Text("OCR টেক্সট পেস্ট করুন") },
+                    placeholder = { Text("মৌজা: পুবাইল, জেএল: ৪২, খতিয়ান: ১০৫, দাগ: ১৪২, মালিক: মোঃ করিম...") },
+                    minLines = 4,
+                    maxLines = 8,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onApply(ocrText) },
+                enabled = ocrText.isNotBlank()
+            ) {
+                Text("অটো-পার্স ও যোগ")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("বাতিল") }
+        }
+    )
+}
+
+@Composable
+private fun AddCustomFieldDialog(
+    onDismiss: () -> Unit,
+    onAdd: (label: String, value: String) -> Unit
+) {
+    var label by remember { mutableStateOf("") }
+    var value by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("অতিরিক্ত কাস্টম ফিল্ড যোগ", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("ফিল্ডের নাম / কলাম (যেমন: সাবেক দাগ বা জরিপকারী)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text("তথ্য / মান") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onAdd(label, value) },
+                enabled = label.isNotBlank() && value.isNotBlank()
+            ) {
+                Text("যোগ করুন")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("বাতিল") }
+        }
+    )
+}
+
+@Composable
+private fun AddChainOfTitleDialog(
+    onDismiss: () -> Unit,
+    onAdd: (stage: String, khatianNo: String, dagNo: String, deedNo: String, year: String, parties: String, dec: Double, note: String) -> Unit
+) {
+    val stages = listOf("সিএস (CS)", "এসএ (SA)", "আরএস (RS)", "বিএস (BS)", "অন্যান্য বায়া")
+    var selectedStage by remember { mutableStateOf(stages.first()) }
+    var khatianNo by remember { mutableStateOf("") }
+    var dagNo by remember { mutableStateOf("") }
+    var deedNo by remember { mutableStateOf("") }
+    var yearStr by remember { mutableStateOf("") }
+    var parties by remember { mutableStateOf("") }
+    var decStr by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("বায়া রেকর্ড / মালিকানার ধারাবাহিকতা", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("জরিপ পর্যায় / বায়া স্তর:", style = MaterialTheme.typography.labelSmall)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(stages) { stg ->
+                        FilterChip(
+                            selected = selectedStage == stg,
+                            onClick = { selectedStage = stg },
+                            label = { Text(stg) }
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = khatianNo,
+                        onValueChange = { khatianNo = it },
+                        label = { Text("খতিয়ান নং") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = dagNo,
+                        onValueChange = { dagNo = it },
+                        label = { Text("দাগ নং") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = deedNo,
+                        onValueChange = { deedNo = it },
+                        label = { Text("দলিল / কেস নং") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = yearStr,
+                        onValueChange = { yearStr = it },
+                        label = { Text("বছর / তারিখ") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                OutlinedTextField(
+                    value = parties,
+                    onValueChange = { parties = it },
+                    label = { Text("দাতা / গ্রহীতা / পক্ষগণ") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = decStr,
+                        onValueChange = { decStr = it },
+                        label = { Text("জমির পরিমাণ (শতক)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = note,
+                        onValueChange = { note = it },
+                        label = { Text("সংক্ষিপ্ত নোট") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val dec = decStr.toDoubleOrNull() ?: 0.0
+                    onAdd(selectedStage, khatianNo, dagNo, deedNo, yearStr, parties, dec, note)
+                },
+                enabled = khatianNo.isNotBlank() || dagNo.isNotBlank() || deedNo.isNotBlank()
+            ) {
+                Text("বায়া সংরক্ষণ")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("বাতিল") }
+        }
+    )
+}
+

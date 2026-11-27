@@ -128,11 +128,11 @@ object ExportStreamWriter {
 
         val nativePdfResult = runCatching {
             val pdfDoc = PdfDocument()
-            val pageInfo = PdfDocument.PageInfo.Builder(w, h, 1).create()
-            val page = pdfDoc.startPage(pageInfo)
-            page.canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
-            pdfDoc.finishPage(page)
             try {
+                val pageInfo = PdfDocument.PageInfo.Builder(w, h, 1).create()
+                val page = pdfDoc.startPage(pageInfo)
+                page.canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+                pdfDoc.finishPage(page)
                 savePdfDocument(context, pdfDoc, w, h, safeName, subFolder, desktopFallbackDir)
             } finally {
                 runCatching { pdfDoc.close() }
@@ -164,15 +164,11 @@ object ExportStreamWriter {
         }
     }
 
-    internal fun encodeBitmapAsPortablePdfBytes(bitmap: Bitmap): ByteArray {
-        val w = bitmap.width.coerceAtLeast(1)
-        val h = bitmap.height.coerceAtLeast(1)
-        val imgBytes = encodeToByteArray { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 94, out)
-        }
-        val pageW = 842
-        val pageH = ((842.0 * h) / w).toInt().coerceAtLeast(1)
+    internal fun encodeBitmapAsPortablePdfBytes(bitmap: Bitmap): ByteArray =
+        encodeBitmapsAsPortablePdfBytes(listOf(bitmap))
 
+    internal fun encodeBitmapsAsPortablePdfBytes(bitmaps: List<Bitmap>): ByteArray {
+        val safePages = bitmaps.ifEmpty { return ByteArray(0) }
         return encodeToByteArray { out ->
             val offsets = mutableListOf(0L)
             var pos = 0L
@@ -186,20 +182,36 @@ object ExportStreamWriter {
                 pos += b.size
             }
 
+            // Object layout: 1 = Catalog, 2 = Pages, then for each page i: (3 + 3*i)=Page, (4 + 3*i)=Image, (5 + 3*i)=Contents
+            val pageObjIds = safePages.indices.map { 3 + it * 3 }
             writeAscii("%PDF-1.4\n%BSD\n")
             offsets += pos
             writeAscii("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
             offsets += pos
-            writeAscii("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
-            offsets += pos
-            writeAscii("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $pageW $pageH] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n")
-            offsets += pos
-            writeAscii("4 0 obj\n<< /Type /XObject /Subtype /Image /Width $w /Height $h /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.size} >>\nstream\n")
-            writeRaw(imgBytes)
-            writeAscii("\nendstream\nendobj\n")
-            val contentStream = "q\n$pageW 0 0 $pageH 0 0 cm\n/Im0 Do\nQ\n"
-            offsets += pos
-            writeAscii("5 0 obj\n<< /Length ${contentStream.length} >>\nstream\n${contentStream}endstream\nendobj\n")
+            writeAscii("2 0 obj\n<< /Type /Pages /Kids [${pageObjIds.joinToString(" ") { "$it 0 R" }}] /Count ${safePages.size} >>\nendobj\n")
+
+            safePages.forEachIndexed { idx, bitmap ->
+                val w = bitmap.width.coerceAtLeast(1)
+                val h = bitmap.height.coerceAtLeast(1)
+                val imgBytes = encodeToByteArray { bOut ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 92, bOut)
+                }
+                val pageW = if (w > h) 842 else 595
+                val pageH = ((pageW.toDouble() * h) / w).toInt().coerceAtLeast(1)
+                val pageObj = 3 + idx * 3
+                val imgObj = pageObj + 1
+                val contentObj = pageObj + 2
+
+                offsets += pos
+                writeAscii("$pageObj 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $pageW $pageH] /Resources << /XObject << /Im0 $imgObj 0 R >> >> /Contents $contentObj 0 R >>\nendobj\n")
+                offsets += pos
+                writeAscii("$imgObj 0 obj\n<< /Type /XObject /Subtype /Image /Width $w /Height $h /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.size} >>\nstream\n")
+                writeRaw(imgBytes)
+                writeAscii("\nendstream\nendobj\n")
+                val contentStream = "q\n$pageW 0 0 $pageH 0 0 cm\n/Im0 Do\nQ\n"
+                offsets += pos
+                writeAscii("$contentObj 0 obj\n<< /Length ${contentStream.length} >>\nstream\n${contentStream}endstream\nendobj\n")
+            }
 
             val xrefPos = pos
             writeAscii("xref\n0 ${offsets.size}\n0000000000 65535 f \n")

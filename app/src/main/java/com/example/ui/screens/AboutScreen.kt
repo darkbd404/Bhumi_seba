@@ -66,8 +66,13 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.model.SurveyorProfile
+import androidx.compose.material.icons.rounded.HistoryEdu
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.PcInstallLinkCard
+import com.example.ui.components.VintageStampPaperCard
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.SurveyGold
@@ -92,6 +97,7 @@ fun AboutScreen(
     onSaveSurveyorProfile: (SurveyorProfile) -> Unit = {},
     onNavigateBack: () -> Unit,
     onOpenUrlInApp: (url: String, title: String) -> Unit,
+    onOpenDocumentArchiver: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -357,6 +363,68 @@ fun AboutScreen(
                     )
                 }
             }
+            }
+        }
+
+        // Document Archiver UI (Scrollable Vintage Bangladeshi Legal Deed Parchment Section)
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .neuSurface(cornerRadius = 24.dp, elevation = 6.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Rounded.HistoryEdu, contentDescription = null, tint = EmeraldPrimary)
+                    Text(
+                        text = "ঐতিহাসিক দলিল সংরক্ষণাগার (Document Archiver)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = "সাফ-কবলা, বণ্টননামা, হেবা, বায়না ও তফসিলসহ বাংলাদেশের ঐতিহাসিক দলিলের টেমপ্লেট পুরাতন স্ট্যাম্প কাগজের শৈলীতে দেখুন ও সংরক্ষণ করুন।",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(185.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    VintageStampPaperCard(
+                        headerTitle = "নমুনা ঐতিহাসিক দলিল — সাফ-কবলা / বণ্টননামা",
+                        stampBadge = "১০০ টাকা নন-জুডিশিয়াল স্ট্যাম্প শৈলী",
+                        serialNumber = "ARCH-BD-1962",
+                        disclaimerText = "দ্রষ্টব্য: খসড়া ও নমুনা দলিল — সরকারি সত্যায়িত নকল বা নিবন্ধিত দলিল নয়।"
+                    ) {
+                        Text(
+                            text = "মৌজা: পুবাইল, জে.এল. নং: ৮৫, খতিয়ান নং: ৪১২, দাগ নং: ১০৪২।\n" +
+                                "১ম পক্ষ (দাতা): হাজী ছমির উদ্দিন • ২য় পক্ষ (গ্রহীতা): মোঃ রফিকুল ইসলাম।\n" +
+                                "তফসিল বর্ণনা ও চৌহদ্দি: উত্তরে দাগ ১০৪১, দক্ষিণে ১২ ফুট রাস্তা, পূর্বে দাগ ১০৪৩, পশ্চিমে পুকুর পাড়। পরিমাণ: ২৪.৭৯ শতাংশ।",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Serif,
+                            color = Color(0xFF2B1C10)
+                        )
+                    }
+                }
+                Button(
+                    onClick = onOpenDocumentArchiver,
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_doc_archiver_from_about")
+                ) {
+                    Icon(Icons.Rounded.HistoryEdu, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Document Archiver খুলুন (সব দলিল ও টেমপ্লেট)")
+                }
             }
         }
 

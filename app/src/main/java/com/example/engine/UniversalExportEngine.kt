@@ -303,8 +303,18 @@ object UniversalExportEngine {
         title: String,
         subtitle: String,
         bodyText: String,
-        disclaimer: String = "সতর্কতা: এটি প্রাথমিক ডিজিটাল প্রতিবেদন/খসড়া; সরকারি সার্টিফায়েড রেকর্ড নয়।"
+        disclaimer: String = "সতর্কতা: এটি প্রাথমিক ডিজিটাল প্রতিবেদন/খসড়া; সরকারি সার্টিফায়েড রেকর্ড নয়।",
+        useVintagePaper: Boolean = false
     ): Bitmap {
+        if (useVintagePaper) {
+            return DocumentAndReportEngine.renderVintageLegalBitmap(
+                title = title,
+                stampValueLabel = subtitle.ifBlank { "১০০ টাকা (প্রাচীন কাগজ নমুনা)" },
+                serialTag = "BD-DOC-2026",
+                bodyText = bodyText,
+                disclaimer = disclaimer
+            )
+        }
         val w = 1240
         val wrappedLines = mutableListOf<String>()
         bodyText.lines().forEach { raw ->

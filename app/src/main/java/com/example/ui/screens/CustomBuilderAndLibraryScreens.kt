@@ -53,7 +53,12 @@ import com.example.engine.FormulaExpressionEvaluator
 import com.example.model.CustomFieldType
 import com.example.model.CustomFormFieldDef
 import com.example.model.CustomFormTemplate
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.HistoryEdu
+import androidx.compose.ui.graphics.Color
 import com.example.ui.components.BottomSwipeToastBanner
+import com.example.ui.components.VintageStampPaperCard
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.TealSecondary
@@ -361,6 +366,7 @@ fun CustomBuilderScreen(
 @Composable
 fun LegalLibraryScreen(
     onNavigateBack: () -> Unit,
+    onOpenDocumentArchiver: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val articles = remember {
@@ -418,6 +424,54 @@ fun LegalLibraryScreen(
                     LegalPrecisionNoticeBanner(
                         text = "দ্রষ্টব্য: এই অ্যাপ কোনো সরকারি দপ্তর নয়। চূড়ান্ত আইনি সিদ্ধান্ত, দলিল রেজিস্ট্রি বা পর্চা যাচাইয়ের জন্য সরকারি ভূমি অফিস ও বিজ্ঞ আইনজীবীর সহায়তা নিন।"
                     )
+                }
+
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .neuSurface(cornerRadius = 20.dp, elevation = 5.dp)
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "ঐতিহাসিক দলিল সংরক্ষণাগার (Document Archiver)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldPrimary
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            VintageStampPaperCard(
+                                headerTitle = "বাংলাদেশি দলিল টেমপ্লেট — পুরাতন কাগজ শৈলী",
+                                stampBadge = "১০০ টাকা স্ট্যাম্প আর্কাইভ",
+                                serialNumber = "DOC-ARCHIVE",
+                                disclaimerText = DocumentAndReportEngine.LEGAL_DRAFT_DISCLAIMER_BN
+                            ) {
+                                Text(
+                                    text = "সাফ-কবলা, হেবা-বিল-এওয়াজ, বণ্টননামা, বায়নাপত্র, হলফনামা, আমমোক্তারনামা এবং জমি জরিপের তফসিলসহ ১২+ টেমপ্লেট পুরাতন দলিলের কাগজে সংরক্ষিত।",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Serif,
+                                    color = Color(0xFF2B1C10)
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = onOpenDocumentArchiver,
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("open_doc_archiver_from_resources")
+                        ) {
+                            Icon(Icons.Rounded.HistoryEdu, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Document Archiver খুলুন (সব দলিল দেখুন)")
+                        }
+                    }
                 }
 
                 items(articles) { (heading, body) ->

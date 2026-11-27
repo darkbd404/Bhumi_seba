@@ -1,5 +1,6 @@
 package com.example.engine
 
+import com.example.model.CustomUnitPreset
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
@@ -7,13 +8,15 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 enum class LengthUnit(val labelBn: String, val feetFactor: Double) {
-    FEET("ফুট (Feet)", 1.0),
+    CM("সেন্টিমিটার (cm)", 1.0 / 30.48),
     INCH("ইঞ্চি (Inch)", 1.0 / 12.0),
+    FEET("ফুট (Feet)", 1.0),
     HAT("হাত (১৮ ইঞ্চি)", 1.5),
     YARD("গজ (Yard)", 3.0),
     METER("মিটার (Meter)", 3.280839895),
     LINK("লিংক / কড়ি (Link)", 0.66),
     CHAIN("গান্টার চেইন (Chain)", 66.0),
+    ROSHI("রশি (১২০ ফুট)", 120.0),
     KILOMETER("কিলোমিটার (Km)", 3280.839895),
     MILE("মাইল (Mile)", 5280.0)
 }
@@ -28,7 +31,12 @@ data class LandAreaResult(
     val acre: Double,        // একর (100 Decimal = 43,560 sq ft)
     val hectare: Double,     // হেক্টর (247.105 Decimal)
     val sqHat: Double,       // বর্গহাত (1 Hat = 1.5 ft -> 2.25 sq ft)
-    val gonda: Double,       // গণ্ডা (Noakhali/Chattogram/Sylhet standard 1 Kani = 20 Gonda; 864 sq ft per Gonda in 120-decimal Kani, or 345.6 in 40-dec Kani — labeled clearly)
+    val gonda: Double,       // গণ্ডা (40-decimal Kani standard: 1 Gonda = 2 Decimal = 871.2 sq ft)
+    val kani: Double = decimal / 40.0,
+    val chotak: Double = sqFeet / 45.0,
+    val guntha: Double = sqFeet / 1089.0,
+    val sqInches: Double = sqFeet * 144.0,
+    val sqYards: Double = sqFeet / 9.0
 )
 
 object LandCalculators {
@@ -39,7 +47,34 @@ object LandCalculators {
     const val SQ_FT_PER_SQ_METER = 10.7639104167
     const val SQ_FT_PER_HECTARE = 107639.104167
     const val SQ_FT_PER_SQ_HAT = 2.25 // 18 inch = 1.5 ft -> 1.5*1.5 = 2.25 sq ft
+    const val SQ_FT_PER_CHOTAK = 45.0 // 1 Katha = 16 Chotak = 720 sq ft
+    const val SQ_FT_PER_GUNTHA = 1089.0 // 1 Guntha = 2.5 Decimal = 1089 sq ft
     const val SQ_FT_PER_GUNTER_LINK_SQ = 0.4356 // 1 link = 0.66 ft
+
+    private val BANGLA_DIGITS = charArrayOf('০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯')
+
+    fun toBanglaDigits(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (ch in text) {
+            if (ch in '0'..'9') sb.append(BANGLA_DIGITS[ch - '0']) else sb.append(ch)
+        }
+        return sb.toString()
+    }
+
+    fun toEnglishDigits(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (ch in text) {
+            val idx = BANGLA_DIGITS.indexOf(ch)
+            if (idx >= 0) sb.append(('0'.code + idx).toChar()) else sb.append(ch)
+        }
+        return sb.toString()
+    }
+
+    fun formatNumber(value: Double, precision: Int = 2, useBanglaDigits: Boolean = false): String {
+        val safePrec = precision.coerceIn(0, 6)
+        val raw = String.format(Locale.US, "%.${safePrec}f", value)
+        return if (useBanglaDigits) toBanglaDigits(raw) else raw
+    }
 
     fun convertLength(value: Double, from: LengthUnit): Map<LengthUnit, Double> {
         val safeFeet = value.coerceAtLeast(0.0) * from.feetFactor
@@ -53,32 +88,78 @@ object LandCalculators {
         return "$ft'$inches\""
     }
 
+    /** Formats feet as feet-inch-suta (1 inch = 8 suta) */
+    fun formatFeetInchesSuta(feet: Double): String {
+        val totalSutas = (feet.coerceAtLeast(0.0) * 12.0 * 8.0).roundToInt()
+        val ft = totalSutas / 96
+        val remSutaAfterFt = totalSutas % 96
+        val inches = remSutaAfterFt / 8
+        val suta = remSutaAfterFt % 8
+        return if (suta > 0) "$ft'$inches\"-$suta সুতা" else "$ft'$inches\""
+    }
+
+    fun parseFeetInchesSuta(input: String): Double? {
+        val clean = toEnglishDigits(input).trim()
+        if (clean.isBlank()) return null
+        clean.toDoubleOrNull()?.let { return it }
+        // Parse formats like 25'6"-4 or 25' 6"
+        val regex = Regex("""(\d+(?:\.\d+)?)\s*['′]\s*(\d+(?:\.\d+)?)?\s*["″]?(?:\s*[-,]\s*(\d+(?:\.\d+)?))?""")
+        val match = regex.find(clean) ?: return null
+        val ft = match.groupValues[1].toDoubleOrNull() ?: 0.0
+        val inch = match.groupValues.getOrNull(2)?.toDoubleOrNull() ?: 0.0
+        val suta = match.groupValues.getOrNull(3)?.toDoubleOrNull() ?: 0.0
+        return ft + (inch / 12.0) + (suta / 96.0)
+    }
+
     fun formatCompactFeet(feet: Double): String {
         return String.format(Locale.US, "%.1f'", feet.coerceAtLeast(0.0))
     }
 
-    fun fromSqFeet(sqFeet: Double): LandAreaResult {
+    fun fromSqFeet(sqFeet: Double, preset: CustomUnitPreset? = null): LandAreaResult {
         val safe = sqFeet.coerceAtLeast(0.0)
-        val decimal = safe / SQ_FT_PER_DECIMAL
+        val decDiv = (preset?.decimalSqFt ?: SQ_FT_PER_DECIMAL).coerceAtLeast(1.0)
+        val kathaDiv = (preset?.kathaSqFt ?: SQ_FT_PER_KATHA_BD).coerceAtLeast(1.0)
+        val bighaDiv = (preset?.bighaSqFt ?: SQ_FT_PER_BIGHA_BD).coerceAtLeast(1.0)
+        val kaniDec = (preset?.kaniDecimals ?: 40.0).coerceAtLeast(1.0)
+        val decimal = safe / decDiv
+        val kani = decimal / kaniDec
         return LandAreaResult(
             sqFeet = safe,
             sqMeters = safe / SQ_FT_PER_SQ_METER,
             decimal = decimal,
             ajutangsho = decimal * 100.0,
-            katha = safe / SQ_FT_PER_KATHA_BD,
-            bigha = safe / SQ_FT_PER_BIGHA_BD,
+            katha = safe / kathaDiv,
+            bigha = safe / bighaDiv,
             acre = safe / SQ_FT_PER_ACRE,
             hectare = safe / SQ_FT_PER_HECTARE,
             sqHat = safe / SQ_FT_PER_SQ_HAT,
-            gonda = decimal / 2.0 // Standard 40-decimal Kani (1 Gonda = 2 Decimal)
+            gonda = kani * 20.0,
+            kani = kani,
+            chotak = safe / (kathaDiv / 16.0),
+            guntha = safe / SQ_FT_PER_GUNTHA,
+            sqInches = safe * 144.0,
+            sqYards = safe / 9.0
         )
     }
 
-    fun fromDecimal(decimal: Double): LandAreaResult = fromSqFeet(decimal * SQ_FT_PER_DECIMAL)
-    fun fromKatha(katha: Double): LandAreaResult = fromSqFeet(katha * SQ_FT_PER_KATHA_BD)
-    fun fromBigha(bigha: Double): LandAreaResult = fromSqFeet(bigha * SQ_FT_PER_BIGHA_BD)
-    fun fromAcre(acre: Double): LandAreaResult = fromSqFeet(acre * SQ_FT_PER_ACRE)
-    fun fromSqMeters(sqMeters: Double): LandAreaResult = fromSqFeet(sqMeters * SQ_FT_PER_SQ_METER)
+    fun fromDecimal(decimal: Double, preset: CustomUnitPreset? = null): LandAreaResult =
+        fromSqFeet(decimal * (preset?.decimalSqFt ?: SQ_FT_PER_DECIMAL), preset)
+    fun fromKatha(katha: Double, preset: CustomUnitPreset? = null): LandAreaResult =
+        fromSqFeet(katha * (preset?.kathaSqFt ?: SQ_FT_PER_KATHA_BD), preset)
+    fun fromBigha(bigha: Double, preset: CustomUnitPreset? = null): LandAreaResult =
+        fromSqFeet(bigha * (preset?.bighaSqFt ?: SQ_FT_PER_BIGHA_BD), preset)
+    fun fromAcre(acre: Double, preset: CustomUnitPreset? = null): LandAreaResult =
+        fromSqFeet(acre * SQ_FT_PER_ACRE, preset)
+    fun fromSqMeters(sqMeters: Double, preset: CustomUnitPreset? = null): LandAreaResult =
+        fromSqFeet(sqMeters * SQ_FT_PER_SQ_METER, preset)
+    fun fromKani(kani: Double, preset: CustomUnitPreset? = null): LandAreaResult {
+        val kaniDec = (preset?.kaniDecimals ?: 40.0).coerceAtLeast(1.0)
+        return fromDecimal(kani * kaniDec, preset)
+    }
+    fun fromGuntha(guntha: Double, preset: CustomUnitPreset? = null): LandAreaResult =
+        fromSqFeet(guntha * SQ_FT_PER_GUNTHA, preset)
+    fun fromChotak(chotak: Double, preset: CustomUnitPreset? = null): LandAreaResult =
+        fromSqFeet(chotak * ((preset?.kathaSqFt ?: SQ_FT_PER_KATHA_BD) / 16.0), preset)
 
     /**
      * Triangle area by Heron's formula (sides in feet). Returns null if triangle inequality fails.

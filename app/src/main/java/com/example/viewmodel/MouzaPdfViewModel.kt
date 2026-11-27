@@ -7,22 +7,31 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppPreferences
+import com.example.engine.GeometryAndAccuracyEngine
 import com.example.engine.LandCalculators
+import com.example.engine.MouzaN01Extensions
 import com.example.engine.MouzaPdfEngine
 import com.example.engine.PlotWallIndex
 import com.example.engine.PngExporter
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import com.example.model.CalibrationRefLine
+import com.example.model.GlobalSurveySettings
 import com.example.model.KhatianRecord
+import com.example.model.MeasureBetweenResult
 import com.example.model.MouzaFilterPreset
 import com.example.model.MouzaPlot
 import com.example.model.MouzaScale
 import com.example.model.MouzaSelectionTool
+import com.example.model.ParcelTableRow
+import com.example.model.PdfInspectionReport
 import com.example.model.SavedMeasurementRecord
 import com.example.model.SavedProjectType
 import com.example.model.SavedSurveyProject
+import com.example.model.ScaleCalibrationProfile
 import com.example.model.SerializablePoint
 import com.example.model.SerializedMouzaPlot
+import com.example.model.ShoelaceStepRow
 import com.example.ui.theme.PlotPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,25 +44,42 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
+import java.util.Locale
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 data class MouzaPdfUiState(
     val isLoadingPdf: Boolean = false,
     val isRenderingHd: Boolean = false,
     val isAutoFilling: Boolean = false,
     val isExporting: Boolean = false,
+    val isEncryptedPdfError: Boolean = false,
     val fileName: String = "",
     val isPdf: Boolean = true,
     val pageCount: Int = 0,
     val currentPage: Int = 0,
+    val renderDpi: Int = 300,
+    val pageRotationDeg: Int = 0,
     val displayBitmap: Bitmap? = null,
+    val cleanedPreviewBitmap: Bitmap? = null,
+    val pageCompareIndex: Int? = null,
+    val pageCompareBitmap: Bitmap? = null,
     val viewportTile: MouzaPdfEngine.ViewportTileResult? = null,
     val hdReady: Boolean = false,
     val pdfPageWidthPts: Int = 1000,
     val pdfPageHeightPts: Int = 1000,
+    val pdfInspectionReport: PdfInspectionReport? = null,
     val selectedScale: MouzaScale = MouzaScale.SCALE_16,
     val calibrationMultiplier: Double = 1.0,
+    val calibrationScaleX: Double = 1.0,
+    val calibrationScaleY: Double = 1.0,
+    val calibrationErrPct: Double = 0.6,
+    val paperShrinkageNote: String = "",
+    val calibrationRefLines: List<CalibrationRefLine> = emptyList(),
+    val globalSettings: GlobalSurveySettings = GlobalSurveySettings(),
     val gapSealLevel: Int = 1, // 0 = Exact, 1 = Balanced, 2 = Strong
     val activeTool: MouzaSelectionTool = MouzaSelectionTool.POLYGON_DRAW,
     val selectedPlots: List<MouzaPlot> = emptyList(),
@@ -64,6 +90,7 @@ data class MouzaPdfUiState(
     val tapeDraft: List<Pair<Float, Float>> = emptyList(),
     val selectedTapeIdx: Int? = null,
     val completedTapes: List<List<Pair<Float, Float>>> = emptyList(),
+    val measureBetweenResult: MeasureBetweenResult? = null,
     val khatianTitle: String = "",
     val khatianDocName: String = "",
     val khatianIsPdf: Boolean = true,
@@ -112,6 +139,11 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
+        viewModelScope.launch {
+            prefs.globalSettingsFlow.collect { gs ->
+                _uiState.update { it.copy(globalSettings = gs) }
+            }
+        }
     }
 
     fun openPdfUri(uri: Uri) = openDocumentUri(uri)
@@ -126,6 +158,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             _uiState.update {
                 it.copy(
                     isLoadingPdf = true,
+                    isEncryptedPdfError = false,
                     activeProjectId = null,
                     statusMessage = "নকশা ফাইল লোড হচ্ছে...",
                     selectedPlots = emptyList(),
@@ -136,7 +169,11 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                     selectedTapeIdx = null,
                     completedTapes = emptyList(),
                     viewportTile = null,
-                    overlayMaskBitmap = null
+                    overlayMaskBitmap = null,
+                    cleanedPreviewBitmap = null,
+                    pageCompareBitmap = null,
+                    pageCompareIndex = null,
+                    pageRotationDeg = 0
                 )
             }
             try {
@@ -147,6 +184,10 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                 activeIsPdf = info.isPdf
                 wallIndexFallback = null
 
+                val report = withContext(Dispatchers.IO) {
+                    MouzaN01Extensions.inspectPdfStructure(info.tempFile)
+                }
+
                 _uiState.update {
                     it.copy(
                         fileName = info.fileName,
@@ -154,15 +195,31 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                         pageCount = info.pageCount,
                         currentPage = 0,
                         pdfPageWidthPts = info.baseWidthPts,
-                        pdfPageHeightPts = info.baseHeightPts
+                        pdfPageHeightPts = info.baseHeightPts,
+                        pdfInspectionReport = report
                     )
                 }
                 loadPageInternal(0)
-            } catch (e: Exception) {
+            } catch (sec: SecurityException) {
                 _uiState.update {
                     it.copy(
                         isLoadingPdf = false,
-                        statusMessage = "ফাইল খোলা যায়নি: ${e.localizedMessage ?: "অজানা ত্রুটি"}"
+                        isEncryptedPdfError = true,
+                        statusMessage = "এই PDF পাসওয়ার্ড/এনক্রিপশন দ্বারা সুরক্ষিত — পাসওয়ার্ডমুক্ত কপি ব্যবহার করুন।"
+                    )
+                }
+            } catch (e: Exception) {
+                val isEnc = e.message?.contains("password", ignoreCase = true) == true ||
+                    e.message?.contains("encrypt", ignoreCase = true) == true
+                _uiState.update {
+                    it.copy(
+                        isLoadingPdf = false,
+                        isEncryptedPdfError = isEnc,
+                        statusMessage = if (isEnc) {
+                            "এই PDF পাসওয়ার্ড-সুরক্ষিত — আনলক করা কপি নিন।"
+                        } else {
+                            "ফাইল খোলা যায়নি: ${e.localizedMessage ?: "অজানা ত্রুটি"}"
+                        }
                     )
                 }
             }
@@ -188,6 +245,7 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                     completedTapes = emptyList(),
                     viewportTile = null,
                     overlayMaskBitmap = null,
+                    cleanedPreviewBitmap = null,
                     hdReady = false
                 )
             }
@@ -197,16 +255,27 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun loadPageInternal(pageIndex: Int) {
         val file = activeDocFile ?: return
-        val base = MouzaPdfEngine.renderBaseDocument(appContext, file, activeIsPdf, pageIndex, ultraHd = true)
+        val state = _uiState.value
+        val base = MouzaPdfEngine.renderBaseDocument(
+            appContext, file, activeIsPdf, pageIndex, ultraHd = true, renderDpi = state.renderDpi
+        )
+        val rotated = if (state.pageRotationDeg != 0) {
+            withContext(Dispatchers.Default) {
+                MouzaN01Extensions.rotateBitmapDeg(base.bitmap, state.pageRotationDeg)
+            }
+        } else base.bitmap
+        val wPts = if (state.pageRotationDeg == 90 || state.pageRotationDeg == 270) base.pdfPageHeightPts else base.pdfPageWidthPts
+        val hPts = if (state.pageRotationDeg == 90 || state.pageRotationDeg == 270) base.pdfPageWidthPts else base.pdfPageHeightPts
+
         _uiState.update {
             it.copy(
-                displayBitmap = base.bitmap,
-                pdfPageWidthPts = base.pdfPageWidthPts,
-                pdfPageHeightPts = base.pdfPageHeightPts,
+                displayBitmap = rotated,
+                pdfPageWidthPts = wPts,
+                pdfPageHeightPts = hPts,
                 hdReady = true,
                 isRenderingHd = false,
                 isLoadingPdf = false,
-                statusMessage = "ম্যাপ প্রস্তুত — দাগের ভেতরে ট্যাপ করুন অথবা পয়েন্টার ব্যবহার করুন"
+                statusMessage = "ম্যাপ প্রস্তুত (${state.renderDpi} DPI) — দাগের ভেতরে ট্যাপ বা পয়েন্টার ব্যবহার করুন"
             )
         }
     }
@@ -1022,11 +1091,22 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun plotAreaSqFeet(plot: MouzaPlot): Double {
+        val state = _uiState.value
+        val poly = plot.effectivePolygon()
+        if (poly != null && poly.size >= 3) {
+            val pageFtW = (state.pdfPageWidthPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleX
+            val pageFtH = (state.pdfPageHeightPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleY
+            val outerFt = poly.map { (it.first * pageFtW) to (it.second * pageFtH) }
+            val holesFt = plot.holePolygonsNormalized.map { h ->
+                h.map { (it.first * pageFtW) to (it.second * pageFtH) }
+            }
+            return GeometryAndAccuracyEngine.computeNetAreaWithHolesSqFt(outerFt, holesFt)
+        }
         return plot.exactAreaSqFeet ?: (plot.pixelCount * sqFeetPerGridPixel())
     }
 
     fun totalSelectedSqFeet(): Double {
-        return _uiState.value.selectedPlots.sumOf { plotAreaSqFeet(it) }
+        return _uiState.value.selectedPlots.filterNot { it.isRoad }.sumOf { plotAreaSqFeet(it) }
     }
 
     fun exportSelectedOnlyPdf(selectedOnly: Boolean = true) =
@@ -1259,7 +1339,14 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                         colorArgb = plot.color.toArgb().toLong(),
                         polygonNormalized = poly.map { SerializablePoint(it.first, it.second) },
                         exactAreaSqFeet = plotAreaSqFeet(plot),
-                        isLocked = plot.isLocked
+                        isLocked = plot.isLocked,
+                        ownerName = plot.ownerName,
+                        remarks = plot.remarks,
+                        isRoad = plot.isRoad,
+                        hideMeasures = plot.hideMeasures,
+                        holePolygonsNormalized = plot.holePolygonsNormalized.map { h ->
+                            h.map { SerializablePoint(it.first, it.second) }
+                        }
                     )
                 }
 
@@ -1280,6 +1367,8 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                     pdfPageHeightPts = state.pdfPageHeightPts,
                     mouzaScaleName = state.selectedScale.name,
                     calibrationMultiplier = state.calibrationMultiplier,
+                    calibrationScaleX = state.calibrationScaleX,
+                    calibrationScaleY = state.calibrationScaleY,
                     gapSealLevel = state.gapSealLevel,
                     filterPresetName = state.filterPreset.name,
                     brightness = state.brightness,
@@ -1383,7 +1472,12 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                         dagNumber = sp.dagNumber,
                         khatianNumber = sp.khatianNumber,
                         exactAreaSqFeet = sqFt,
-                        isLocked = sp.isLocked
+                        isLocked = sp.isLocked,
+                        ownerName = sp.ownerName,
+                        remarks = sp.remarks,
+                        isRoad = sp.isRoad,
+                        hideMeasures = sp.hideMeasures,
+                        holePolygonsNormalized = sp.holePolygonsNormalized.map { h -> h.map { it.x to it.y } }
                     )
                 }
                 nextPlotId = (restoredPlots.maxOfOrNull { it.id } ?: 0) + 1
@@ -1423,6 +1517,8 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
                         pdfPageHeightPts = base.pdfPageHeightPts,
                         selectedScale = scaleEnum,
                         calibrationMultiplier = project.calibrationMultiplier,
+                        calibrationScaleX = project.calibrationScaleX,
+                        calibrationScaleY = project.calibrationScaleY,
                         gapSealLevel = project.gapSealLevel,
                         filterPreset = filterEnum,
                         brightness = project.brightness,
@@ -1615,5 +1711,541 @@ class MouzaPdfViewModel(application: Application) : AndroidViewModel(application
             }
         }
         return "mouza_map.pdf"
+    }
+
+    // ==================== M03 + N01 PHASE 1 EXTENSIONS ====================
+
+    fun setRenderDpi(dpi: Int) {
+        if (dpi == _uiState.value.renderDpi) return
+        _uiState.update { it.copy(renderDpi = dpi) }
+        if (activeDocFile != null) {
+            renderJob?.cancel()
+            renderJob = viewModelScope.launch {
+                _uiState.update { it.copy(isLoadingPdf = true, viewportTile = null) }
+                loadPageInternal(_uiState.value.currentPage)
+            }
+        }
+    }
+
+    fun rotatePage90() {
+        val next = (_uiState.value.pageRotationDeg + 90) % 360
+        _uiState.update { it.copy(pageRotationDeg = next) }
+        if (activeDocFile != null) {
+            renderJob?.cancel()
+            renderJob = viewModelScope.launch {
+                _uiState.update { it.copy(isLoadingPdf = true, viewportTile = null) }
+                loadPageInternal(_uiState.value.currentPage)
+            }
+        }
+    }
+
+    fun loadPageForComparison(pageIndex: Int?) {
+        if (pageIndex == null) {
+            _uiState.update { it.copy(pageCompareIndex = null, pageCompareBitmap = null) }
+            return
+        }
+        val file = activeDocFile ?: return
+        if (!activeIsPdf || pageIndex !in 0 until _uiState.value.pageCount) return
+        viewModelScope.launch {
+            runCatching {
+                MouzaPdfEngine.renderBaseDocument(appContext, file, true, pageIndex, ultraHd = false)
+            }.onSuccess { rendered ->
+                _uiState.update {
+                    it.copy(
+                        pageCompareIndex = pageIndex,
+                        pageCompareBitmap = rendered.bitmap,
+                        statusMessage = "তুলনার জন্য পৃষ্ঠা ${pageIndex + 1} লোড হয়েছে"
+                    )
+                }
+            }
+        }
+    }
+
+    fun applySuggestedPdfScale() {
+        val fpi = _uiState.value.pdfInspectionReport?.suggestedFeetPerInch ?: return
+        val matched = MouzaScale.entries.minByOrNull { kotlin.math.abs(it.feetPerInch - fpi) } ?: MouzaScale.SCALE_16
+        setScale(matched)
+        _uiState.update { it.copy(statusMessage = "PDF টেক্সট থেকে প্রস্তাবিত স্কেল (${matched.labelBn}) সেট হয়েছে") }
+    }
+
+    fun importUncompressedPdfVectors() {
+        val report = _uiState.value.pdfInspectionReport ?: return
+        val polys = report.extractedVectorPolygons
+        if (polys.isEmpty()) {
+            _uiState.update { it.copy(statusMessage = report.disclosureBn) }
+            return
+        }
+        val state = _uiState.value
+        val aspect = state.pdfPageHeightPts.toFloat() / state.pdfPageWidthPts.toFloat().coerceAtLeast(1f)
+        val gw = 1500
+        val gh = (1500f * aspect).roundToInt().coerceAtLeast(200)
+        val added = polys.take(30).mapIndexed { idx, pts ->
+            val pId = nextPlotId++
+            val col = PlotPalette[(pId - 1) % PlotPalette.size]
+            MouzaPdfEngine.buildManualPolygonPlot(pts, gw, gh, pId, state.selectedPlots.size + idx + 1, col).copy(
+                exactAreaSqFeet = MouzaPdfEngine.computePolygonAreaSqFeet(
+                    pts, state.pdfPageWidthPts, state.pdfPageHeightPts, state.selectedScale,
+                    state.calibrationMultiplier, state.calibrationScaleX, state.calibrationScaleY
+                )
+            )
+        }
+        _uiState.update {
+            it.copy(
+                selectedPlots = it.selectedPlots + added,
+                statusMessage = "PDF ভেক্টর থেকে ${added.size}টি প্লট সরাসরি যুক্ত হয়েছে!"
+            )
+        }
+    }
+
+    fun addCalibrationRefLineFromLastTape(actualFeet: Double, label: String = "") {
+        val state = _uiState.value
+        val tape = state.tapeDraft.takeIf { it.size >= 2 } ?: state.completedTapes.lastOrNull()
+        if (tape == null || tape.size < 2 || actualFeet <= 0.0) {
+            _uiState.update { it.copy(statusMessage = "প্রথমে 'ফিতা মাপ' দিয়ে ২ বিন্দু আঁকুন এবং সঠিক ফুট লিখুন") }
+            return
+        }
+        val p1 = tape[tape.size - 2]
+        val p2 = tape[tape.size - 1]
+        val before = MouzaPdfEngine.computeDistanceFeet(
+            p1, p2, state.pdfPageWidthPts, state.pdfPageHeightPts, state.selectedScale, 1.0, 1.0, 1.0
+        )
+        val ln = CalibrationRefLine(
+            id = "cal_${System.currentTimeMillis()}",
+            label = label.ifBlank { "রেখা #${state.calibrationRefLines.size + 1}" },
+            p1Norm = p1,
+            p2Norm = p2,
+            actualFeet = actualFeet,
+            measuredFeetBefore = before
+        )
+        recomputeCalibrationLines(state.calibrationRefLines + ln, 0.0, 0.0)
+    }
+
+    fun removeCalibrationRefLine(id: String) {
+        recomputeCalibrationLines(_uiState.value.calibrationRefLines.filterNot { it.id == id }, 0.0, 0.0)
+    }
+
+    fun verifyPaperSizeAndMultiLineCalibration(expectedPaperWIn: Double, expectedPaperHIn: Double) {
+        recomputeCalibrationLines(_uiState.value.calibrationRefLines, expectedPaperWIn, expectedPaperHIn)
+    }
+
+    private fun recomputeCalibrationLines(lines: List<CalibrationRefLine>, expWIn: Double, expHIn: Double) {
+        val state = _uiState.value
+        val out = MouzaN01Extensions.calibrateScaleMultiLine(
+            lines = lines,
+            pageWidthPts = state.pdfPageWidthPts,
+            pageHeightPts = state.pdfPageHeightPts,
+            baseScale = state.selectedScale,
+            expectedPaperWidthIn = expWIn,
+            expectedPaperHeightIn = expHIn
+        )
+        val sx = if (lines.isEmpty()) 1.0 else out.scaleXMultiplier
+        val sy = if (lines.isEmpty()) 1.0 else out.scaleYMultiplier
+        val mult = sx * sy
+        val updatedPlots = recomputePlotsWithScale(state.selectedPlots, state.pdfPageWidthPts, state.pdfPageHeightPts, state.selectedScale, sx, sy)
+        _uiState.update {
+            it.copy(
+                calibrationRefLines = out.updatedLines,
+                calibrationScaleX = sx,
+                calibrationScaleY = sy,
+                calibrationMultiplier = mult,
+                calibrationErrPct = out.rmsDeviationPct.coerceAtLeast(0.4),
+                paperShrinkageNote = out.paperShrinkageNoteBn,
+                selectedPlots = updatedPlots,
+                statusMessage = if (lines.isEmpty()) "রেফারেন্স লাইন মুছে ফেলা হয়েছে"
+                else String.format(Locale.US, "বহু-রেখা X/Y ক্যালিব্রেশন সম্পন্ন (X:%.3f Y:%.3f • গড় বিচ্যুতি %.2f%%)", sx, sy, out.rmsDeviationPct)
+            )
+        }
+    }
+
+    fun applyCalibrationProfile(profile: ScaleCalibrationProfile) {
+        val state = _uiState.value
+        val matched = MouzaScale.entries.minByOrNull { kotlin.math.abs(it.feetPerInch - profile.feetPerInch) } ?: MouzaScale.SCALE_16
+        val sx = profile.scaleXMultiplier
+        val sy = profile.scaleYMultiplier
+        val updatedPlots = recomputePlotsWithScale(state.selectedPlots, state.pdfPageWidthPts, state.pdfPageHeightPts, matched, sx, sy)
+        _uiState.update {
+            it.copy(
+                selectedScale = matched,
+                calibrationScaleX = sx,
+                calibrationScaleY = sy,
+                calibrationMultiplier = sx * sy,
+                selectedPlots = updatedPlots,
+                statusMessage = "ক্যালিব্রেশন প্রোফাইল প্রয়োগ হয়েছে: ${profile.nameBn}"
+            )
+        }
+    }
+
+    fun saveCurrentCalibrationProfile(name: String, surveyStage: String = "RS") {
+        val state = _uiState.value
+        val profile = ScaleCalibrationProfile(
+            id = "cal_prof_${System.currentTimeMillis()}",
+            nameBn = name.trim().ifBlank { "${state.selectedScale.ratioLabel} কাস্টম প্রোফাইল" },
+            surveyStage = surveyStage,
+            feetPerInch = state.selectedScale.feetPerInch,
+            scaleXMultiplier = state.calibrationScaleX,
+            scaleYMultiplier = state.calibrationScaleY
+        )
+        val updatedProfiles = state.globalSettings.savedCalibrationProfiles + profile
+        val updatedSettings = state.globalSettings.copy(savedCalibrationProfiles = updatedProfiles)
+        viewModelScope.launch {
+            prefs.saveGlobalSettings(updatedSettings)
+            _uiState.update { it.copy(statusMessage = "ক্যালিব্রেশন প্রোফাইল স্থায়ীভাবে সেভ হয়েছে") }
+        }
+    }
+
+    private fun recomputePlotsWithScale(
+        plots: List<MouzaPlot>,
+        wPts: Int,
+        hPts: Int,
+        scale: MouzaScale,
+        sx: Double,
+        sy: Double
+    ): List<MouzaPlot> {
+        val pageFtW = (wPts / 72.0) * scale.feetPerInch * sx
+        val pageFtH = (hPts / 72.0) * scale.feetPerInch * sy
+        return plots.map { p ->
+            if (p.isLocked) return@map p
+            val poly = p.effectivePolygon() ?: return@map p
+            val outerFt = poly.map { (it.first * pageFtW) to (it.second * pageFtH) }
+            val holesFt = p.holePolygonsNormalized.map { h -> h.map { (it.first * pageFtW) to (it.second * pageFtH) } }
+            p.copy(exactAreaSqFeet = GeometryAndAccuracyEngine.computeNetAreaWithHolesSqFt(outerFt, holesFt))
+        }
+    }
+
+    fun generateCleanedPreview(contrastGain: Float, threshold: Int, despeckle: Boolean, invert: Boolean) {
+        val src = _uiState.value.displayBitmap ?: return
+        viewModelScope.launch {
+            val cleaned = withContext(Dispatchers.Default) {
+                MouzaN01Extensions.cleanMouzaBitmap(src, contrastGain, threshold, despeckle, invert)
+            }
+            _uiState.update { it.copy(cleanedPreviewBitmap = cleaned) }
+        }
+    }
+
+    fun exportCleanedDocument(asPdf: Boolean) {
+        val bmp = _uiState.value.cleanedPreviewBitmap ?: _uiState.value.displayBitmap ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isExporting = true) }
+            try {
+                val path = withContext(Dispatchers.IO) {
+                    if (asPdf) {
+                        MouzaN01Extensions.exportCleanedPdf(appContext, bmp, _uiState.value.fileName).absolutePath
+                    } else {
+                        val dir = File(appContext.getExternalFilesDir(null) ?: appContext.filesDir, "CleanedMouzaDocs").apply { mkdirs() }
+                        val f = File(dir, "Cleaned_${System.currentTimeMillis()}.png")
+                        FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.PNG, 95, it) }
+                        f.absolutePath
+                    }
+                }
+                _uiState.update { it.copy(isExporting = false, statusMessage = "পরিষ্কার নকশা সেভ হয়েছে: $path") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isExporting = false, statusMessage = "সেভ ব্যর্থ: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    // Plot Context Menu Actions (Road, Hide Measures, Highlight, Hole Cut-Out, Lock Side Length, Split by Line)
+    fun togglePlotRoad(plotId: Int) {
+        _uiState.update { st ->
+            val updated = st.selectedPlots.map { p -> if (p.id == plotId) p.copy(isRoad = !p.isRoad) else p }
+            val target = updated.find { it.id == plotId }
+            st.copy(
+                selectedPlots = updated,
+                statusMessage = if (target?.isRoad == true) "দাগটি 'রাস্তা' হিসেবে চিহ্নিত (মোট ব্যবহারযোগ্য জমিতে বাদ)" else "রাস্তা চিহ্ন সরানো হয়েছে"
+            )
+        }
+    }
+
+    fun togglePlotHideMeasures(plotId: Int) {
+        _uiState.update { st ->
+            val updated = st.selectedPlots.map { p -> if (p.id == plotId) p.copy(hideMeasures = !p.hideMeasures) else p }
+            st.copy(selectedPlots = updated)
+        }
+    }
+
+    fun togglePlotHighlight(plotId: Int) {
+        _uiState.update { st ->
+            val next = if (st.highlightedPlotId == plotId) null else plotId
+            st.copy(highlightedPlotId = next)
+        }
+    }
+
+    fun updatePlotDetails(plotId: Int, dag: String, khatian: String, owner: String, remarks: String, color: Color? = null) {
+        _uiState.update { st ->
+            val target = st.selectedPlots.find { it.id == plotId } ?: return@update st
+            if (target.isLocked) return@update st.copy(statusMessage = "দাগটি লকড আছে — আগে আনলক করুন")
+            val updated = st.selectedPlots.map { p ->
+                if (p.id == plotId) p.copy(
+                    dagNumber = dag,
+                    khatianNumber = khatian,
+                    ownerName = owner,
+                    remarks = remarks,
+                    color = color ?: p.color
+                ) else p
+            }
+            st.copy(selectedPlots = updated, statusMessage = "দাগের তথ্য আপডেট হয়েছে")
+        }
+    }
+
+    fun addHoleFromDraftToPlot(plotId: Int) {
+        val state = _uiState.value
+        val holePoly = state.manualPolygonDraft
+        if (holePoly.size < 3) {
+            _uiState.update { it.copy(statusMessage = "হোল/বাদ অংশ তৈরি করতে আগে পলিগন দিয়ে কমপক্ষে ৩টি বিন্দু আঁকুন") }
+            return
+        }
+        val updated = state.selectedPlots.map { p ->
+            if (p.id != plotId || p.isLocked) p
+            else p.copy(holePolygonsNormalized = p.holePolygonsNormalized + listOf(holePoly))
+        }
+        _uiState.update {
+            it.copy(
+                selectedPlots = updated,
+                manualPolygonDraft = emptyList(),
+                selectedDraftIdx = null,
+                statusMessage = "হোল/পুকুর/বাদ অংশ যুক্ত হয়েছে এবং নিট ক্ষেত্রফল হিসাব আপডেট হয়েছে"
+            )
+        }
+    }
+
+    fun lockPlotSideLength(plotId: Int, edgeIndex: Int, targetFeet: Double) {
+        val state = _uiState.value
+        val target = state.selectedPlots.find { it.id == plotId } ?: return
+        if (target.isLocked) {
+            _uiState.update { it.copy(statusMessage = "দাগটি লকড আছে — আগে আনলক করুন") }
+            return
+        }
+        val poly = target.effectivePolygon() ?: return
+        val pageFtW = (state.pdfPageWidthPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleX
+        val pageFtH = (state.pdfPageHeightPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleY
+        val adjusted = GeometryAndAccuracyEngine.adjustNormalizedPolygonEdgeLength(
+            polyNorm = poly,
+            edgeIndex = edgeIndex,
+            targetFeet = targetFeet,
+            pageWidthFt = pageFtW,
+            pageHeightFt = pageFtH
+        )
+        val sqFt = MouzaPdfEngine.computePolygonAreaSqFeet(
+            adjusted, state.pdfPageWidthPts, state.pdfPageHeightPts, state.selectedScale,
+            state.calibrationMultiplier, state.calibrationScaleX, state.calibrationScaleY
+        )
+        _uiState.update { st ->
+            st.copy(
+                selectedPlots = st.selectedPlots.map { p ->
+                    if (p.id == plotId) p.copy(polygonNormalized = adjusted, manualPolygonNormalized = null, exactAreaSqFeet = sqFt) else p
+                },
+                statusMessage = "বাহু #${edgeIndex + 1} দৈর্ঘ্য ${String.format(Locale.US, "%.2f", targetFeet)} ফুটে সেট হয়েছে"
+            )
+        }
+    }
+
+    fun splitPlotByLastTapeLine(plotId: Int) {
+        val state = _uiState.value
+        val target = state.selectedPlots.find { it.id == plotId } ?: return
+        if (target.isLocked) {
+            _uiState.update { it.copy(statusMessage = "দাগটি লকড আছে — ভাগ করতে আনলক করুন") }
+            return
+        }
+        val poly = target.effectivePolygon() ?: return
+        val cutLine = state.tapeDraft.takeIf { it.size >= 2 } ?: state.completedTapes.lastOrNull()
+        if (cutLine == null || cutLine.size < 2) {
+            _uiState.update { it.copy(statusMessage = "বিভক্ত করতে প্রথমে 'ফিতা মাপ' দিয়ে প্লটের ওপর দিয়ে ২ বিন্দুর কাটা রেখা আঁকুন") }
+            return
+        }
+        val split = MouzaN01Extensions.splitNormalizedPolygonByLine(poly, cutLine[cutLine.size - 2], cutLine[cutLine.size - 1])
+        if (split == null) {
+            _uiState.update { it.copy(statusMessage = "কাটা রেখাটি দাগ #${target.plotIndex}-কে দুই ভাগে ছেদ করেনি") }
+            return
+        }
+        val aspect = state.pdfPageHeightPts.toFloat() / state.pdfPageWidthPts.toFloat().coerceAtLeast(1f)
+        val gw = 1500
+        val gh = (1500f * aspect).roundToInt().coerceAtLeast(200)
+        val idA = nextPlotId++
+        val idB = nextPlotId++
+        val pA = MouzaPdfEngine.buildManualPolygonPlot(split.first, gw, gh, idA, target.plotIndex, target.color).copy(
+            dagNumber = target.dagNumber.ifBlank { "" }.let { if (it.isNotBlank()) "$it/A" else "" },
+            khatianNumber = target.khatianNumber,
+            ownerName = target.ownerName
+        )
+        val pB = MouzaPdfEngine.buildManualPolygonPlot(split.second, gw, gh, idB, state.selectedPlots.size + 1, PlotPalette[(idB - 1) % PlotPalette.size]).copy(
+            dagNumber = target.dagNumber.ifBlank { "" }.let { if (it.isNotBlank()) "$it/B" else "" },
+            khatianNumber = target.khatianNumber,
+            ownerName = target.ownerName
+        )
+        val remaining = state.selectedPlots.filterNot { it.id == plotId } + pA + pB
+        _uiState.update {
+            it.copy(
+                selectedPlots = remaining.mapIndexed { idx, p -> p.copy(plotIndex = idx + 1) },
+                tapeDraft = emptyList(),
+                statusMessage = "দাগটি কাটা রেখা বরাবর ২টি অংশে ভাগ হয়েছে!"
+            )
+        }
+    }
+
+    fun measureCornerToCornerDistance(p1Norm: Pair<Float, Float>, p2Norm: Pair<Float, Float>) {
+        val state = _uiState.value
+        val dist = MouzaPdfEngine.computeDistanceFeet(
+            p1Norm, p2Norm, state.pdfPageWidthPts, state.pdfPageHeightPts, state.selectedScale,
+            state.calibrationMultiplier, state.calibrationScaleX, state.calibrationScaleY
+        )
+        val fmt = LandCalculators.formatFeetInchesSuta(dist)
+        _uiState.update {
+            it.copy(
+                measureBetweenResult = MeasureBetweenResult(
+                    modeTitleBn = "কোণা ↔ কোণা দূরত্ব",
+                    distanceFt = dist,
+                    distanceFormatted = fmt,
+                    detailsBn = String.format(Locale.US, "%.2f ফুট (%s) • %.2f লিংক • %.2f মি.", dist, fmt, dist / 0.66, dist * 0.3048),
+                    p1Norm = p1Norm,
+                    p2Norm = p2Norm
+                )
+            )
+        }
+    }
+
+    fun measureBetweenPlots(plotIdA: Int, plotIdB: Int) {
+        val state = _uiState.value
+        val pA = state.selectedPlots.find { it.id == plotIdA }?.effectivePolygon() ?: return
+        val pB = state.selectedPlots.find { it.id == plotIdB }?.effectivePolygon() ?: return
+        val pageFtW = (state.pdfPageWidthPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleX
+        val pageFtH = (state.pdfPageHeightPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleY
+        val res = GeometryAndAccuracyEngine.measureBetweenPolygonsFt(pA, pB, pageFtW, pageFtH)
+        _uiState.update { it.copy(measureBetweenResult = res, statusMessage = res.detailsBn) }
+    }
+
+    fun measurePlotRoadFrontageFromTape(plotId: Int) {
+        val state = _uiState.value
+        val poly = state.selectedPlots.find { it.id == plotId }?.effectivePolygon() ?: return
+        val roadLine = state.tapeDraft.takeIf { it.size >= 2 } ?: state.completedTapes.lastOrNull()
+        if (roadLine == null || roadLine.size < 2) {
+            _uiState.update { it.copy(statusMessage = "আগে 'ফিতা মাপ' দিয়ে রাস্তার রেখা আঁকুন") }
+            return
+        }
+        val pageFtW = (state.pdfPageWidthPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleX
+        val pageFtH = (state.pdfPageHeightPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleY
+        val res = GeometryAndAccuracyEngine.computePlotRoadFrontageFt(
+            polyNorm = poly,
+            roadANorm = roadLine[roadLine.size - 2],
+            roadBNorm = roadLine[roadLine.size - 1],
+            pageWidthFt = pageFtW,
+            pageHeightFt = pageFtH
+        )
+        _uiState.update { it.copy(measureBetweenResult = res, statusMessage = res.detailsBn) }
+    }
+
+    fun clearMeasureBetween() {
+        _uiState.update { it.copy(measureBetweenResult = null) }
+    }
+
+    fun buildParcelTableRows(): List<ParcelTableRow> {
+        val state = _uiState.value
+        return state.selectedPlots.map { plot ->
+            GeometryAndAccuracyEngine.buildParcelTableRow(
+                plot = plot,
+                pageWidthPts = state.pdfPageWidthPts,
+                pageHeightPts = state.pdfPageHeightPts,
+                scale = state.selectedScale,
+                calibrationX = state.calibrationScaleX,
+                calibrationY = state.calibrationScaleY,
+                calibrationErrPct = state.calibrationErrPct,
+                settings = state.globalSettings
+            )
+        }
+    }
+
+    fun getShoelaceStepsForPlot(plotId: Int): Pair<Double, List<ShoelaceStepRow>> {
+        val state = _uiState.value
+        val poly = state.selectedPlots.find { it.id == plotId }?.effectivePolygon() ?: return 0.0 to emptyList()
+        val pageFtW = (state.pdfPageWidthPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleX
+        val pageFtH = (state.pdfPageHeightPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleY
+        val vertsFt = poly.map { (it.first * pageFtW) to (it.second * pageFtH) }
+        return GeometryAndAccuracyEngine.computeShoelaceWithSteps(vertsFt)
+    }
+
+    fun exportParcelTableCsvFile() {
+        val rows = buildParcelTableRows()
+        if (rows.isEmpty()) {
+            _uiState.update { it.copy(statusMessage = "রপ্তানির আগে কমপক্ষে ১টি দাগ সিলেক্ট করুন") }
+            return
+        }
+        viewModelScope.launch {
+            val path = withContext(Dispatchers.IO) {
+                val csv = GeometryAndAccuracyEngine.exportParcelTableCsv(rows, _uiState.value.fileName.ifBlank { "Mouza Parcel Table" })
+                val dir = File(appContext.getExternalFilesDir(null) ?: appContext.filesDir, "ParcelTables").apply { mkdirs() }
+                val f = File(dir, "Parcel_Table_${System.currentTimeMillis()}.csv")
+                f.writeText(csv)
+                f.absolutePath
+            }
+            _uiState.update { it.copy(statusMessage = "পার্সেল টেবিল CSV সেভ হয়েছে: $path") }
+        }
+    }
+
+    fun exportNonDestructiveAnnotatedPdfFile() {
+        val state = _uiState.value
+        val src = state.displayBitmap ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isExporting = true, statusMessage = "অ্যানোটেটেড ভেক্টর PDF তৈরি হচ্ছে...") }
+            try {
+                val profile = prefs.surveyorProfileFlow.first()
+                val rows = buildParcelTableRows()
+                val file = withContext(Dispatchers.IO) {
+                    MouzaN01Extensions.exportNonDestructiveAnnotatedPdf(
+                        context = appContext,
+                        sourceBitmap = src,
+                        plots = state.selectedPlots,
+                        parcelRows = rows,
+                        title = state.khatianTitle.ifBlank { state.fileName.ifBlank { "মৌজা শিট" } },
+                        scale = state.selectedScale,
+                        pageWidthPts = state.pdfPageWidthPts,
+                        pageHeightPts = state.pdfPageHeightPts,
+                        scaleXMult = state.calibrationScaleX,
+                        scaleYMult = state.calibrationScaleY,
+                        surveyorProfile = profile,
+                        settings = state.globalSettings
+                    )
+                }
+                _uiState.update {
+                    it.copy(
+                        isExporting = false,
+                        lastSavedPath = file.absolutePath,
+                        statusMessage = "অ্যানোটেটেড PDF সেভ হয়েছে (মূল PDF অক্ষত): ${file.name}"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isExporting = false, statusMessage = "রপ্তানি ব্যর্থ: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    fun exportAccuracyReportPdfForPlots() {
+        val state = _uiState.value
+        val rows = buildParcelTableRows()
+        if (rows.isEmpty()) {
+            _uiState.update { it.copy(statusMessage = "আগে কমপক্ষে ১টি দাগ সিলেক্ট করুন") }
+            return
+        }
+        viewModelScope.launch {
+            val usableArea = rows.filterNot { it.isRoad }.sumOf { it.sqFeet }
+            val usablePerim = rows.filterNot { it.isRoad }.sumOf { it.perimeterFt }
+            val pageFtW = (state.pdfPageWidthPts / 72.0) * state.selectedScale.feetPerInch * state.calibrationScaleX
+            val uncertainty = GeometryAndAccuracyEngine.computeMeasurementUncertainty(
+                areaSqFeet = usableArea,
+                perimeterFeet = usablePerim,
+                edgeLengthsFt = emptyList(),
+                calibrationErrPct = state.calibrationErrPct,
+                ftPerPixel = pageFtW / 1500.0,
+                zoomScale = 2.0f,
+                settings = state.globalSettings
+            )
+            val file = withContext(Dispatchers.IO) {
+                GeometryAndAccuracyEngine.exportAccuracyReportPdf(
+                    context = appContext,
+                    title = state.khatianTitle.ifBlank { state.fileName.ifBlank { "মৌজা সার্ভে" } },
+                    uncertainty = uncertainty,
+                    parcelRows = rows
+                )
+            }
+            _uiState.update { it.copy(statusMessage = "নির্ভুলতা (±) PDF রিপোর্ট সেভ হয়েছে: ${file.name}") }
+        }
     }
 }

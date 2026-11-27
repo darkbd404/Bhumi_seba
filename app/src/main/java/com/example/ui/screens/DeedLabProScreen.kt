@@ -44,6 +44,7 @@ import com.example.engine.UniversalExportEngine
 import com.example.model.EditableLegalClause
 import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.NeuPillChip
+import com.example.ui.components.VintageStampPaperCard
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.neuSurface
@@ -168,6 +169,20 @@ fun DeedLabProScreen(
                                     append("\n৬. স্বাক্ষর: দাতা ________________   গ্রহীতা ________________")
                                 }
 
+                                VintageStampPaperCard(
+                                    headerTitle = deedTitle,
+                                    stampBadge = "১০০ টাকা দলিল কাগজ (খসড়া)",
+                                    serialNumber = "PRO-${mouzaSchedule.take(10)}",
+                                    disclaimerText = DocumentAndReportEngine.LEGAL_DRAFT_DISCLAIMER_BN
+                                ) {
+                                    Text(
+                                        text = fullDeedDraft,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                                        color = Color(0xFF2B1C10)
+                                    )
+                                }
+
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     Button(
                                         onClick = {
@@ -186,7 +201,13 @@ fun DeedLabProScreen(
 
                                     OutlinedButton(
                                         onClick = {
-                                            val bmp = UniversalExportEngine.renderDocumentReportBitmap(deedTitle, mouzaSchedule, fullDeedDraft, DocumentAndReportEngine.LEGAL_DRAFT_DISCLAIMER_BN)
+                                            val bmp = UniversalExportEngine.renderDocumentReportBitmap(
+                                                title = deedTitle,
+                                                subtitle = mouzaSchedule,
+                                                bodyText = fullDeedDraft,
+                                                disclaimer = DocumentAndReportEngine.LEGAL_DRAFT_DISCLAIMER_BN,
+                                                useVintagePaper = true
+                                            )
                                             val copy = bmp.copy(Bitmap.Config.ARGB_8888, false)
                                             val res = ExportStreamWriter.savePdfBitmap(context, bmp, "deed_pro_${System.currentTimeMillis()}")
                                             UniversalExportEngine.printBitmapDocument(context, "DeedPro", copy)

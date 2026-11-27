@@ -383,7 +383,8 @@ object MouzaPdfEngine {
         docFile: File,
         isPdf: Boolean,
         pageIndex: Int,
-        ultraHd: Boolean
+        ultraHd: Boolean,
+        renderDpi: Int = 300
     ): RenderedPageResult = withContext(Dispatchers.Default) {
         if (isPdf) {
             renderMutex.withLock {
@@ -397,11 +398,12 @@ object MouzaPdfEngine {
 
                 val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
                 val isLowRam = am?.isLowRamDevice == true
-                val targetMaxDim = if (ultraHd) {
-                    if (isLowRam) 1800 else 2800
-                } else {
-                    1400
+                val dpiMaxDim = when (renderDpi) {
+                    150 -> 1450
+                    600 -> if (isLowRam) 2200 else 3600
+                    else -> if (isLowRam) 1800 else 2800
                 }
+                val targetMaxDim = if (ultraHd) dpiMaxDim else 1400
 
                 val aspect = pagePtsW.toFloat() / pagePtsH.toFloat().coerceAtLeast(1f)
                 val outW: Int
@@ -1319,13 +1321,15 @@ object MouzaPdfEngine {
         pageWidthPts: Int,
         pageHeightPts: Int,
         scale: MouzaScale,
-        calibrationMultiplier: Double = 1.0
+        calibrationMultiplier: Double = 1.0,
+        scaleXMultiplier: Double = sqrt(calibrationMultiplier),
+        scaleYMultiplier: Double = sqrt(calibrationMultiplier)
     ): Double {
         val pageInchesW = pageWidthPts / 72.0
         val pageInchesH = pageHeightPts / 72.0
-        val pageFtW = pageInchesW * scale.feetPerInch
-        val pageFtH = pageInchesH * scale.feetPerInch
-        return computePolygonAreaNormalized(polygonNorm) * pageFtW * pageFtH * calibrationMultiplier
+        val pageFtW = pageInchesW * scale.feetPerInch * scaleXMultiplier
+        val pageFtH = pageInchesH * scale.feetPerInch * scaleYMultiplier
+        return computePolygonAreaNormalized(polygonNorm) * pageFtW * pageFtH
     }
 
     fun computeDistanceFeet(
@@ -1334,10 +1338,12 @@ object MouzaPdfEngine {
         pageWidthPts: Int,
         pageHeightPts: Int,
         scale: MouzaScale,
-        calibrationMultiplier: Double = 1.0
+        calibrationMultiplier: Double = 1.0,
+        scaleXMultiplier: Double = sqrt(calibrationMultiplier),
+        scaleYMultiplier: Double = sqrt(calibrationMultiplier)
     ): Double {
-        val pageFtW = (pageWidthPts / 72.0) * scale.feetPerInch * sqrt(calibrationMultiplier)
-        val pageFtH = (pageHeightPts / 72.0) * scale.feetPerInch * sqrt(calibrationMultiplier)
+        val pageFtW = (pageWidthPts / 72.0) * scale.feetPerInch * scaleXMultiplier
+        val pageFtH = (pageHeightPts / 72.0) * scale.feetPerInch * scaleYMultiplier
         val dx = (p2Norm.first - p1Norm.first) * pageFtW
         val dy = (p2Norm.second - p1Norm.second) * pageFtH
         return hypot(dx, dy)

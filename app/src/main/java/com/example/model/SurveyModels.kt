@@ -81,7 +81,13 @@ data class MouzaPlot(
     val polygonNormalized: List<Pair<Float, Float>>? = null, // Editable vector boundary from auto-fill or manual edit
     val centroidNormalized: Pair<Float, Float>? = null,
     val exactAreaSqFeet: Double? = null, // Vector polygon computed SqFt (when available)
-    val isLocked: Boolean = false // Prevents accidental editing, resizing, or movement when finalized
+    val isLocked: Boolean = false, // Prevents accidental editing, resizing, or movement when finalized
+    val ownerName: String = "",
+    val remarks: String = "",
+    val isRoad: Boolean = false,
+    val hideMeasures: Boolean = false,
+    val isHighlighted: Boolean = false,
+    val holePolygonsNormalized: List<List<Pair<Float, Float>>> = emptyList()
 ) {
     fun effectivePolygon(): List<Pair<Float, Float>>? = polygonNormalized ?: manualPolygonNormalized
 
@@ -95,6 +101,12 @@ data class MouzaPlot(
             pixelCount == other.pixelCount &&
             exactAreaSqFeet == other.exactAreaSqFeet &&
             isLocked == other.isLocked &&
+            ownerName == other.ownerName &&
+            remarks == other.remarks &&
+            isRoad == other.isRoad &&
+            hideMeasures == other.hideMeasures &&
+            isHighlighted == other.isHighlighted &&
+            holePolygonsNormalized == other.holePolygonsNormalized &&
             polygonNormalized == other.polygonNormalized &&
             manualPolygonNormalized == other.manualPolygonNormalized
     }
@@ -255,7 +267,12 @@ data class SerializedMouzaPlot(
     val colorArgb: Long,
     val polygonNormalized: List<SerializablePoint> = emptyList(),
     val exactAreaSqFeet: Double? = null,
-    val isLocked: Boolean = false
+    val isLocked: Boolean = false,
+    val ownerName: String = "",
+    val remarks: String = "",
+    val isRoad: Boolean = false,
+    val hideMeasures: Boolean = false,
+    val holePolygonsNormalized: List<List<SerializablePoint>> = emptyList()
 )
 
 @Serializable
@@ -325,6 +342,8 @@ data class SavedSurveyProject(
     val pdfPageHeightPts: Int = 1000,
     val mouzaScaleName: String = MouzaScale.SCALE_16.name,
     val calibrationMultiplier: Double = 1.0,
+    val calibrationScaleX: Double = 1.0,
+    val calibrationScaleY: Double = 1.0,
     val gapSealLevel: Int = 1,
     val filterPresetName: String = MouzaFilterPreset.NORMAL.name,
     val brightness: Float = 1f,
@@ -375,12 +394,33 @@ data class KhatianDagEntry(
 )
 
 @Serializable
+data class KhatianCustomField(
+    val id: String,
+    val label: String,
+    val value: String
+)
+
+@Serializable
+data class ChainOfTitleEntry(
+    val id: String,
+    val stage: String,
+    val khatianNo: String = "",
+    val dagNo: String = "",
+    val deedOrCaseNo: String = "",
+    val yearStr: String = "",
+    val partiesSummary: String = "",
+    val areaDecimal: Double = 0.0,
+    val note: String = ""
+)
+
+@Serializable
 data class CustomKhatianDocument(
     val id: String,
     val khatianType: String = "আরএস (RS) খতিয়ান",
     val division: String = "",
     val district: String = "",
     val upazila: String = "",
+    val unionName: String = "",
     val mouzaName: String = "",
     val jlNumber: String = "",
     val khatianNumber: String = "",
@@ -389,7 +429,10 @@ data class CustomKhatianDocument(
     val owners: List<KhatianOwnerEntry> = emptyList(),
     val dags: List<KhatianDagEntry> = emptyList(),
     val totalKhajna: String = "",
+    val possessionNote: String = "",
     val notes: String = "",
+    val customFields: List<KhatianCustomField> = emptyList(),
+    val chainOfTitle: List<ChainOfTitleEntry> = emptyList(),
     val referenceDocPath: String? = null,
     val referenceDocName: String = "",
     val referenceIsPdf: Boolean = true,

@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.model.CustomKhatianDocument
+import com.example.model.GlobalSurveySettings
 import com.example.model.PcSyncSettings
 import com.example.model.SavedMeasurementRecord
 import com.example.model.SavedSurveyProject
@@ -23,7 +24,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 class AppPreferences(private val context: Context) {
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     companion object {
         private val KEY_DARK_MODE = booleanPreferencesKey("dark_mode_enabled")
@@ -34,6 +35,17 @@ class AppPreferences(private val context: Context) {
         private val KEY_SURVEYOR_PROFILE = stringPreferencesKey("surveyor_profile_json")
         private val KEY_CUSTOM_KHATIANS = stringPreferencesKey("custom_khatians_json")
         private val KEY_PC_SYNC_SETTINGS = stringPreferencesKey("pc_sync_settings_json")
+        private val KEY_PINNED_TOOLS = stringPreferencesKey("pinned_home_tools_json")
+        private val KEY_GLOBAL_SETTINGS = stringPreferencesKey("global_survey_settings_json")
+
+        val DEFAULT_PINNED_TOOL_IDS = listOf(
+            "mod_mouza_pdf",
+            "mod_real_map",
+            "mod_pantograph",
+            "mod_custom_khatian",
+            "mod_polygon_divider",
+            "mod_accuracy_report"
+        )
     }
 
     val isDarkModeFlow: Flow<Boolean?> = context.dataStore.data.map { prefs ->
@@ -74,6 +86,36 @@ class AppPreferences(private val context: Context) {
     val pcSyncSettingsFlow: Flow<PcSyncSettings> = context.dataStore.data.map { prefs ->
         val raw = prefs[KEY_PC_SYNC_SETTINGS] ?: return@map PcSyncSettings()
         runCatching { json.decodeFromString<PcSyncSettings>(raw) }.getOrDefault(PcSyncSettings())
+    }
+
+    val pinnedToolIdsFlow: Flow<List<String>> = context.dataStore.data.map { prefs ->
+        val raw = prefs[KEY_PINNED_TOOLS] ?: return@map DEFAULT_PINNED_TOOL_IDS
+        runCatching { json.decodeFromString<List<String>>(raw) }.getOrDefault(DEFAULT_PINNED_TOOL_IDS)
+    }
+
+    val globalSettingsFlow: Flow<GlobalSurveySettings> = context.dataStore.data.map { prefs ->
+        val raw = prefs[KEY_GLOBAL_SETTINGS] ?: return@map GlobalSurveySettings()
+        runCatching { json.decodeFromString<GlobalSurveySettings>(raw) }.getOrDefault(GlobalSurveySettings())
+    }
+
+    suspend fun togglePinnedTool(toolId: String) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[KEY_PINNED_TOOLS]?.let {
+                runCatching { json.decodeFromString<List<String>>(it) }.getOrNull()
+            } ?: DEFAULT_PINNED_TOOL_IDS
+            val updated = if (toolId in current) {
+                current.filterNot { it == toolId }
+            } else {
+                (listOf(toolId) + current).distinct().take(12)
+            }
+            prefs[KEY_PINNED_TOOLS] = json.encodeToString(updated)
+        }
+    }
+
+    suspend fun saveGlobalSettings(settings: GlobalSurveySettings) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_GLOBAL_SETTINGS] = json.encodeToString(settings)
+        }
     }
 
     suspend fun savePcSyncSettings(settings: PcSyncSettings) {

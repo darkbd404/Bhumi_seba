@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Balance
+import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.CropSquare
 import androidx.compose.material.icons.rounded.LinearScale
 import androidx.compose.material.icons.rounded.Percent
@@ -88,13 +89,18 @@ private enum class SurveyToolTab(val key: String, val titleBn: String) {
     KHATIAN_HISSA("hissa", "খতিয়ান হিস্যা"),
     FARAIZ("faraiz", "ওয়ারিশ/ফারায়েজ"),
     DEED_TAX("tax", "দলিল ও আর্থিক"),
-    CHAIN_SCALE("scale", "স্কেল ও চেইন")
+    CHAIN_SCALE("scale", "স্কেল ও চেইন"),
+    FORMULA_SOLVER("formula", "অজানা বাহু ও সূত্র")
 }
 
 @Composable
 fun ToolsScreen(
     initialTabKey: String = "unit",
     onNavigateBack: () -> Unit,
+    onOpenCogoEngine: (String) -> Unit = {},
+    onOpenCadEngine: (String) -> Unit = {},
+    onOpenDimensionSystem: (String) -> Unit = {},
+    onOpenWorkstationHub: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember(initialTabKey) {
@@ -165,6 +171,7 @@ fun ToolsScreen(
                     SurveyToolTab.FARAIZ -> Icons.Rounded.Balance
                     SurveyToolTab.DEED_TAX -> Icons.Rounded.AccountBalance
                     SurveyToolTab.CHAIN_SCALE -> Icons.Rounded.Straighten
+                    SurveyToolTab.FORMULA_SOLVER -> Icons.Rounded.Calculate
                 }
                 NeuPillChip(
                     text = tab.titleBn,
@@ -184,6 +191,59 @@ fun ToolsScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neuSurface(cornerRadius = 18.dp, elevation = 4.dp)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "বিশেষায়িত সার্ভে ও CAD টুলস মেনু (Specialized Tools)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = EmeraldPrimary
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { onOpenCogoEngine("traverse") },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.testTag("tools_open_cogo_btn")
+                        ) {
+                            Text("COGO ট্র্যাভার্স ও ইন্টারসেকশন", maxLines = 1)
+                        }
+                        Button(
+                            onClick = { onOpenCadEngine("draw") },
+                            colors = ButtonDefaults.buttonColors(containerColor = TealSecondary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.testTag("tools_open_cad_btn")
+                        ) {
+                            Text("2D CAD স্টুডিও", maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = { onOpenDimensionSystem("linear") },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.testTag("tools_open_dim_btn")
+                        ) {
+                            Text("CAD ডাইমেনশন (Linear/Angular/Leader)", maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = onOpenWorkstationHub,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.testTag("tools_open_hub_btn")
+                        ) {
+                            Text("সকল আলাদা মডিউল", maxLines = 1)
+                        }
+                    }
+                }
+            }
+            item {
                 AnimatedContent(
                     targetState = activeTab,
                     transitionSpec = {
@@ -197,10 +257,11 @@ fun ToolsScreen(
                         SurveyToolTab.LENGTH_CONVERTER -> LengthConverterPanel()
                         SurveyToolTab.SHAPE_SURVEY -> ShapeSurveyPanel()
                         SurveyToolTab.COORDINATE_TRAVERSE -> TraverseCoordPanel()
-                        SurveyToolTab.KHATIAN_HISSA -> KhatianHissaPanel()
-                        SurveyToolTab.FARAIZ -> FaraizPanel()
+                        SurveyToolTab.KHATIAN_HISSA -> KhatianHissaProPanel()
+                        SurveyToolTab.FARAIZ -> FaraizProPanel()
                         SurveyToolTab.DEED_TAX -> DeedTaxPanel()
                         SurveyToolTab.CHAIN_SCALE -> ChainScalePanel()
+                        SurveyToolTab.FORMULA_SOLVER -> FormulaAndUnknownSidePanel()
                     }
                 }
             }

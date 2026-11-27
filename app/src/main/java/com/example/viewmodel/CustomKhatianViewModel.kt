@@ -7,10 +7,15 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppPreferences
+import com.example.engine.DocumentAndReportEngine
+import com.example.engine.KhatianProEngine
 import com.example.engine.KhatianSheetExporter
 import com.example.engine.MouzaPdfEngine
+import com.example.model.ChainOfTitleEntry
 import com.example.model.CustomKhatianDocument
+import com.example.model.KhatianCustomField
 import com.example.model.KhatianDagEntry
+import com.example.model.KhatianOneClickAnalysis
 import com.example.model.KhatianOwnerEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,12 +63,14 @@ class CustomKhatianViewModel(application: Application) : AndroidViewModel(applic
         division: String? = null,
         district: String? = null,
         upazila: String? = null,
+        unionName: String? = null,
         mouzaName: String? = null,
         jlNumber: String? = null,
         khatianNumber: String? = null,
         resaNumber: String? = null,
         tauziNumber: String? = null,
         totalKhajna: String? = null,
+        possessionNote: String? = null,
         notes: String? = null
     ) {
         _uiState.update { st ->
@@ -74,12 +81,14 @@ class CustomKhatianViewModel(application: Application) : AndroidViewModel(applic
                     division = division ?: d.division,
                     district = district ?: d.district,
                     upazila = upazila ?: d.upazila,
+                    unionName = unionName ?: d.unionName,
                     mouzaName = mouzaName ?: d.mouzaName,
                     jlNumber = jlNumber ?: d.jlNumber,
                     khatianNumber = khatianNumber ?: d.khatianNumber,
                     resaNumber = resaNumber ?: d.resaNumber,
                     tauziNumber = tauziNumber ?: d.tauziNumber,
                     totalKhajna = totalKhajna ?: d.totalKhajna,
+                    possessionNote = possessionNote ?: d.possessionNote,
                     notes = notes ?: d.notes,
                     updatedAtMillis = System.currentTimeMillis()
                 )
@@ -185,6 +194,116 @@ class CustomKhatianViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun totalKhatianDecimal(): Double = _uiState.value.document.dags.sumOf { it.thisKhatianDecimal }
+
+    fun addCustomField(label: String, value: String) {
+        if (label.isBlank()) return
+        val field = KhatianCustomField(
+            id = "cf_${System.currentTimeMillis()}",
+            label = label.trim(),
+            value = value.trim()
+        )
+        _uiState.update { st ->
+            st.copy(
+                document = st.document.copy(
+                    customFields = st.document.customFields + field,
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun removeCustomField(fieldId: String) {
+        _uiState.update { st ->
+            st.copy(
+                document = st.document.copy(
+                    customFields = st.document.customFields.filterNot { it.id == fieldId },
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun addChainOfTitleEntry(
+        stage: String,
+        khatianNo: String = "",
+        dagNo: String = "",
+        deedOrCaseNo: String = "",
+        yearStr: String = "",
+        partiesSummary: String = "",
+        areaDecimal: Double = 0.0,
+        note: String = ""
+    ) {
+        val entry = ChainOfTitleEntry(
+            id = "cot_${System.currentTimeMillis()}",
+            stage = stage.ifBlank { "সাবেক রেকর্ড" },
+            khatianNo = khatianNo.trim(),
+            dagNo = dagNo.trim(),
+            deedOrCaseNo = deedOrCaseNo.trim(),
+            yearStr = yearStr.trim(),
+            partiesSummary = partiesSummary.trim(),
+            areaDecimal = areaDecimal.coerceAtLeast(0.0),
+            note = note.trim()
+        )
+        _uiState.update { st ->
+            st.copy(
+                document = st.document.copy(
+                    chainOfTitle = st.document.chainOfTitle + entry,
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun removeChainOfTitleEntry(id: String) {
+        _uiState.update { st ->
+            st.copy(
+                document = st.document.copy(
+                    chainOfTitle = st.document.chainOfTitle.filterNot { it.id == id },
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun applyOcrTextToHeaderAndDags(rawText: String) {
+        val fields = DocumentAndReportEngine.extractKhatianFieldsFromText(rawText)
+        if (fields.isEmpty()) return
+        var khNo: String? = null
+        var mouza: String? = null
+        var jl: String? = null
+        var owner: String? = null
+        var dag: String? = null
+        var area: Double? = null
+
+        fields.forEach { f ->
+            when (f.key) {
+                "khatian" -> khNo = f.value
+                "mouza" -> mouza = f.value
+                "jl" -> jl = f.value
+                "owner" -> owner = f.value
+                "dag" -> dag = f.value
+                "area" -> {
+                    val num = f.value.filter { it.isDigit() || it == '.' }.toDoubleOrNull()
+                    if (num != null) area = num
+                }
+            }
+        }
+        updateHeaderFields(
+            mouzaName = mouza,
+            jlNumber = jl,
+            khatianNumber = khNo
+        )
+        if (!owner.isNullOrBlank()) {
+            addOrUpdateOwner(null, owner!!, "", "", "১.০০০", 1.0)
+        }
+        if (!dag.isNullOrBlank()) {
+            addOrUpdateDag(null, dag!!, "নাল", area ?: 30.0, 1.0, null, "")
+        }
+        _uiState.update { it.copy(statusMessage = "OCR টেক্সট থেকে খতিয়ানের তথ্য যুক্ত হয়েছে") }
+    }
+
+    fun computeOneClickAnalysis(): KhatianOneClickAnalysis =
+        KhatianProEngine.analyzeKhatianOneClick(_uiState.value.document)
 
     fun saveCustomKhatian() {
         val doc = _uiState.value.document.copy(

@@ -62,10 +62,12 @@ import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Compare
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.GridOn
@@ -80,10 +82,14 @@ import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PieChart
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.ShareLocation
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -133,7 +139,11 @@ import com.example.model.MapLayerOption
 import com.example.model.MapMeasureCategory
 import com.example.model.MouzaScale
 import com.example.ui.components.BottomSwipeToastBanner
+import com.example.ui.components.GpsAveragingDialog
+import com.example.ui.components.ImportedParcelsSheet
 import com.example.ui.components.KhatianLookupBottomSheet
+import com.example.ui.components.KmzDemarcationExportDialog
+import com.example.ui.components.MapCoordinateToolboxDialog
 import com.example.ui.components.NeuPillChip
 import com.example.ui.components.PrecisionNudgePad
 import com.example.ui.components.UtilityBarChip
@@ -142,6 +152,11 @@ import com.example.ui.theme.LocalNeuPalette
 import com.example.ui.theme.neuClickable
 import com.example.ui.theme.neuSurface
 import com.example.viewmodel.RealMapViewModel
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -183,6 +198,12 @@ fun RealMapScreen(
     var showKhatianSheet by remember { mutableStateOf(false) }
     var showSavedProjectsSheet by remember { mutableStateOf(false) }
     var showSaveProjectDialog by remember { mutableStateOf(false) }
+    var showCoordinateDialog by remember { mutableStateOf(false) }
+    var showKmzDialog by remember { mutableStateOf(false) }
+    var showGpsAvgDialog by remember { mutableStateOf(false) }
+    var showImportedParcelsSheet by remember { mutableStateOf(false) }
+    var currentCenterLat by remember { mutableDoubleStateOf(23.8103) }
+    var currentCenterLon by remember { mutableDoubleStateOf(90.4125) }
     var localToastMessage by remember { mutableStateOf<String?>(null) }
 
     val khatianPickerLauncher = rememberLauncherForActivityResult(
@@ -200,9 +221,22 @@ fun RealMapScreen(
         }
     }
 
-    BackHandler(enabled = showSavedProjectsSheet || showSaveProjectDialog || showKhatianSheet) {
+    val spatialFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { viewModel.importSpatialDocumentUri(it) }
+    }
+
+    BackHandler(
+        enabled = showSavedProjectsSheet || showSaveProjectDialog || showKhatianSheet ||
+            showCoordinateDialog || showKmzDialog || showGpsAvgDialog || showImportedParcelsSheet
+    ) {
         when {
             showSaveProjectDialog -> showSaveProjectDialog = false
+            showCoordinateDialog -> showCoordinateDialog = false
+            showKmzDialog -> showKmzDialog = false
+            showGpsAvgDialog -> showGpsAvgDialog = false
+            showImportedParcelsSheet -> showImportedParcelsSheet = false
             showKhatianSheet -> showKhatianSheet = false
             showSavedProjectsSheet -> showSavedProjectsSheet = false
         }
@@ -403,6 +437,68 @@ fun RealMapScreen(
                 null
             )
             viewModel.consumePendingRestore()
+        }
+    }
+    LaunchedEffect(state.hideMeasures, mapReady) {
+        if (mapReady) {
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.setHideMeasures(${state.hideMeasures});",
+                null
+            )
+        }
+    }
+    LaunchedEffect(state.parcelSnapEnabled, mapReady) {
+        if (mapReady) {
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.setParcelSnapMode(${state.parcelSnapEnabled});",
+                null
+            )
+        }
+    }
+    LaunchedEffect(state.importedParcels, mapReady) {
+        if (mapReady) {
+            val arr = JSONArray()
+            state.importedParcels.forEach { p ->
+                val pts = JSONArray()
+                p.pointsLatLon.forEach { (la, lo) ->
+                    pts.put(JSONObject().apply { put("lat", la); put("lon", lo) })
+                }
+                arr.put(JSONObject().apply {
+                    put("id", p.id)
+                    put("name", p.name)
+                    put("dag", p.dagNumber)
+                    put("decimal", p.decimal)
+                    put("points", pts)
+                })
+            }
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.setImportedParcels($arr);",
+                null
+            )
+        }
+    }
+    LaunchedEffect(state.pendingFlyToLatLon, mapReady) {
+        val target = state.pendingFlyToLatLon ?: return@LaunchedEffect
+        if (mapReady) {
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.flyTo(${target.first}, ${target.second}, 17, false);",
+                null
+            )
+            viewModel.consumePendingFlyTo()
+        }
+    }
+    LaunchedEffect(state.pendingSnapParcelPoints, mapReady) {
+        val pts = state.pendingSnapParcelPoints ?: return@LaunchedEffect
+        if (mapReady) {
+            val arr = JSONArray()
+            pts.forEach { (la, lo) ->
+                arr.put(JSONObject().apply { put("lat", la); put("lon", lo) })
+            }
+            webViewRef?.evaluateJavascript(
+                "window.bhumiMap && window.bhumiMap.setPolygonPoints($arr);",
+                null
+            )
+            viewModel.consumePendingSnapParcel()
         }
     }
 
@@ -725,6 +821,131 @@ fun RealMapScreen(
                         onClick = { viewModel.togglePlotLock() }
                     )
                 }
+                UtilityBarChip(
+                    label = if (state.importedParcels.isEmpty()) "KML/GeoJSON" else "পার্সেল (${state.importedParcels.size})",
+                    icon = Icons.Rounded.UploadFile,
+                    selected = state.importedParcels.isNotEmpty(),
+                    testTag = "map_import_spatial_chip",
+                    onClick = {
+                        if (state.importedParcels.isEmpty()) spatialFileLauncher.launch(arrayOf("*/*"))
+                        else showImportedParcelsSheet = true
+                    }
+                )
+                UtilityBarChip(
+                    label = "পার্সেল স্ন্যাপ",
+                    icon = Icons.Rounded.AutoFixHigh,
+                    selected = state.parcelSnapEnabled,
+                    testTag = "map_parcel_snap_chip",
+                    onClick = { viewModel.toggleParcelSnapMode() }
+                )
+                UtilityBarChip(
+                    label = "মাপ লুকান",
+                    icon = Icons.Rounded.VisibilityOff,
+                    selected = state.hideMeasures,
+                    testTag = "map_hide_measures_chip",
+                    onClick = { viewModel.toggleHideMeasures() }
+                )
+                UtilityBarChip(
+                    label = "স্থানাঙ্ক",
+                    icon = Icons.Rounded.Explore,
+                    selected = showCoordinateDialog,
+                    testTag = "map_coordinates_chip",
+                    onClick = {
+                        val wv = webViewRef
+                        if (wv != null) {
+                            wv.evaluateJavascript("window.bhumiMap && window.bhumiMap.getFullState();") { raw ->
+                                val parsed = parseFullMapState(raw)
+                                currentCenterLat = parsed.centerLat
+                                currentCenterLon = parsed.centerLon
+                                showCoordinateDialog = true
+                            }
+                        } else {
+                            showCoordinateDialog = true
+                        }
+                    }
+                )
+                UtilityBarChip(
+                    label = "১০সে. GPS",
+                    icon = Icons.Rounded.MyLocation,
+                    selected = showGpsAvgDialog,
+                    testTag = "map_gps_avg_chip",
+                    onClick = { showGpsAvgDialog = true }
+                )
+                UtilityBarChip(
+                    label = "সেটব্যাক",
+                    icon = Icons.Rounded.Route,
+                    selected = state.roadSetbackResultFt != null,
+                    testTag = "map_setback_chip",
+                    onClick = {
+                        webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.getExportPayload();") { raw ->
+                            viewModel.computeRoadSetbackFromPoints(parseExportPayload(raw).points)
+                        }
+                    }
+                )
+                UtilityBarChip(
+                    label = "স্প্লিট সিঙ্ক",
+                    icon = Icons.Rounded.Compare,
+                    selected = state.splitMouzaSyncEnabled,
+                    testTag = "map_split_sync_chip",
+                    onClick = { viewModel.toggleSplitMouzaSync() }
+                )
+                UtilityBarChip(
+                    label = "KMZ রপ্তানি",
+                    icon = Icons.Rounded.ShareLocation,
+                    selected = showKmzDialog,
+                    testTag = "map_kmz_export_chip",
+                    onClick = { showKmzDialog = true }
+                )
+            }
+
+            // Optional Split Mouza Side-by-Side Sync Panel when enabled
+            val splitBmp = remember(state.mouzaOverlayDataUrl, state.splitMouzaSyncEnabled) {
+                val url = state.mouzaOverlayDataUrl
+                if (state.splitMouzaSyncEnabled && !url.isNullOrBlank() && url.contains(",")) {
+                    runCatching {
+                        val rawBytes = android.util.Base64.decode(url.substringAfter(","), android.util.Base64.DEFAULT)
+                        android.graphics.BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size)
+                    }.getOrNull()
+                } else null
+            }
+            if (state.splitMouzaSyncEnabled && splitBmp != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(145.dp)
+                        .padding(horizontal = 10.dp, vertical = 2.dp)
+                        .neuSurface(cornerRadius = 16.dp, elevation = 4.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White)
+                        .pointerInput(splitBmp) {
+                            detectTapGestures { tap ->
+                                val nx = (tap.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f) - 0.5f
+                                val ny = (tap.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f) - 0.5f
+                                webViewRef?.evaluateJavascript(
+                                    "window.bhumiMap && window.bhumiMap.syncMoveRelativeToOverlay($nx, $ny);",
+                                    null
+                                )
+                            }
+                        }
+                ) {
+                    Image(
+                        bitmap = splitBmp.asImageBitmap(),
+                        contentDescription = "Split Mouza Sync Pane",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Text(
+                        text = "মৌজা সিঙ্ক (ট্যাপ করলে স্যাটেলাইট সেখানে সরবে)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(EmeraldPrimary.copy(alpha = 0.85f))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
             }
 
             // Unobstructed Zero-CDN Self-Contained Interactive Mercator Tile Engine WebView
@@ -774,6 +995,11 @@ fun RealMapScreen(
                                     @JavascriptInterface
                                     fun onLockedEditBlocked() {
                                         viewModel.notifyLockedEditBlocked()
+                                    }
+
+                                    @JavascriptInterface
+                                    fun onSnapMapTap(lat: Double, lon: Double) {
+                                        viewModel.handleMapTapInSnapMode(lat, lon)
                                     }
                                 },
                                 "AndroidMapBridge"
@@ -1509,6 +1735,71 @@ fun RealMapScreen(
             onDismiss = { showKhatianSheet = false }
         )
     }
+
+    if (showCoordinateDialog) {
+        MapCoordinateToolboxDialog(
+            initialLat = currentCenterLat,
+            initialLon = currentCenterLon,
+            onFlyTo = { la, lo ->
+                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.flyTo($la, $lo, 18, false);", null)
+            },
+            onAddPin = { la, lo ->
+                if (state.isPlotLocked) viewModel.notifyLockedEditBlocked()
+                else webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.addPoint($la, $lo);", null)
+            },
+            onDismiss = { showCoordinateDialog = false }
+        )
+    }
+
+    if (showKmzDialog) {
+        KmzDemarcationExportDialog(
+            hasMouzaOverlay = !state.mouzaOverlayDataUrl.isNullOrBlank(),
+            scaleLabel = state.selectedMouzaScale.ratioLabel,
+            onExportKmz = { meta ->
+                val wv = webViewRef
+                if (wv != null) {
+                    wv.evaluateJavascript("window.bhumiMap && window.bhumiMap.getExportPayload();") { rawPayload ->
+                        val parsedPts = parseExportPayload(rawPayload).points
+                        wv.evaluateJavascript("window.bhumiMap && window.bhumiMap.getOverlayBoundsNSEW();") { rawBounds ->
+                            val bounds = runCatching {
+                                val cleaned = rawBounds?.trim()?.removeSurrounding("\"")?.replace("\\\"", "\"")
+                                if (cleaned.isNullOrBlank() || cleaned == "null") null
+                                else {
+                                    val arr = JSONArray(cleaned)
+                                    doubleArrayOf(arr.getDouble(0), arr.getDouble(1), arr.getDouble(2), arr.getDouble(3))
+                                }
+                            }.getOrNull()
+                            viewModel.exportEnhancedKmz(parsedPts, meta, bounds)
+                        }
+                    }
+                }
+            },
+            onDismiss = { showKmzDialog = false }
+        )
+    }
+
+    if (showGpsAvgDialog) {
+        GpsAveragingDialog(
+            maxAccuracyM = state.maxGpsAccuracyM,
+            onMaxAccuracyChange = { viewModel.setMaxGpsAccuracyM(it) },
+            onUseAveragedPoint = { la, lo ->
+                webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.flyTo($la, $lo, 19, true);", null)
+                if (!state.isPlotLocked) {
+                    webViewRef?.evaluateJavascript("window.bhumiMap && window.bhumiMap.addPoint($la, $lo);", null)
+                }
+            },
+            onDismiss = { showGpsAvgDialog = false }
+        )
+    }
+
+    if (showImportedParcelsSheet) {
+        ImportedParcelsSheet(
+            parcels = state.importedParcels,
+            onSelectParcel = { viewModel.loadParcelIntoMap(it) },
+            onClearAll = { viewModel.clearImportedParcels() },
+            onDismiss = { showImportedParcelsSheet = false }
+        )
+    }
 }
 
 private data class FullMapStatePayload(
@@ -1712,6 +2003,9 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 loupeZoom: 3.0,
                 loupeAnim: 1.0,
                 hdSharp: true,
+                hideMeasures: false,
+                parcelSnapMode: false,
+                importedParcels: [],
                 mouzaRatio: '1:3,960',
                 mouzaFeetPerInch: 330.0,
                 showMouzaGrid: false,
@@ -1936,10 +2230,37 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                 ctx.restore();
 
                 drawMouzaOverlay(w, h);
-                if (includeTextLabels) drawMouzaGrid(w, h);
+                if (includeTextLabels && !state.hideMeasures) drawMouzaGrid(w, h);
+
+                // Draw imported KML/KMZ/GeoJSON/DXF parcels
+                if (Array.isArray(state.importedParcels) && state.importedParcels.length) {
+                  state.importedParcels.forEach(p => {
+                    if (!p.points || p.points.length < 3) return;
+                    const ps = p.points.map(toScreen);
+                    ctx.save();
+                    ctx.beginPath();
+                    ps.forEach((pt, idx) => idx ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y));
+                    ctx.closePath();
+                    ctx.fillStyle = 'rgba(0, 188, 212, 0.16)';
+                    ctx.fill();
+                    ctx.setLineDash([6, 4]);
+                    ctx.lineWidth = 2.2;
+                    ctx.strokeStyle = '#00e5ff';
+                    ctx.stroke();
+                    ctx.restore();
+                    if (includeTextLabels && !state.hideMeasures) {
+                      let cx = 0, cy = 0;
+                      ps.forEach(pt => { cx += pt.x; cy += pt.y; });
+                      cx /= ps.length; cy /= ps.length;
+                      const lbl = (p.dag ? ('দাগ ' + p.dag) : p.name) + ' • ' + (p.decimal || 0).toFixed(2) + ' শতক';
+                      drawLabel(lbl, cx, cy, 'rgba(0, 131, 143, 0.88)', '#ffffff');
+                    }
+                  });
+                }
 
                 const pts = state.points;
                 const spts = pts.map(toScreen);
+                const showEdgeLabels = includeTextLabels && !state.hideMeasures;
 
                 if (state.mode === 'circle' && pts.length >= 2) {
                   const radM = haversineM(pts[0], pts[1]);
@@ -1959,7 +2280,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   ctx.stroke();
                   ctx.setLineDash([]);
 
-                  if (includeTextLabels) {
+                  if (showEdgeLabels) {
                     drawLabel('R: ' + (radM * 3.28084).toFixed(1) + "'", (spts[0].x + spts[1].x) / 2, (spts[0].y + spts[1].y) / 2);
                   }
                 } else if (state.mode === 'distance') {
@@ -1969,7 +2290,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                     ctx.lineWidth = 4;
                     ctx.strokeStyle = '#ffd54f';
                     ctx.stroke();
-                    if (includeTextLabels) {
+                    if (showEdgeLabels) {
                       for (let i = 0; i < pts.length - 1; i++) {
                         const dM = haversineM(pts[i], pts[i + 1]);
                         drawLabel((dM * 3.28084).toFixed(1) + "'", (spts[i].x + spts[i + 1].x) / 2, (spts[i].y + spts[i + 1].y) / 2);
@@ -1986,7 +2307,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                     ctx.strokeStyle = '#ffd54f';
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    if (includeTextLabels) {
+                    if (showEdgeLabels) {
                       const dM = haversineM(pts[0], pts[1]);
                       drawLabel((dM * 3.28084).toFixed(1) + "'", (spts[0].x + spts[1].x) / 2, (spts[0].y + spts[1].y) / 2);
                     }
@@ -2000,7 +2321,7 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                     ctx.strokeStyle = '#ffd54f';
                     ctx.stroke();
 
-                    if (includeTextLabels) {
+                    if (showEdgeLabels) {
                       for (let i = 0; i < pts.length; i++) {
                         const j = (i + 1) % pts.length;
                         const dM = haversineM(pts[i], pts[j]);
@@ -2267,6 +2588,11 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                   }
                   if (draggingPinIdx >= 0) {
                     state.selectedPinIdx = (state.selectedPinIdx === draggingPinIdx) ? -1 : draggingPinIdx;
+                  } else if (state.parcelSnapMode && window.AndroidMapBridge && window.AndroidMapBridge.onSnapMapTap) {
+                    const ll = screenToLatLon(pt.x, pt.y);
+                    window.AndroidMapBridge.onSnapMapTap(ll.lat, ll.lon);
+                    draggingPinIdx = -1;
+                    return;
                   } else {
                     const ll = screenToLatLon(pt.x, pt.y);
                     if (state.mode === 'circle' && state.points.length >= 2) {
@@ -2534,6 +2860,48 @@ private fun buildCanvasTileMapHtml(initialLayer: MapLayerOption, showLabels: Boo
                     points: state.points,
                     cropRect: cropRect
                   });
+                },
+                setHideMeasures: (h) => {
+                  state.hideMeasures = !!h;
+                  scheduleDraw();
+                },
+                setParcelSnapMode: (enabled) => {
+                  state.parcelSnapMode = !!enabled;
+                  scheduleDraw();
+                },
+                setImportedParcels: (arr) => {
+                  state.importedParcels = Array.isArray(arr) ? arr : [];
+                  scheduleDraw();
+                },
+                setPolygonPoints: (pts) => {
+                  if (state.locked) { notifyLockBlock(); return; }
+                  state.points = Array.isArray(pts) ? pts.map(p => ({ lat: p.lat, lon: p.lon })) : [];
+                  state.selectedPinIdx = -1;
+                  notifyBridge();
+                  scheduleDraw();
+                },
+                syncMoveRelativeToOverlay: (dxNorm, dyNorm) => {
+                  const ov = state.overlay;
+                  const baseCenter = (ov && ov.center) ? ov.center : state.center;
+                  const cLL = m2ll(baseCenter.x, baseCenter.y);
+                  const mPerDegLat = 111132.92;
+                  const mPerDegLon = 111412.84 * Math.cos(cLL.lat * Math.PI / 180);
+                  const wM = (ov && ov.widthM) ? ov.widthM : 450;
+                  const hM = (ov && ov.img) ? wM * (ov.img.height / Math.max(1, ov.img.width)) : wM;
+                  const targetLat = cLL.lat - dyNorm * (hM / mPerDegLat);
+                  const targetLon = cLL.lon + dxNorm * (wM / mPerDegLon);
+                  state.center = ll2m(targetLat, targetLon);
+                  scheduleDraw();
+                },
+                getOverlayBoundsNSEW: () => {
+                  const ov = state.overlay;
+                  if (!ov || !ov.img || !ov.loaded || !ov.center) return null;
+                  const cLL = m2ll(ov.center.x, ov.center.y);
+                  const wM = ov.widthM || 450;
+                  const hM = wM * (ov.img.height / Math.max(1, ov.img.width));
+                  const dLat = (hM / 2) / 111132.92;
+                  const dLon = (wM / 2) / (111412.84 * Math.cos(cLL.lat * Math.PI / 180));
+                  return JSON.stringify([cLL.lat + dLat, cLL.lat - dLat, cLL.lon + dLon, cLL.lon - dLon]);
                 }
               };
 

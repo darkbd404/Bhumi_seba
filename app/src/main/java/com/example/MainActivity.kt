@@ -80,16 +80,28 @@ import androidx.navigation.toRoute
 import com.example.data.AppPreferences
 import com.example.firebase.configureAppCheck
 import com.example.model.AboutRoute
+import com.example.model.AcLandOfficeRoute
+import com.example.model.AccuracyReportRoute
 import com.example.model.AiAssistantRoute
 import com.example.model.AreaInvestigationRoute
+import com.example.model.AutomatedScheduleRoute
+import com.example.model.CadEngineRoute
+import com.example.model.CogoEngineRoute
 import com.example.model.CustomBuilderRoute
 import com.example.model.CustomKhatianRoute
 import com.example.model.CustomServiceEngineRoute
 import com.example.model.DeedLabProRoute
 import com.example.model.DeedStudioRoute
+import com.example.model.DimensionSystemRoute
+import com.example.model.DocumentArchiverRoute
 import com.example.model.FieldInstrumentsRoute
+import com.example.model.FieldToCadRoute
+import com.example.model.FileCompatibilityRoute
+import com.example.model.GlobalSurveySettings
 import com.example.model.GpsGisToolsRoute
+import com.example.model.HistoricalDeedRoute
 import com.example.model.HomeRoute
+import com.example.model.KhatianWorkstationRoute
 import com.example.model.LandDatabaseRoute
 import com.example.model.LegalLibraryRoute
 import com.example.model.MouzaPdfRoute
@@ -101,11 +113,14 @@ import com.example.model.PolygonDividerRoute
 import com.example.model.RealMapRoute
 import com.example.model.ReportStudioRoute
 import com.example.model.RevenueDueDiligenceRoute
+import com.example.model.RoadAccessRoute
 import com.example.model.SavedProjectType
 import com.example.model.SavedSurveyProject
 import com.example.model.ScannerOcrRoute
 import com.example.model.ServicesRoute
 import com.example.model.SpecializedSurveyToolsRoute
+import com.example.model.SurfaceTopoRoute
+import com.example.model.SurveyQualityRoute
 import com.example.model.SurveyorProfile
 import com.example.model.ToolsRoute
 import com.example.model.UniversalArchiveExportRoute
@@ -113,15 +128,22 @@ import com.example.model.WebBrowserRoute
 import com.example.model.WorkstationHubRoute
 import com.example.ui.components.ExitConfirmationDialog
 import com.example.ui.screens.AboutScreen
+import com.example.ui.screens.AcLandOfficeWorkbenchScreen
+import com.example.ui.screens.AccuracyReportScreen
 import com.example.ui.screens.AiAssistantScreen
 import com.example.ui.screens.AreaInvestigationScreen
+import com.example.ui.screens.CadDimensioningScreen
+import com.example.ui.screens.CadDraftingStudioScreen
+import com.example.ui.screens.CogoSurveyEngineScreen
 import com.example.ui.screens.CustomBuilderScreen
 import com.example.ui.screens.CustomKhatianScreen
 import com.example.ui.screens.CustomServiceEngineScreen
 import com.example.ui.screens.DeedLabProScreen
 import com.example.ui.screens.DeedStudioScreen
+import com.example.ui.screens.DocumentArchiverScreen
 import com.example.ui.screens.FieldInstrumentsScreen
 import com.example.ui.screens.GpsGisToolsScreen
+import com.example.ui.screens.HistoricalDeedRecreationScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.InAppBrowserScreen
 import com.example.ui.screens.LandDatabaseScreen
@@ -136,8 +158,10 @@ import com.example.ui.screens.RealMapScreen
 import com.example.ui.screens.ReportStudioScreen
 import com.example.ui.screens.RevenueDueDiligenceScreen
 import com.example.ui.screens.ScannerOcrScreen
+import com.example.ui.screens.ScheduleQcAndCompatibilityScreen
 import com.example.ui.screens.ServicesScreen
 import com.example.ui.screens.SpecializedSurveyToolsScreen
+import com.example.ui.screens.SurfaceRoadAndFieldCadScreen
 import com.example.ui.screens.ToolsScreen
 import com.example.ui.screens.UniversalArchiveExportScreen
 import com.example.ui.screens.WorkstationHubScreen
@@ -173,6 +197,8 @@ class MainActivity : ComponentActivity() {
             val savedProjects by prefs.savedProjectsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
             val devPhotoUri by prefs.devPhotoUriFlow.collectAsStateWithLifecycle(initialValue = null)
             val surveyorProfile by prefs.surveyorProfileFlow.collectAsStateWithLifecycle(initialValue = SurveyorProfile())
+            val pinnedToolIds by prefs.pinnedToolIdsFlow.collectAsStateWithLifecycle(initialValue = AppPreferences.DEFAULT_PINNED_TOOL_IDS)
+            val globalSettings by prefs.globalSettingsFlow.collectAsStateWithLifecycle(initialValue = GlobalSurveySettings())
 
             BhumiSurveyTheme(darkTheme = isDarkMode) {
                 BhumiSurveyApp(
@@ -181,6 +207,10 @@ class MainActivity : ComponentActivity() {
                     savedProjects = savedProjects,
                     devPhotoUri = devPhotoUri,
                     surveyorProfile = surveyorProfile,
+                    pinnedToolIds = pinnedToolIds,
+                    globalSettings = globalSettings,
+                    onTogglePinTool = { id -> scope.launch { prefs.togglePinnedTool(id) } },
+                    onSaveGlobalSettings = { gs -> scope.launch { prefs.saveGlobalSettings(gs) } },
                     onToggleTheme = {
                         scope.launch { prefs.setDarkMode(!isDarkMode) }
                     },
@@ -210,6 +240,10 @@ private fun BhumiSurveyApp(
     savedProjects: List<SavedSurveyProject>,
     devPhotoUri: String?,
     surveyorProfile: SurveyorProfile,
+    pinnedToolIds: List<String>,
+    globalSettings: GlobalSurveySettings,
+    onTogglePinTool: (String) -> Unit,
+    onSaveGlobalSettings: (GlobalSurveySettings) -> Unit,
     onToggleTheme: () -> Unit,
     onSaveDevPhoto: (String) -> Unit,
     onSaveSurveyorProfile: (SurveyorProfile) -> Unit,
@@ -366,19 +400,17 @@ private fun BhumiSurveyApp(
                             savedRecords = savedRecords,
                             savedProjects = savedProjects,
                             surveyorProfile = surveyorProfile,
+                            pinnedToolIds = pinnedToolIds,
+                            globalSettings = globalSettings,
+                            onTogglePinTool = onTogglePinTool,
+                            onSaveGlobalSettings = onSaveGlobalSettings,
                             onToggleTheme = onToggleTheme,
-                            onOpenMouzaPdf = { navigateTopLevel(MouzaPdfRoute()) },
-                            onOpenRealMap = { navigateTopLevel(RealMapRoute()) },
-                            onOpenServices = { navigateTopLevel(ServicesRoute) },
-                            onOpenTools = { tab -> navController.navigate(ToolsRoute(initialTab = tab)) },
-                            onOpenCustomKhatian = { navController.navigate(CustomKhatianRoute()) },
-                            onOpenWorkstationHub = { navController.navigate(WorkstationHubRoute) },
-                            onOpenPolygonDivider = { navController.navigate(PolygonDividerRoute) },
-                            onOpenPantograph = { navController.navigate(PantographRoute) },
-                            onOpenDeedStudio = { navController.navigate(DeedStudioRoute) },
-                            onOpenReportStudio = { navController.navigate(ReportStudioRoute) },
-                            onOpenLandDatabase = { navController.navigate(LandDatabaseRoute) },
-                            onOpenAiAssistant = { navController.navigate(AiAssistantRoute) },
+                            onNavigateRoute = { route ->
+                                when (route) {
+                                    is MouzaPdfRoute, is RealMapRoute, is ServicesRoute -> navigateTopLevel(route)
+                                    else -> navController.navigate(route)
+                                }
+                            },
                             onOpenAbout = { navController.navigate(AboutRoute) },
                             onOpenUrlInApp = { url, title ->
                                 navController.navigate(WebBrowserRoute(url = url, title = title))
@@ -397,6 +429,12 @@ private fun BhumiSurveyApp(
                             },
                             onDeleteProject = onDeleteProject,
                             onClearHistory = onClearHistory
+                        )
+                    }
+
+                    composable<AccuracyReportRoute> {
+                        AccuracyReportScreen(
+                            onBack = { navController.popBackStack() }
                         )
                     }
 
@@ -431,7 +469,11 @@ private fun BhumiSurveyApp(
                         val args = entry.toRoute<ToolsRoute>()
                         ToolsScreen(
                             initialTabKey = args.initialTab,
-                            onNavigateBack = { navController.popBackStack() }
+                            onNavigateBack = { navController.popBackStack() },
+                            onOpenCogoEngine = { mode -> navController.navigate(CogoEngineRoute(initialMode = mode)) },
+                            onOpenCadEngine = { mode -> navController.navigate(CadEngineRoute(initialMode = mode)) },
+                            onOpenDimensionSystem = { cat -> navController.navigate(DimensionSystemRoute(category = cat)) },
+                            onOpenWorkstationHub = { navController.navigate(WorkstationHubRoute) }
                         )
                     }
 
@@ -470,7 +512,8 @@ private fun BhumiSurveyApp(
                             onNavigateBack = { navController.popBackStack() },
                             onOpenUrlInApp = { url, title ->
                                 navController.navigate(WebBrowserRoute(url = url, title = title))
-                            }
+                            },
+                            onOpenDocumentArchiver = { navController.navigate(DocumentArchiverRoute) }
                         )
                     }
 
@@ -500,7 +543,19 @@ private fun BhumiSurveyApp(
                             onOpenAreaInvestigation = { navController.navigate(AreaInvestigationRoute) },
                             onOpenSpecializedTools = { navController.navigate(SpecializedSurveyToolsRoute) },
                             onOpenCustomServiceEngine = { navController.navigate(CustomServiceEngineRoute) },
-                            onOpenUniversalArchive = { navController.navigate(UniversalArchiveExportRoute) }
+                            onOpenUniversalArchive = { navController.navigate(UniversalArchiveExportRoute) },
+                            onOpenCadEngine = { mode -> navController.navigate(CadEngineRoute(initialMode = mode)) },
+                            onOpenDimensionSystem = { cat -> navController.navigate(DimensionSystemRoute(category = cat)) },
+                            onOpenCogoEngine = { mode -> navController.navigate(CogoEngineRoute(initialMode = mode)) },
+                            onOpenHistoricalDeed = { navController.navigate(HistoricalDeedRoute) },
+                            onOpenDocumentArchiver = { navController.navigate(DocumentArchiverRoute) },
+                            onOpenAcLandOffice = { sec -> navController.navigate(AcLandOfficeRoute(initialSection = sec)) },
+                            onOpenFieldToCad = { navController.navigate(FieldToCadRoute) },
+                            onOpenSurfaceTopo = { navController.navigate(SurfaceTopoRoute) },
+                            onOpenRoadAccess = { navController.navigate(RoadAccessRoute) },
+                            onOpenAutomatedSchedule = { navController.navigate(AutomatedScheduleRoute) },
+                            onOpenSurveyQuality = { navController.navigate(SurveyQualityRoute) },
+                            onOpenFileCompatibility = { navController.navigate(FileCompatibilityRoute) }
                         )
                     }
 
@@ -544,7 +599,10 @@ private fun BhumiSurveyApp(
                     }
 
                     composable<LegalLibraryRoute> {
-                        LegalLibraryScreen(onNavigateBack = { navController.popBackStack() })
+                        LegalLibraryScreen(
+                            onNavigateBack = { navController.popBackStack() },
+                            onOpenDocumentArchiver = { navController.navigate(DocumentArchiverRoute) }
+                        )
                     }
 
                     composable<OldMouzaLabRoute> {
@@ -591,6 +649,107 @@ private fun BhumiSurveyApp(
 
                     composable<UniversalArchiveExportRoute> {
                         UniversalArchiveExportScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    // 13 Separated Master Prompt 03 + CAD + COGO + Document Archiver Routes
+                    composable<CadEngineRoute> { entry ->
+                        val args = entry.toRoute<CadEngineRoute>()
+                        CadDraftingStudioScreen(
+                            initialMode = args.initialMode,
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable<DimensionSystemRoute> { entry ->
+                        val args = entry.toRoute<DimensionSystemRoute>()
+                        CadDimensioningScreen(
+                            initialCategory = args.category,
+                            onNavigateBack = { navController.popBackStack() },
+                            onOpenFullCadCanvas = { navController.navigate(CadEngineRoute(initialMode = "dim")) }
+                        )
+                    }
+
+                    composable<CogoEngineRoute> { entry ->
+                        val args = entry.toRoute<CogoEngineRoute>()
+                        CogoSurveyEngineScreen(
+                            initialMode = args.initialMode,
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable<HistoricalDeedRoute> {
+                        HistoricalDeedRecreationScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable<DocumentArchiverRoute> {
+                        DocumentArchiverScreen(
+                            onNavigateBack = { navController.popBackStack() },
+                            onOpenHistoricalDeedStudio = { navController.navigate(HistoricalDeedRoute) },
+                            onOpenDeedStudio = { navController.navigate(DeedStudioRoute) }
+                        )
+                    }
+
+                    composable<KhatianWorkstationRoute> {
+                        AcLandOfficeWorkbenchScreen(
+                            initialSection = "khatian",
+                            onNavigateBack = { navController.popBackStack() },
+                            onOpenUrlInApp = { url, title ->
+                                navController.navigate(WebBrowserRoute(url = url, title = title))
+                            }
+                        )
+                    }
+
+                    composable<AcLandOfficeRoute> { entry ->
+                        val args = entry.toRoute<AcLandOfficeRoute>()
+                        AcLandOfficeWorkbenchScreen(
+                            initialSection = args.initialSection,
+                            onNavigateBack = { navController.popBackStack() },
+                            onOpenUrlInApp = { url, title ->
+                                navController.navigate(WebBrowserRoute(url = url, title = title))
+                            }
+                        )
+                    }
+
+                    composable<FieldToCadRoute> {
+                        SurfaceRoadAndFieldCadScreen(
+                            initialMode = "field",
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable<SurfaceTopoRoute> {
+                        SurfaceRoadAndFieldCadScreen(
+                            initialMode = "surface",
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable<RoadAccessRoute> {
+                        SurfaceRoadAndFieldCadScreen(
+                            initialMode = "road",
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable<AutomatedScheduleRoute> {
+                        ScheduleQcAndCompatibilityScreen(
+                            initialMode = "schedule",
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable<SurveyQualityRoute> {
+                        ScheduleQcAndCompatibilityScreen(
+                            initialMode = "qc",
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable<FileCompatibilityRoute> {
+                        ScheduleQcAndCompatibilityScreen(
+                            initialMode = "files",
+                            onNavigateBack = { navController.popBackStack() }
+                        )
                     }
                 }
 

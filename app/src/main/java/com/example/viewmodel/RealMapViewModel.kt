@@ -9,9 +9,12 @@ import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppPreferences
+import com.example.engine.KmzDemarcationMetadata
 import com.example.engine.LandCalculators
 import com.example.engine.MouzaPdfEngine
 import com.example.engine.PngExporter
+import com.example.engine.SpatialParcelEngine
+import com.example.model.ImportedSpatialParcel
 import com.example.model.KhatianRecord
 import com.example.model.MapLayerOption
 import com.example.model.MapMeasureCategory
@@ -81,6 +84,16 @@ data class RealMapUiState(
     val mouzaOverlayRotationDeg: Float = 0f,
     val mouzaOverlayLocked: Boolean = false,
     val isLoadingMouzaOverlay: Boolean = false,
+    // N03 Google Map / Satellite Parity extensions
+    val importedParcels: List<ImportedSpatialParcel> = emptyList(),
+    val selectedImportedParcel: ImportedSpatialParcel? = null,
+    val parcelSnapEnabled: Boolean = false,
+    val hideMeasures: Boolean = false,
+    val splitMouzaSyncEnabled: Boolean = false,
+    val maxGpsAccuracyM: Float = 25f,
+    val roadSetbackResultFt: Double? = null,
+    val pendingFlyToLatLon: Pair<Double, Double>? = null,
+    val pendingSnapParcelPoints: List<Pair<Double, Double>>? = null,
     val statusMessage: String? = null
 )
 
@@ -741,5 +754,216 @@ class RealMapViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearStatusMessage() {
         _uiState.update { it.copy(statusMessage = null) }
+    }
+
+    // ==================== N03 SATELLITE / SPATIAL PARITY ====================
+
+    fun importSpatialDocumentUri(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isExporting = true, statusMessage = "KML / KMZ / GeoJSON / DXF লোড হচ্ছে...") }
+            try {
+                val fileName = resolveFileName(uri)
+                val bytes = withContext(Dispatchers.IO) {
+                    appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+                }
+                val parsed = withContext(Dispatchers.Default) {
+                    SpatialParcelEngine.parseSpatialFileBytes(fileName, bytes)
+                }
+                if (parsed.isEmpty()) {
+                    _uiState.update {
+                        it.copy(
+                            isExporting = false,
+                            statusMessage = "ফাইলে কোনো পলিগন পাওয়া যায়নি (GeoJSON / KML / KMZ / ASCII DXF সমর্থিত)"
+                        )
+                    }
+                    return@launch
+                }
+                val firstPt = parsed.first().pointsLatLon.firstOrNull()
+                _uiState.update {
+                    it.copy(
+                        isExporting = false,
+                        importedParcels = parsed,
+                        selectedImportedParcel = parsed.first(),
+                        parcelSnapEnabled = true,
+                        pendingFlyToLatLon = firstPt,
+                        statusMessage = "${parsed.size}টি পার্সেল (${parsed.first().sourceFormat}) ম্যাপে লোড হয়েছে — ট্যাপ করে স্ন্যাপ করুন!"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isExporting = false,
+                        statusMessage = "ফাইল ইমপোর্ট ব্যর্থ: ${e.localizedMessage ?: "ত্রুটি"}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun consumePendingFlyTo() {
+        _uiState.update { it.copy(pendingFlyToLatLon = null) }
+    }
+
+    fun clearImportedParcels() {
+        _uiState.update {
+            it.copy(
+                importedParcels = emptyList(),
+                selectedImportedParcel = null,
+                parcelSnapEnabled = false,
+                statusMessage = "ইমপোর্ট করা পার্সেল লেয়ার সরানো হয়েছে"
+            )
+        }
+    }
+
+    fun toggleParcelSnapMode() {
+        _uiState.update { st ->
+            val next = !st.parcelSnapEnabled
+            st.copy(
+                parcelSnapEnabled = next,
+                statusMessage = if (next && st.importedParcels.isEmpty()) {
+                    "স্যাটেলাইট ছবিতে সরাসরি ভেক্টর সীমানা ডেটা নেই — ম্যানুয়াল পিন বসান বা KML/KMZ/GeoJSON/DXF ইমপোর্ট করুন"
+                } else if (next) {
+                    "পার্সেল স্ন্যাপ চালু: ইমপোর্ট করা দাগের ভেতরে ট্যাপ করুন"
+                } else {
+                    "সাধারণ পিন মোড চালু"
+                }
+            )
+        }
+    }
+
+    fun handleMapTapInSnapMode(lat: Double, lon: Double) {
+        val state = _uiState.value
+        val hit = SpatialParcelEngine.findParcelAt(lat, lon, state.importedParcels)
+        if (hit != null) {
+            _uiState.update {
+                it.copy(
+                    selectedImportedParcel = hit,
+                    pendingSnapParcelPoints = hit.pointsLatLon,
+                    statusMessage = "স্ন্যাপ সম্পন্ন: ${hit.name} (${String.format(Locale.US, "%.2f", hit.decimal)} শতক)"
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    statusMessage = if (state.importedParcels.isEmpty()) {
+                        "স্যাটেলাইট ছবিতে ভেক্টর সীমানা ডেটা নেই — ম্যানুয়াল পিন বা KML/KMZ/GeoJSON/DXF ইমপোর্ট করুন"
+                    } else {
+                        "ট্যাপ করা স্থানে কোনো ইমপোর্টকৃত পার্সেল নেই — ম্যানুয়াল পিন ব্যবহার করুন"
+                    }
+                )
+            }
+        }
+    }
+
+    fun loadParcelIntoMap(parcel: ImportedSpatialParcel) {
+        _uiState.update {
+            it.copy(
+                selectedImportedParcel = parcel,
+                pendingSnapParcelPoints = parcel.pointsLatLon,
+                pendingFlyToLatLon = parcel.pointsLatLon.firstOrNull(),
+                statusMessage = "${parcel.name} ম্যাপ পিনে বসানো হয়েছে"
+            )
+        }
+    }
+
+    fun consumePendingSnapParcel() {
+        _uiState.update { it.copy(pendingSnapParcelPoints = null) }
+    }
+
+    fun toggleHideMeasures() {
+        _uiState.update {
+            val next = !it.hideMeasures
+            it.copy(
+                hideMeasures = next,
+                statusMessage = if (next) "ম্যাপের ভেতরের মাপ লেবেল লুকানো হয়েছে" else "ম্যাপের মাপ লেবেল চালু হয়েছে"
+            )
+        }
+    }
+
+    fun toggleSplitMouzaSync() {
+        _uiState.update { st ->
+            if (st.mouzaOverlayDataUrl.isNullOrBlank()) {
+                return@update st.copy(statusMessage = "স্প্লিট সিঙ্ক ব্যবহার করতে আগে 'নকশা ওভারলে' থেকে মৌজা ম্যাপ দিন")
+            }
+            val next = !st.splitMouzaSyncEnabled
+            st.copy(
+                splitMouzaSyncEnabled = next,
+                statusMessage = if (next) "স্প্লিট মৌজা সিঙ্ক চালু" else "স্প্লিট মৌজা সিঙ্ক বন্ধ"
+            )
+        }
+    }
+
+    fun setMaxGpsAccuracyM(accMeters: Float) {
+        _uiState.update { it.copy(maxGpsAccuracyM = accMeters.coerceIn(5f, 100f)) }
+    }
+
+    fun computeRoadSetbackFromPoints(pointsLatLon: List<Pair<Double, Double>>) {
+        if (pointsLatLon.size < 4) {
+            _uiState.update {
+                it.copy(statusMessage = "সেটব্যাক মাপতে কমপক্ষে ৪টি পিন দিন (আগের পিনগুলো প্লট, শেষ ২ পিন রাস্তার রেখা)")
+            }
+            return
+        }
+        val plotPts = pointsLatLon.dropLast(2)
+        val roadA = pointsLatLon[pointsLatLon.size - 2]
+        val roadB = pointsLatLon[pointsLatLon.size - 1]
+        val setbackFt = SpatialParcelEngine.computeRoadSetbackFt(plotPts, roadA, roadB)
+        _uiState.update {
+            it.copy(
+                roadSetbackResultFt = setbackFt,
+                statusMessage = String.format(
+                    Locale.US,
+                    "রাস্তা থেকে সেটব্যাক দূরত্ব: %.2f ফুট (%s)",
+                    setbackFt,
+                    LandCalculators.formatFeetInches(setbackFt)
+                )
+            )
+        }
+    }
+
+    fun exportEnhancedKmz(
+        pointsLatLon: List<Pair<Double, Double>>,
+        metadata: KmzDemarcationMetadata,
+        overlayBoundsNSEW: DoubleArray?
+    ) {
+        val state = _uiState.value
+        if (pointsLatLon.size < 3 && (overlayBoundsNSEW == null || activeMouzaOverlayFile == null)) {
+            _uiState.update { it.copy(statusMessage = "KMZ রপ্তানির আগে ম্যাপে কমপক্ষে ৩টি পিন দিন") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isExporting = true, statusMessage = "KMZ তৈরি হচ্ছে...") }
+            try {
+                val outFile = withContext(Dispatchers.IO) {
+                    val ovFile = activeMouzaOverlayFile
+                    val ovBmp = if (metadata.includeOverlayImage && ovFile != null && ovFile.exists()) {
+                        MouzaPdfEngine.renderBaseDocument(
+                            appContext, ovFile, activeMouzaOverlayIsPdf, state.mouzaOverlayCurrentPage, ultraHd = false
+                        ).bitmap
+                    } else null
+                    val kmzBytes = SpatialParcelEngine.buildEnhancedKmzBytes(
+                        pointsLatLon = pointsLatLon,
+                        metadata = metadata.copy(scaleLabel = state.selectedMouzaScale.ratioLabel),
+                        overlayBitmap = ovBmp,
+                        overlayBoundsNSEW = overlayBoundsNSEW
+                    )
+                    ovBmp?.recycle()
+                    SpatialParcelEngine.exportKmzToFile(appContext, kmzBytes, metadata.dagNumber)
+                }
+                _uiState.update {
+                    it.copy(
+                        isExporting = false,
+                        statusMessage = "KMZ রপ্তানি সম্পন্ন: ${outFile.absolutePath}"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isExporting = false,
+                        statusMessage = "KMZ রপ্তানি ব্যর্থ: ${e.localizedMessage ?: "ত্রুটি"}"
+                    )
+                }
+            }
+        }
     }
 }

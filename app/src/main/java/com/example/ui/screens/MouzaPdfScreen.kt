@@ -79,12 +79,15 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.RotateRight
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Straighten
+import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material.icons.rounded.ZoomOutMap
@@ -144,6 +147,11 @@ import com.example.model.MouzaScale
 import com.example.model.MouzaSelectionTool
 import com.example.ui.components.BottomSwipeToastBanner
 import com.example.ui.components.KhatianLookupBottomSheet
+import com.example.ui.components.MouzaCalibrationSheet
+import com.example.ui.components.MouzaCleanerCompareDialog
+import com.example.ui.components.MouzaParcelTableDialog
+import com.example.ui.components.MouzaPdfInspectAndToolsSheet
+import com.example.ui.components.MouzaPlotActionsSheet
 import com.example.ui.components.NeuPillChip
 import com.example.ui.components.PrecisionNudgePad
 import com.example.ui.components.UtilityBarChip
@@ -237,6 +245,11 @@ fun MouzaPdfScreen(
     var nudgeStepLevel by remember { mutableIntStateOf(0) }
     var editingPlot by remember { mutableStateOf<MouzaPlot?>(null) }
     var showCalibrateDialog by remember { mutableStateOf<MouzaPlot?>(null) }
+    var showCalibrationSheet by remember { mutableStateOf(false) }
+    var showCleanerDialog by remember { mutableStateOf(false) }
+    var showParcelTableDialog by remember { mutableStateOf(false) }
+    var showPdfInspectSheet by remember { mutableStateOf(false) }
+    var plotMenuTarget by remember { mutableStateOf<MouzaPlot?>(null) }
 
     val loupeAnimScale by animateFloatAsState(
         targetValue = if (pointerModeEnabled && loupeEnabled) 1f else 0f,
@@ -253,12 +266,19 @@ fun MouzaPdfScreen(
 
     BackHandler(
         enabled = showReportSheet || showFilterSheet || showKhatianSheet || showSavedProjectsSheet ||
-            showSaveProjectDialog || editingPlot != null || showCalibrateDialog != null
+            showSaveProjectDialog || editingPlot != null || showCalibrateDialog != null ||
+            showCalibrationSheet || showCleanerDialog || showParcelTableDialog ||
+            showPdfInspectSheet || plotMenuTarget != null
     ) {
         when {
             showSaveProjectDialog -> showSaveProjectDialog = false
             showCalibrateDialog != null -> showCalibrateDialog = null
             editingPlot != null -> editingPlot = null
+            plotMenuTarget != null -> plotMenuTarget = null
+            showParcelTableDialog -> showParcelTableDialog = false
+            showCleanerDialog -> showCleanerDialog = false
+            showCalibrationSheet -> showCalibrationSheet = false
+            showPdfInspectSheet -> showPdfInspectSheet = false
             showKhatianSheet -> showKhatianSheet = false
             showSavedProjectsSheet -> showSavedProjectsSheet = false
             showFilterSheet -> showFilterSheet = false
@@ -595,6 +615,41 @@ fun MouzaPdfScreen(
                         testTag = "mouza_nudge_toggle",
                         onClick = { showNudgePad = !showNudgePad }
                     )
+                    UtilityBarChip(
+                        label = "ক্যালিব্রেশন",
+                        icon = Icons.Rounded.Tune,
+                        selected = state.calibrationRefLines.isNotEmpty() || state.calibrationScaleX != 1.0 || state.calibrationScaleY != 1.0,
+                        testTag = "mouza_calibration_chip",
+                        onClick = { showCalibrationSheet = true }
+                    )
+                    UtilityBarChip(
+                        label = "ক্লিনার",
+                        icon = Icons.Rounded.AutoFixHigh,
+                        selected = state.cleanedPreviewBitmap != null,
+                        testTag = "mouza_cleaner_chip",
+                        onClick = { showCleanerDialog = true }
+                    )
+                    UtilityBarChip(
+                        label = "${state.renderDpi} DPI/পৃষ্ঠা",
+                        icon = Icons.Rounded.RotateRight,
+                        selected = state.renderDpi != 300 || state.pageRotationDeg != 0 || state.pageCompareBitmap != null,
+                        testTag = "mouza_pdf_inspect_chip",
+                        onClick = { showPdfInspectSheet = true }
+                    )
+                    UtilityBarChip(
+                        label = "পার্সেল টেবিল",
+                        icon = Icons.Rounded.TableChart,
+                        selected = showParcelTableDialog,
+                        testTag = "mouza_parcel_table_chip",
+                        onClick = { showParcelTableDialog = true }
+                    )
+                    UtilityBarChip(
+                        label = "অ্যানোটেটেড PDF",
+                        icon = Icons.Rounded.PictureAsPdf,
+                        selected = false,
+                        testTag = "mouza_annotated_pdf_chip",
+                        onClick = { viewModel.exportNonDestructiveAnnotatedPdfFile() }
+                    )
                 }
             }
 
@@ -647,6 +702,20 @@ fun MouzaPdfScreen(
                             color = Color(0xFF536574)
                         )
                         Spacer(Modifier.height(20.dp))
+                        if (state.isEncryptedPdfError) {
+                            androidx.compose.material3.Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)
+                            ) {
+                                Text(
+                                    text = "পাসওয়ার্ড/এনক্রিপশন-সুরক্ষিত PDF: অ্যান্ড্রয়েড PdfRenderer পাসওয়ার্ডমুক্ত PDF ছাড়া রেন্ডার করতে পারে না। অনুগ্রহ করে পাসওয়ার্ডমুক্ত কপি বা ছবি নিন।",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
                         Button(
                             onClick = { docPickerLauncher.launch(arrayOf("application/pdf", "image/*")) },
                             modifier = Modifier.testTag("empty_pick_pdf_button"),
@@ -1008,7 +1077,7 @@ fun MouzaPdfScreen(
                                 }
                             }
 
-                            // 3. Draw Auto-Filled / Manual Polygons + Side Edge Feet Lengths + Vertex Handles
+                            // 3. Draw Auto-Filled / Manual Polygons + Holes + Side Edge Feet Lengths + Vertex Handles
                             state.selectedPlots.forEach { plot ->
                                 val poly = plot.effectivePolygon()
                                 if (poly != null && poly.size >= 3) {
@@ -1022,15 +1091,31 @@ fun MouzaPdfScreen(
                                         close()
                                     }
                                     val isHighlighted = state.highlightedPlotId == plot.id
+                                    val baseColor = if (plot.isRoad) Color(0xFF607D8B) else plot.color
                                     drawPath(
                                         path,
-                                        color = plot.color.copy(alpha = if (isHighlighted) 0.25f + 0.22f * highlightPulse else 0.30f)
+                                        color = baseColor.copy(alpha = if (isHighlighted) 0.25f + 0.22f * highlightPulse else if (plot.isRoad) 0.22f else 0.30f)
                                     )
                                     drawPath(
                                         path,
-                                        color = if (isHighlighted) Color(0xFFFFD54F) else plot.color,
+                                        color = if (isHighlighted) Color(0xFFFFD54F) else baseColor,
                                         style = Stroke(width = if (isHighlighted) 6.5f else 4.5f)
                                     )
+
+                                    // Draw Hole / Pond / Road Cut-outs
+                                    plot.holePolygonsNormalized.forEach { holePoly ->
+                                        if (holePoly.size >= 3) {
+                                            val hPts = holePoly.map { (hx, hy) -> Offset(toScreenX(hx), toScreenY(hy)) }
+                                            val hPath = Path().apply {
+                                                hPts.forEachIndexed { idx, pt ->
+                                                    if (idx == 0) moveTo(pt.x, pt.y) else lineTo(pt.x, pt.y)
+                                                }
+                                                close()
+                                            }
+                                            drawPath(hPath, color = Color.White.copy(alpha = 0.68f))
+                                            drawPath(hPath, color = Color(0xFFD32F2F), style = Stroke(width = 3.2f))
+                                        }
+                                    }
 
                                     val centroidPt = plot.centroidNormalized?.let {
                                         Offset(toScreenX(it.first), toScreenY(it.second))
@@ -1039,7 +1124,7 @@ fun MouzaPdfScreen(
                                         screenPts.map { it.y }.average().toFloat()
                                     )
 
-                                    val plotColorInt = plot.color.toArgb()
+                                    val plotColorInt = baseColor.toArgb()
                                     edgeTextPaint.color = plotColorInt
 
                                      // Edge foot measurements + corner dots
@@ -1052,13 +1137,15 @@ fun MouzaPdfScreen(
 
                                         // Edge length label
                                         val edgePx = hypot(sB.x - sA.x, sB.y - sA.y)
-                                        if (edgePx >= 56f) {
+                                        if (!plot.hideMeasures && edgePx >= 56f) {
                                             val feet = MouzaPdfEngine.computeDistanceFeet(
                                                 pA, pB,
                                                 state.pdfPageWidthPts,
                                                 state.pdfPageHeightPts,
                                                 state.selectedScale,
-                                                state.calibrationMultiplier
+                                                state.calibrationMultiplier,
+                                                state.calibrationScaleX,
+                                                state.calibrationScaleY
                                             )
                                             val text = LandCalculators.formatCompactFeet(feet)
                                             var ang = Math.toDegrees(
@@ -1085,7 +1172,7 @@ fun MouzaPdfScreen(
                                             val mx = (sA.x + sB.x) / 2f
                                             val my = (sA.y + sB.y) / 2f
                                             drawCircle(Color.White, radius = 6f, center = Offset(mx, my))
-                                            drawCircle(plot.color, radius = 4f, center = Offset(mx, my))
+                                            drawCircle(baseColor, radius = 4f, center = Offset(mx, my))
                                         }
 
                                         // Vertex corner handle (locked plots show compact protected vertices)
@@ -1106,7 +1193,7 @@ fun MouzaPdfScreen(
                                                 isSelVertex -> Color(0xFFFFEA00)
                                                 isEditMode -> Color(0xFFFFB300)
                                                 plot.isLocked -> Color(0xFF00897B)
-                                                else -> plot.color
+                                                else -> baseColor
                                             },
                                             radius = handleRadius,
                                             center = sA
@@ -1121,16 +1208,43 @@ fun MouzaPdfScreen(
                                     if (maxX - minX > 72f && maxY - minY > 44f) {
                                         val plotArea = LandCalculators.fromSqFeet(viewModel.plotAreaSqFeet(plot))
                                         val lockPrefix = if (plot.isLocked) "🔒 " else ""
-                                        val titleText = lockPrefix + if (plot.dagNumber.isNotBlank()) "দাগ ${plot.dagNumber}" else "দাগ #${plot.plotIndex}"
-                                        val subText = String.format(Locale.US, "%.2f শতক", plotArea.decimal)
+                                        val roadPrefix = if (plot.isRoad) "[রাস্তা] " else ""
+                                        val titleText = lockPrefix + roadPrefix + if (plot.dagNumber.isNotBlank()) "দাগ ${plot.dagNumber}" else "দাগ #${plot.plotIndex}"
+                                        val subText = if (plot.hideMeasures) "" else String.format(Locale.US, "%.2f শতক", plotArea.decimal)
                                         drawIntoCanvas { canvas ->
                                             val nc = canvas.nativeCanvas
                                             centerLabelPaint.color = plotColorInt
                                             nc.drawText(titleText, centroidPt.x, centroidPt.y - 6f, centerStrokePaint)
                                             nc.drawText(titleText, centroidPt.x, centroidPt.y - 6f, centerLabelPaint)
-                                            nc.drawText(subText, centroidPt.x, centroidPt.y + 30f, centerStrokePaint)
-                                            nc.drawText(subText, centroidPt.x, centroidPt.y + 30f, centerLabelPaint)
+                                            if (subText.isNotEmpty()) {
+                                                nc.drawText(subText, centroidPt.x, centroidPt.y + 30f, centerStrokePaint)
+                                                nc.drawText(subText, centroidPt.x, centroidPt.y + 30f, centerLabelPaint)
+                                            }
                                         }
+                                    }
+                                }
+                            }
+
+                            // 3b. Draw Measure-Between / Road Frontage Result Overlay
+                            state.measureBetweenResult?.let { mbr ->
+                                val p1 = mbr.p1Norm
+                                val p2 = mbr.p2Norm
+                                if (p1 != null && p2 != null) {
+                                    val s1 = Offset(toScreenX(p1.first), toScreenY(p1.second))
+                                    val s2 = Offset(toScreenX(p2.first), toScreenY(p2.second))
+                                    drawLine(Color(0xFF00ACC1), s1, s2, strokeWidth = 5f)
+                                    drawCircle(Color.White, radius = 9f, center = s1)
+                                    drawCircle(Color(0xFF00ACC1), radius = 6f, center = s1)
+                                    drawCircle(Color.White, radius = 9f, center = s2)
+                                    drawCircle(Color(0xFF00ACC1), radius = 6f, center = s2)
+                                    drawIntoCanvas { canvas ->
+                                        val nc = canvas.nativeCanvas
+                                        edgeTextPaint.color = android.graphics.Color.parseColor("#006064")
+                                        val mx = (s1.x + s2.x) / 2f
+                                        val my = (s1.y + s2.y) / 2f
+                                        val lbl = "${String.format(Locale.US, "%.2f", mbr.distanceFt)} ফু (${mbr.distanceFormatted})"
+                                        nc.drawText(lbl, mx, my - 12f, edgeStrokePaint)
+                                        nc.drawText(lbl, mx, my - 12f, edgeTextPaint)
                                     }
                                 }
                             }
@@ -1155,7 +1269,9 @@ fun MouzaPdfScreen(
                                             state.pdfPageWidthPts,
                                             state.pdfPageHeightPts,
                                             state.selectedScale,
-                                            state.calibrationMultiplier
+                                            state.calibrationMultiplier,
+                                            state.calibrationScaleX,
+                                            state.calibrationScaleY
                                         )
                                         val lbl = LandCalculators.formatFeetInches(feet)
                                         val mx = (prev.x + pt.x) / 2f
@@ -1429,6 +1545,42 @@ fun MouzaPdfScreen(
                     }
                 }
 
+                // Measure-Between / Frontage Active Banner
+                AnimatedVisibility(
+                    visible = state.measureBetweenResult != null,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    state.measureBetweenResult?.let { mbr ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 2.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF00ACC1).copy(alpha = 0.14f))
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${mbr.modeTitleBn}: ${mbr.detailsBn}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color(0xFF006064),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { viewModel.clearMeasureBetween() },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Clear Measure Between", modifier = Modifier.size(16.dp), tint = Color(0xFF006064))
+                            }
+                        }
+                    }
+                }
+
                 // Individual Plot Lock / Unlock Quick Strip below map
                 AnimatedVisibility(
                     visible = state.selectedPlots.isNotEmpty(),
@@ -1595,7 +1747,8 @@ fun MouzaPdfScreen(
                         totalTapeFt += MouzaPdfEngine.computeDistanceFeet(
                             state.tapeDraft[i - 1], state.tapeDraft[i],
                             state.pdfPageWidthPts, state.pdfPageHeightPts,
-                            state.selectedScale, state.calibrationMultiplier
+                            state.selectedScale, state.calibrationMultiplier,
+                            state.calibrationScaleX, state.calibrationScaleY
                         )
                     }
                     Column(
@@ -1608,7 +1761,7 @@ fun MouzaPdfScreen(
                     ) {
                         Text(
                             text = if (state.tapeDraft.size >= 2) {
-                                "${LandCalculators.formatFeetInches(totalTapeFt)} • ${String.format(Locale.US, "%.1f", totalTapeFt * 12.0 / 7.92)} লিংক • ${String.format(Locale.US, "%.1f", totalTapeFt / 3.0)} গজ • ${String.format(Locale.US, "%.1f", totalTapeFt * 0.3048)} মি."
+                                "${LandCalculators.formatFeetInchesSuta(totalTapeFt)} • ${String.format(Locale.US, "%.1f", totalTapeFt * 12.0 / 7.92)} লিংক • ${String.format(Locale.US, "%.1f", totalTapeFt / 3.0)} গজ • ${String.format(Locale.US, "%.1f", totalTapeFt * 0.3048)} মি."
                             } else "ফিতা মাপ (নকশায় ট্যাপ করে বিন্দু বসান)",
                             style = MaterialTheme.typography.titleSmall,
                             color = Color(0xFFC47A00),
@@ -1891,6 +2044,19 @@ fun MouzaPdfScreen(
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
+                                        IconButton(
+                                            onClick = {
+                                                showReportSheet = false
+                                                plotMenuTarget = plot
+                                            },
+                                            modifier = Modifier.size(34.dp).testTag("report_more_plot_${plot.id}")
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.MoreVert,
+                                                contentDescription = "Plot Actions",
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                     }
                                 }
                                 Text(
@@ -1976,6 +2142,37 @@ fun MouzaPdfScreen(
                         Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("পুরো PDF", maxLines = 1)
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            showReportSheet = false
+                            showParcelTableDialog = true
+                        },
+                        enabled = state.selectedPlots.isNotEmpty(),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Rounded.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("পার্সেল টেবিল & CSV", maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.exportNonDestructiveAnnotatedPdfFile()
+                            showReportSheet = false
+                        },
+                        enabled = !state.isExporting,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("অ্যানোটেটেড PDF", maxLines = 1)
                     }
                 }
                 OutlinedButton(
@@ -2298,6 +2495,112 @@ fun MouzaPdfScreen(
             dismissButton = {
                 TextButton(onClick = { showCalibrateDialog = null }) { Text("বাতিল") }
             }
+        )
+    }
+
+    // 5-Method Calibration & Paper Shrinkage Sheet (N01)
+    if (showCalibrationSheet) {
+        MouzaCalibrationSheet(
+            selectedScale = state.selectedScale,
+            calibrationScaleX = state.calibrationScaleX,
+            calibrationScaleY = state.calibrationScaleY,
+            calibrationErrPct = state.calibrationErrPct,
+            paperShrinkageNote = state.paperShrinkageNote,
+            refLines = state.calibrationRefLines,
+            globalSettings = state.globalSettings,
+            pdfReport = state.pdfInspectionReport,
+            plots = state.selectedPlots,
+            hasTapeLine = state.tapeDraft.size >= 2 || (state.completedTapes.lastOrNull()?.size ?: 0) >= 2,
+            onSelectScale = { viewModel.setScale(it) },
+            onApplySuggestedPdfScale = { viewModel.applySuggestedPdfScale() },
+            onAddRefLineFromTape = { actualFt, lbl -> viewModel.addCalibrationRefLineFromLastTape(actualFt, lbl) },
+            onRemoveRefLine = { viewModel.removeCalibrationRefLine(it) },
+            onVerifyPaperSize = { wIn, hIn -> viewModel.verifyPaperSizeAndMultiLineCalibration(wIn, hIn) },
+            onCalibrateWithKnownPlot = { plotId, dec -> viewModel.calibrateWithKnownPlot(plotId, dec) },
+            onApplyProfile = { viewModel.applyCalibrationProfile(it) },
+            onSaveProfile = { name, stage -> viewModel.saveCurrentCalibrationProfile(name, stage) },
+            onDismiss = { showCalibrationSheet = false }
+        )
+    }
+
+    // Mouza Cleaner Before/After Split-Slider Dialog (N01)
+    val origBmp = state.displayBitmap
+    if (showCleanerDialog && origBmp != null) {
+        MouzaCleanerCompareDialog(
+            originalBitmap = origBmp,
+            cleanedBitmap = state.cleanedPreviewBitmap,
+            onGenerateClean = { contrastGain, threshold, despeckle, invert ->
+                viewModel.generateCleanedPreview(contrastGain, threshold, despeckle, invert)
+            },
+            onExportCleaned = { asPdf -> viewModel.exportCleanedDocument(asPdf) },
+            onDismiss = { showCleanerDialog = false }
+        )
+    }
+
+    // Parcel Table + Shoelace Steps + CSV & Annotated PDF Export Dialog (N01)
+    if (showParcelTableDialog) {
+        val parcelRows = remember(state.selectedPlots, state.calibrationScaleX, state.calibrationScaleY, state.globalSettings) {
+            viewModel.buildParcelTableRows()
+        }
+        MouzaParcelTableDialog(
+            rows = parcelRows,
+            getShoelaceSteps = { plotId -> viewModel.getShoelaceStepsForPlot(plotId) },
+            onExportCsv = { viewModel.exportParcelTableCsvFile() },
+            onExportAccuracyPdf = { viewModel.exportAccuracyReportPdfForPlots() },
+            onExportAnnotatedPdf = { viewModel.exportNonDestructiveAnnotatedPdfFile() },
+            onDismiss = { showParcelTableDialog = false }
+        )
+    }
+
+    // Plot Actions (⋮) Sheet: Road, Hide Measures, Hole Cut-Out, Lock Side Length, Split by Line, Measure Between (N01)
+    plotMenuTarget?.let { initialPlot ->
+        val latestPlot = state.selectedPlots.find { it.id == initialPlot.id } ?: initialPlot
+        MouzaPlotActionsSheet(
+            plot = latestPlot,
+            allPlots = state.selectedPlots,
+            pageWidthPts = state.pdfPageWidthPts,
+            pageHeightPts = state.pdfPageHeightPts,
+            scale = state.selectedScale,
+            scaleX = state.calibrationScaleX,
+            scaleY = state.calibrationScaleY,
+            hasDraftPolygon = state.manualPolygonDraft.size >= 3,
+            hasTapeLine = state.tapeDraft.size >= 2 || (state.completedTapes.lastOrNull()?.size ?: 0) >= 2,
+            measureBetweenResult = state.measureBetweenResult,
+            onSaveDetails = { dag, khatian, owner, remarks ->
+                viewModel.updatePlotDetails(latestPlot.id, dag, khatian, owner, remarks)
+            },
+            onToggleLock = { viewModel.togglePlotLock(latestPlot.id) },
+            onToggleRoad = { viewModel.togglePlotRoad(latestPlot.id) },
+            onToggleHideMeasures = { viewModel.togglePlotHideMeasures(latestPlot.id) },
+            onToggleHighlight = { viewModel.togglePlotHighlight(latestPlot.id) },
+            onAddHoleFromDraft = { viewModel.addHoleFromDraftToPlot(latestPlot.id) },
+            onLockSideLength = { edgeIdx, targetFt -> viewModel.lockPlotSideLength(latestPlot.id, edgeIdx, targetFt) },
+            onSplitByLastTapeLine = { viewModel.splitPlotByLastTapeLine(latestPlot.id) },
+            onMeasureBetweenPlot = { otherId -> viewModel.measureBetweenPlots(latestPlot.id, otherId) },
+            onMeasureRoadFrontage = { viewModel.measurePlotRoadFrontageFromTape(latestPlot.id) },
+            onDismiss = { plotMenuTarget = null }
+        )
+    }
+
+    // PDF Capabilities, DPI Switch, Rotation & Side-by-Side Page Compare Sheet (N01)
+    if (showPdfInspectSheet) {
+        MouzaPdfInspectAndToolsSheet(
+            report = state.pdfInspectionReport,
+            renderDpi = state.renderDpi,
+            pageRotationDeg = state.pageRotationDeg,
+            pageCount = state.pageCount,
+            currentPage = state.currentPage,
+            pageCompareBitmap = state.pageCompareBitmap,
+            displayBitmap = state.displayBitmap,
+            onSetDpi = { viewModel.setRenderDpi(it) },
+            onRotate90 = { viewModel.rotatePage90() },
+            onSelectPage = { viewModel.selectPage(it) },
+            onLoadComparePage = { viewModel.loadPageForComparison(it) },
+            onImportUncompressedVectors = {
+                viewModel.importUncompressedPdfVectors()
+                showPdfInspectSheet = false
+            },
+            onDismiss = { showPdfInspectSheet = false }
         )
     }
 }
