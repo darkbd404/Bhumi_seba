@@ -641,8 +641,31 @@ class ExampleRobolectricTest {
     fun pcNetworkSyncManager_andPcHtmlKhatianFix_workAcrossNetworks() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         assertEquals(
-            "https://www.salam.whf.bz/",
-            com.example.engine.PcNetworkSyncManager.normalizeEndpointUrl("www.salam.whf.bz")
+            "https://ntfy.sh",
+            com.example.engine.PcNetworkSyncManager.normalizeEndpointUrl("")
+        )
+        assertEquals(
+            "https://www.salam.whf.bz",
+            com.example.engine.PcNetworkSyncManager.normalizeEndpointUrl("www.salam.whf.bz/")
+        )
+
+        // Verify ANSI-stripped extraction of public HTTPS URLs from tunnel stdout
+        val lhrAnsiLine = "\u001B[32mabc123def.lhr.life\u001B[0m tunneled with tls termination, \u001B[36mhttps://abc123def.lhr.life\u001B[0m"
+        assertEquals(
+            "https://abc123def.lhr.life",
+            com.example.engine.PublicPcTunnelManager.extractPublicTunnelUrl(lhrAnsiLine)
+        )
+        val pinggyLine = "Forwarding https://xyz987.a.free.pinggy.link -> http://127.0.0.1:8765"
+        assertEquals(
+            "https://xyz987.a.free.pinggy.link",
+            com.example.engine.PublicPcTunnelManager.extractPublicTunnelUrl(pinggyLine)
+        )
+
+        val roomCode = com.example.engine.PcNetworkSyncManager.ensureRelayRoomCode(context, "Bhumi_Test 99!")
+        assertEquals("bhumi_test99", roomCode)
+        assertEquals(
+            "https://ntfy.sh/bhumi_test99",
+            com.example.engine.PcNetworkSyncManager.buildCloudRelayTopicUrl("https://ntfy.sh/", roomCode)
         )
 
         val sampleKhatian = com.example.model.CustomKhatianDocument(
@@ -652,12 +675,14 @@ class ExampleRobolectricTest {
             dags = listOf(com.example.model.KhatianDagEntry(id = "d1", dagNumber = "১০১", totalDecimal = 35.0))
         )
         val syncUrl = com.example.engine.PcNetworkSyncManager.buildCrossNetworkSyncUrl(
-            baseUrl = "https://www.salam.whf.bz/",
+            baseUrl = "https://abc123def.lhr.life",
             profile = com.example.model.SurveyorProfile(),
-            khatians = listOf(sampleKhatian)
+            khatians = listOf(sampleKhatian),
+            relayRoomCode = roomCode
         )
-        assertTrue(syncUrl.startsWith("https://www.salam.whf.bz/#sync="))
-        val encodedPart = syncUrl.substringAfter("#sync=")
+        assertTrue(syncUrl.startsWith("https://abc123def.lhr.life/#sync="))
+        assertTrue(syncUrl.endsWith("&relay=bhumi_test99"))
+        val encodedPart = syncUrl.substringAfter("#sync=").substringBefore("&relay=")
         val decodedJson = String(
             android.util.Base64.decode(encodedPart, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING),
             Charsets.UTF_8
@@ -665,21 +690,45 @@ class ExampleRobolectricTest {
         assertTrue(decodedJson.contains("৯১২"))
         assertTrue(decodedJson.contains("Abdus Salam"))
 
-        val remoteState = com.example.engine.PcNetworkSyncManager.refreshState(
+        // Without active tunnel, REMOTE_ACCESS falls back cleanly to real public Cloud Relay topic URL
+        val relayState = com.example.engine.PcNetworkSyncManager.refreshState(
             context = context,
-            settings = com.example.model.PcSyncSettings(mode = com.example.model.PcSyncMode.REMOTE_ACCESS),
-            serverState = com.example.engine.PcServerState(isRunning = false)
+            settings = com.example.model.PcSyncSettings(
+                mode = com.example.model.PcSyncMode.REMOTE_ACCESS,
+                relayRoomCode = roomCode
+            ),
+            serverState = com.example.engine.PcServerState(isRunning = false),
+            tunnelState = com.example.engine.PublicTunnelState(status = com.example.engine.TunnelStatus.STOPPED)
         )
-        assertEquals(com.example.model.PcSyncMode.REMOTE_ACCESS, remoteState.activeMode)
-        assertEquals("https://www.salam.whf.bz/", remoteState.activeTargetUrl)
+        assertEquals(com.example.model.PcSyncMode.REMOTE_ACCESS, relayState.activeMode)
+        assertEquals("https://ntfy.sh/bhumi_test99", relayState.activeTargetUrl)
+
+        // With active public tunnel, REMOTE_ACCESS targets the live tunnel HTTPS URL + relay code
+        val tunneledState = com.example.engine.PcNetworkSyncManager.refreshState(
+            context = context,
+            settings = com.example.model.PcSyncSettings(
+                mode = com.example.model.PcSyncMode.REMOTE_ACCESS,
+                relayRoomCode = roomCode
+            ),
+            serverState = com.example.engine.PcServerState(isRunning = true, port = 8765),
+            tunnelState = com.example.engine.PublicTunnelState(
+                status = com.example.engine.TunnelStatus.CONNECTED,
+                publicUrl = "https://abc123def.lhr.life",
+                providerName = "localhost.run"
+            )
+        )
+        assertEquals("https://abc123def.lhr.life/#relay=bhumi_test99", tunneledState.activeTargetUrl)
 
         val html = com.example.engine.DesktopAppExporter.buildStandaloneDesktopHtml(context, com.example.model.SurveyorProfile())
         assertTrue("pc_app.html must declare fn in exportKhatianSheet", html.contains("const fn = `Khatian_"))
         assertTrue("pc_app.html must declare thumb canvas in exportKhatianSheet", html.contains("const thumb = document.createElement(\"canvas\")"))
         assertTrue("pc_app.html must include downloadCanvasAsPng", html.contains("function downloadCanvasAsPng"))
         assertTrue("pc_app.html must include cross-network sync parser", html.contains("function applyCrossNetworkSyncFromUrl"))
+        assertTrue("pc_app.html must include live Cloud Relay sync", html.contains("function startCloudRelaySync"))
+        assertTrue("pc_app.html must include Cloud Relay modal", html.contains("function openRelayModal"))
         assertTrue("pc_app.html must not contain 5462/5463", !html.contains("৫৪৬২") && !html.contains("৫৪৬৩"))
     }
 }
+
 
 

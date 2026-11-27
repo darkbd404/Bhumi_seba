@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -98,7 +99,9 @@ import com.example.engine.CrossNetworkSyncPayload
 import com.example.engine.DesktopAppExporter
 import com.example.engine.LocalPcWebServer
 import com.example.engine.PcNetworkSyncManager
+import com.example.engine.PublicPcTunnelManager
 import com.example.engine.SyncConnectionStatus
+import com.example.engine.TunnelStatus
 import com.example.model.DEFAULT_CLOUD_RELAY_URL
 import com.example.model.DEFAULT_REMOTE_WEBSITE_URL
 import com.example.model.DetectedNetworkType
@@ -683,14 +686,15 @@ fun PcInstallLinkCard(
     val appPrefs = remember(context) { AppPreferences(context) }
 
     val serverState by LocalPcWebServer.state.collectAsStateWithLifecycle()
+    val tunnelState by PublicPcTunnelManager.state.collectAsStateWithLifecycle()
     val pcSyncSettings by appPrefs.pcSyncSettingsFlow.collectAsStateWithLifecycle(initialValue = PcSyncSettings())
     val savedKhatians by appPrefs.customKhatiansFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val syncState by PcNetworkSyncManager.state.collectAsStateWithLifecycle()
 
     var showSyncSettingsDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(serverState, pcSyncSettings, savedKhatians, surveyorProfile) {
-        PcNetworkSyncManager.refreshState(context, pcSyncSettings, serverState)
+    LaunchedEffect(serverState, tunnelState, pcSyncSettings, savedKhatians, surveyorProfile) {
+        PcNetworkSyncManager.refreshState(context, pcSyncSettings, serverState, tunnelState)
         val payloadJson = Json { encodeDefaults = true }.encodeToString(
             CrossNetworkSyncPayload(
                 exportedAtMillis = System.currentTimeMillis(),
@@ -728,9 +732,30 @@ fun PcInstallLinkCard(
     }
 
     val modeBadgeText = when {
-        syncState.activeMode == PcSyncMode.REMOTE_ACCESS && syncState.useCloudRelay -> "ক্লাউড-রিলে মোড"
-        syncState.activeMode == PcSyncMode.REMOTE_ACCESS -> "রিমোট IP / ওয়েবসাইট"
+        tunnelState.status == TunnelStatus.CONNECTED -> "পাবলিক HTTPS টানেল (${tunnelState.providerName})"
+        syncState.activeMode == PcSyncMode.REMOTE_ACCESS && syncState.useCloudRelay -> "ক্লাউড-রিলে (${syncState.relayRoomCode})"
+        syncState.activeMode == PcSyncMode.REMOTE_ACCESS -> "রিমোট অ্যাক্সেস মোড"
         else -> "লোকাল Wi-Fi মোড"
+    }
+
+    val toggleRemoteMode: (Boolean) -> Unit = { enabled ->
+        val updated = pcSyncSettings.copy(
+            mode = if (enabled) PcSyncMode.REMOTE_ACCESS else PcSyncMode.LOCAL_WIFI
+        )
+        scope.launch {
+            appPrefs.savePcSyncSettings(updated)
+            if (enabled) {
+                if (updated.autoStartPublicTunnel) {
+                    PublicPcTunnelManager.start(context, surveyorProfile)
+                }
+                PcNetworkSyncManager.refreshState(context, updated, serverState, PublicPcTunnelManager.state.value)
+                onCopySuccess("রিমোট অ্যাক্সেস চালু হয়েছে — পাবলিক URL তৈরি হচ্ছে")
+            } else {
+                PublicPcTunnelManager.stop()
+                PcNetworkSyncManager.refreshState(context, updated, serverState, PublicPcTunnelManager.state.value)
+                onCopySuccess("লোকাল Wi-Fi মোডে ফিরে আসা হয়েছে")
+            }
+        }
     }
 
     Column(
@@ -767,7 +792,7 @@ fun PcInstallLinkCard(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "একই Wi-Fi ছাড়াও যেকোনো নেটওয়ার্ক (ফোন ডাটা + PC Wi-Fi) থেকে খতিয়ান ও PNG/PDF ডাউনলোড চালু রাখুন।",
+                    text = "কাছে (একই Wi-Fi) বা দূরে (ফোন ডাটা + বাসার PC Wi-Fi) — যেকোনো নেটওয়ার্কে কাস্টম খতিয়ান ও PNG/PDF ডাউনলোড চালু রাখুন।",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -840,10 +865,10 @@ fun PcInstallLinkCard(
                     }
                     IconButton(
                         onClick = {
-                            PcNetworkSyncManager.refreshState(context, pcSyncSettings, serverState)
+                            PcNetworkSyncManager.refreshState(context, pcSyncSettings, serverState, tunnelState)
                             if (syncState.activeMode == PcSyncMode.REMOTE_ACCESS) {
                                 scope.launch {
-                                    val target = if (pcSyncSettings.useCloudRelay) pcSyncSettings.cloudRelayUrl else pcSyncSettings.customRemoteUrl
+                                    val target = tunnelState.publicUrl.ifBlank { pcSyncSettings.cloudRelayUrl }
                                     val res = PcNetworkSyncManager.probeRemoteEndpoint(target)
                                     onCopySuccess(res.message)
                                 }
@@ -892,7 +917,8 @@ fun PcInstallLinkCard(
                             fontWeight = FontWeight.SemiBold,
                             color = statusTint,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -904,23 +930,7 @@ fun PcInstallLinkCard(
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
                         .clickable {
-                            val nextMode = if (pcSyncSettings.mode == PcSyncMode.REMOTE_ACCESS) {
-                                PcSyncMode.LOCAL_WIFI
-                            } else {
-                                PcSyncMode.REMOTE_ACCESS
-                            }
-                            val updated = pcSyncSettings.copy(mode = nextMode)
-                            scope.launch {
-                                appPrefs.savePcSyncSettings(updated)
-                                PcNetworkSyncManager.refreshState(context, updated, serverState)
-                                onCopySuccess(
-                                    if (nextMode == PcSyncMode.REMOTE_ACCESS) {
-                                        "রিমোট অ্যাক্সেস মোড চালু হয়েছে (${syncState.remoteUrl})"
-                                    } else {
-                                        "লোকাল Wi-Fi মোডে ফিরে আসা হয়েছে"
-                                    }
-                                )
-                            }
+                            toggleRemoteMode(pcSyncSettings.mode != PcSyncMode.REMOTE_ACCESS)
                         }
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -938,42 +948,44 @@ fun PcInstallLinkCard(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (syncState.detectedNetwork == DetectedNetworkType.CELLULAR_REMOTE) {
-                                "ফোনে ডাটা ও PC-তে Wi-Fi থাকলে এটি অন করুন (${syncState.remoteUrl})"
+                            text = if (tunnelState.publicUrl.isNotBlank()) {
+                                "লাইভ লিংক: ${tunnelState.publicUrl}"
+                            } else if (syncState.detectedNetwork == DetectedNetworkType.CELLULAR_REMOTE) {
+                                "ফোনে ডাটা ও PC-তে Wi-Fi থাকলে এটি চালু করুন — পাবলিক লিংক ও ক্লাউড-রিলে দেবে"
                             } else {
-                                "দূরে বা ভিন্ন নেটওয়ার্কে PC চালাতে: ${syncState.remoteUrl}"
+                                "নিজস্ব ওয়েবসাইট ছাড়াই যেকোনো নেটওয়ার্কে PC চালাতে এটি অন করুন"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                     Switch(
                         checked = syncState.activeMode == PcSyncMode.REMOTE_ACCESS,
-                        onCheckedChange = { enabled ->
-                            val updated = pcSyncSettings.copy(
-                                mode = if (enabled) PcSyncMode.REMOTE_ACCESS else PcSyncMode.LOCAL_WIFI
-                            )
-                            scope.launch {
-                                appPrefs.savePcSyncSettings(updated)
-                                PcNetworkSyncManager.refreshState(context, updated, serverState)
-                                onCopySuccess(
-                                    if (enabled) "রিমোট অ্যাক্সেস মোড সক্রিয়"
-                                    else "লোকাল Wi-Fi মোড সক্রিয়"
-                                )
-                            }
-                        },
+                        onCheckedChange = { enabled -> toggleRemoteMode(enabled) },
                         modifier = Modifier.testTag("pc_remote_switch_toggle")
                     )
                 }
             }
         }
 
-        // Cross-Network Remote Website / Cloud Relay Card when Remote Access Mode is active
+        // Cross-Network Built-in Public Tunnel + Live Cloud Relay Card (Works on ANY network without user hosting)
         if (syncState.activeMode == PcSyncMode.REMOTE_ACCESS) {
-            val activeRemote = syncState.activeTargetUrl.ifBlank { DEFAULT_REMOTE_WEBSITE_URL }
-            val displayUrl = syncState.lastSyncUrl.ifBlank { activeRemote }
+            val relayTopicUrl = PcNetworkSyncManager.buildCloudRelayTopicUrl(
+                pcSyncSettings.cloudRelayUrl,
+                syncState.relayRoomCode
+            )
+            val livePublicWithRelay = if (tunnelState.publicUrl.isNotBlank()) {
+                "${tunnelState.publicUrl}/#relay=${syncState.relayRoomCode}"
+            } else {
+                ""
+            }
+            val displayUrl = livePublicWithRelay.ifBlank {
+                syncState.lastSyncUrl.ifBlank {
+                    pcSyncSettings.customRemoteUrl.ifBlank { relayTopicUrl }
+                }
+            }
             Surface(
                 color = Color(0xFF1A73E8).copy(alpha = 0.08f),
                 shape = RoundedCornerShape(14.dp),
@@ -983,34 +995,149 @@ fun PcInstallLinkCard(
                     modifier = Modifier.padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    // 1) Built-in Public Internet URL Tunnel Control
+                    Button(
+                        onClick = {
+                            if (tunnelState.status == TunnelStatus.CONNECTED || tunnelState.status == TunnelStatus.CONNECTING) {
+                                PublicPcTunnelManager.stop()
+                                onCopySuccess("পাবলিক ইন্টারনেট URL বন্ধ হয়েছে")
+                            } else {
+                                PublicPcTunnelManager.start(context, surveyorProfile)
+                                onCopySuccess("যেকোনো নেটওয়ার্কের জন্য পাবলিক HTTPS URL তৈরি হচ্ছে...")
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = when (tunnelState.status) {
+                                TunnelStatus.CONNECTED -> Color(0xFFC93B52)
+                                TunnelStatus.CONNECTING -> Color(0xFF1B7B8C)
+                                else -> Color(0xFF1A73E8)
+                            }
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("pc_tunnel_toggle_button")
                     ) {
-                        Icon(
-                            imageVector = if (syncState.useCloudRelay) Icons.Rounded.CloudDone else Icons.Rounded.Language,
-                            contentDescription = null,
-                            tint = Color(0xFF1A73E8),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = activeRemote,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1A73E8),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                        if (tunnelState.status == TunnelStatus.CONNECTING) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("পাবলিক HTTPS URL তৈরি হচ্ছে... (বাতিল)", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        } else {
+                            Icon(
+                                imageVector = if (tunnelState.status == TunnelStatus.CONNECTED) Icons.Rounded.Stop else Icons.Rounded.Public,
+                                contentDescription = "Toggle Public Internet URL",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (tunnelState.status == TunnelStatus.CONNECTED) {
+                                    "পাবলিক HTTPS URL চালু আছে (বন্ধ করুন)"
+                                } else {
+                                    "পাবলিক ইন্টারনেট URL চালু করুন (Any Network)"
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    if (tunnelState.status == TunnelStatus.CONNECTED && livePublicWithRelay.isNotBlank()) {
+                        Surface(
+                            color = Color(0xFF0F6B54).copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .clickable {
-                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(displayUrl))
-                                    onCopySuccess("রিমোট ওয়েবসাইট লিংক কপি হয়েছে!")
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(livePublicWithRelay))
+                                    onCopySuccess("পাবলিক HTTPS লিংক কপি হয়েছে!")
                                 }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Language,
+                                    contentDescription = null,
+                                    tint = Color(0xFF0F6B54),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "লাইভ পাবলিক URL (${tunnelState.providerName}) — ট্যাপ করে কপি করুন:",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF0F6B54),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = livePublicWithRelay,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    } else if (!tunnelState.errorMessage.isNullOrBlank()) {
+                        Text(
+                            text = "${tunnelState.statusMessage} (${tunnelState.errorMessage})",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
                         )
                     }
 
+                    // 2) Always-Available HTTPS Cloud Relay Room Code (Works even if carrier blocks SSH)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudDone,
+                                contentDescription = null,
+                                tint = Color(0xFF1A73E8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "ক্লাউড-রিলে রুম কোড (যেকোনো নেটওয়ার্ক)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = syncState.relayRoomCode,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1A73E8)
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(syncState.relayRoomCode))
+                                    onCopySuccess("ক্লাউড কোড (${syncState.relayRoomCode}) কপি হয়েছে!")
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.testTag("pc_relay_code_copy_button")
+                            ) {
+                                Text("কোড কপি", maxLines = 1)
+                            }
+                        }
+                    }
+
                     Text(
-                        text = "খতিয়ান ডাটা সিঙ্ক করে নিচের লিংক PC-তে পাঠান — যেকোনো নেটওয়ার্কে (ফোন ডাটা + PC Wi-Fi) কাস্টম খতিয়ান PNG/PDF ডাউনলোড চলবে।",
+                        text = "যেকোনো নেটওয়ার্কে PC চালাতে: উপরের পাবলিক URL PC ব্রাউজারে খুলুন, অথবা PC-তে অফলাইন HTML খুলে '${syncState.relayRoomCode}' কোড দিন ও 'খতিয়ান সিঙ্ক' চাপুন।",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1023,12 +1150,14 @@ fun PcInstallLinkCard(
                             onClick = {
                                 scope.launch {
                                     val res = PcNetworkSyncManager.syncKhatiansToRemoteEndpoint(
-                                        endpointUrl = activeRemote,
+                                        context = context,
+                                        settings = pcSyncSettings,
                                         profile = surveyorProfile,
-                                        khatians = savedKhatians
+                                        khatians = savedKhatians,
+                                        publicTunnelUrl = tunnelState.publicUrl
                                     )
                                     clipboard.setText(androidx.compose.ui.text.AnnotatedString(res.shareableSyncUrl))
-                                    onCopySuccess("${res.statusMessage} (লিংক কপি হয়েছে)")
+                                    onCopySuccess(res.statusMessage)
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
@@ -1039,7 +1168,7 @@ fun PcInstallLinkCard(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.CloudSync,
-                                contentDescription = "Sync Khatians to Remote URL",
+                                contentDescription = "Sync Khatians via Cloud Relay",
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(5.dp))
@@ -1049,7 +1178,8 @@ fun PcInstallLinkCard(
                         OutlinedButton(
                             onClick = {
                                 scope.launch {
-                                    val res = PcNetworkSyncManager.probeRemoteEndpoint(activeRemote)
+                                    val target = tunnelState.publicUrl.ifBlank { pcSyncSettings.cloudRelayUrl }
+                                    val res = PcNetworkSyncManager.probeRemoteEndpoint(target)
                                     onCopySuccess(res.message)
                                 }
                             },
@@ -1081,17 +1211,26 @@ fun PcInstallLinkCard(
 
                         OutlinedButton(
                             onClick = {
-                                val targetShare = PcNetworkSyncManager.buildCrossNetworkSyncUrl(
-                                    baseUrl = activeRemote,
-                                    profile = surveyorProfile,
-                                    khatians = savedKhatians
-                                )
+                                val targetShare = if (tunnelState.publicUrl.isNotBlank()) {
+                                    PcNetworkSyncManager.buildCrossNetworkSyncUrl(
+                                        baseUrl = tunnelState.publicUrl,
+                                        profile = surveyorProfile,
+                                        khatians = savedKhatians,
+                                        relayRoomCode = syncState.relayRoomCode
+                                    )
+                                } else {
+                                    displayUrl
+                                }
                                 val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(android.content.Intent.EXTRA_SUBJECT, "ভূমি সেবা ডিজিটাল — যেকোনো নেটওয়ার্কে PC অ্যাক্সেস")
                                     putExtra(
                                         android.content.Intent.EXTRA_TEXT,
-                                        "যেকোনো নেটওয়ার্ক থেকে কম্পিউটার বা মোবাইলের ব্রাউজারে খুলুন:\n$targetShare"
+                                        if (tunnelState.publicUrl.isNotBlank()) {
+                                            "যেকোনো নেটওয়ার্ক থেকে কম্পিউটার বা মোবাইলের ব্রাউজারে খুলুন:\n$targetShare\n\nক্লাউড-রিলে কোড: ${syncState.relayRoomCode}"
+                                        } else {
+                                            "PC-তে BhumiSebaDigital_PC.html খুলে ক্লাউড-রিলে কোড দিন: ${syncState.relayRoomCode}\nরিলে চ্যানেল: $relayTopicUrl"
+                                        }
                                     )
                                 }
                                 context.startActivity(
@@ -1109,7 +1248,14 @@ fun PcInstallLinkCard(
                         }
 
                         OutlinedButton(
-                            onClick = { onPreviewPcMode(displayUrl) },
+                            onClick = {
+                                val previewTarget = livePublicWithRelay.ifBlank {
+                                    pcSyncSettings.customRemoteUrl.ifBlank {
+                                        serverState.loopbackUrl.ifBlank { relayTopicUrl }
+                                    }
+                                }
+                                onPreviewPcMode(previewTarget)
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("pc_remote_preview_button"),
@@ -1339,7 +1485,7 @@ fun PcInstallLinkCard(
         }
 
         Text(
-            text = "টিপস: এই .html ফাইলটি একবার ${syncState.remoteUrl} সাইটে index.html হিসেবে রাখলে যেকোনো নেটওয়ার্ক থেকে PC ও মোবাইলে চালাতে পারবেন।",
+            text = "টিপস: এই .html ফাইলটি যেকোনো PC-তে রাখলে '${syncState.relayRoomCode}' কোড দিয়ে যেকোনো নেটওয়ার্ক (ফোন ডাটা + বাসার Wi-Fi) থেকে খতিয়ান সিঙ্ক ও PNG/PDF ডাউনলোড করতে পারবেন।",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1348,15 +1494,21 @@ fun PcInstallLinkCard(
     if (showSyncSettingsDialog) {
         PcSyncSettingsDialog(
             initialSettings = pcSyncSettings,
+            defaultRoomCode = syncState.relayRoomCode,
             onDismiss = { showSyncSettingsDialog = false },
             onSave = { updated ->
                 scope.launch {
                     appPrefs.savePcSyncSettings(updated)
-                    PcNetworkSyncManager.refreshState(context, updated, serverState)
+                    if (updated.mode == PcSyncMode.REMOTE_ACCESS && updated.autoStartPublicTunnel) {
+                        PublicPcTunnelManager.start(context, surveyorProfile)
+                    } else if (updated.mode == PcSyncMode.LOCAL_WIFI) {
+                        PublicPcTunnelManager.stop()
+                    }
+                    PcNetworkSyncManager.refreshState(context, updated, serverState, PublicPcTunnelManager.state.value)
                     showSyncSettingsDialog = false
                     onCopySuccess(
                         if (updated.mode == PcSyncMode.REMOTE_ACCESS) {
-                            "রিমোট ওয়েবসাইট মোড সংরক্ষিত: ${updated.customRemoteUrl}"
+                            "রিমোট ও ক্লাউড-রিলে মোড সংরক্ষিত (কোড: ${updated.relayRoomCode})"
                         } else {
                             "লোকাল Wi-Fi মোড সংরক্ষিত হয়েছে"
                         }
@@ -1370,14 +1522,24 @@ fun PcInstallLinkCard(
 @Composable
 fun PcSyncSettingsDialog(
     initialSettings: PcSyncSettings,
+    defaultRoomCode: String = "",
     onDismiss: () -> Unit,
     onSave: (PcSyncSettings) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var selectedMode by remember(initialSettings) { mutableStateOf(initialSettings.mode) }
+    var relayRoomCode by remember(initialSettings, defaultRoomCode) {
+        mutableStateOf(
+            initialSettings.relayRoomCode.ifBlank {
+                defaultRoomCode.ifBlank { PcNetworkSyncManager.ensureRelayRoomCode(context) }
+            }
+        )
+    }
     var customRemoteUrl by remember(initialSettings) { mutableStateOf(initialSettings.customRemoteUrl) }
     var cloudRelayUrl by remember(initialSettings) { mutableStateOf(initialSettings.cloudRelayUrl) }
     var useCloudRelay by remember(initialSettings) { mutableStateOf(initialSettings.useCloudRelay) }
+    var autoStartPublicTunnel by remember(initialSettings) { mutableStateOf(initialSettings.autoStartPublicTunnel) }
     var autoSwitchOnCellular by remember(initialSettings) { mutableStateOf(initialSettings.autoSwitchToRemoteOnCellular) }
     var probeFeedback by remember { mutableStateOf<String?>(null) }
     var probing by remember { mutableStateOf(false) }
@@ -1401,7 +1563,7 @@ fun PcSyncSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "ফোনে ডাটা ও PC-তে ভিন্ন Wi-Fi থাকলেও কাজ চালাতে লোকাল Wi-Fi অথবা রিমোট ওয়েবসাইট/ক্লাউড-রিলে নির্বাচন করুন:",
+                    text = "নিজস্ব ওয়েবসাইট হোস্টিং ছাড়াই ফোন ডাটা ও বাসার PC Wi-Fi-র মধ্যে সংযোগ করতে পাবলিক টানেল ও ক্লাউড-রিলে ব্যবহার করুন:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1419,7 +1581,7 @@ fun PcSyncSettingsDialog(
                         onClick = { selectedMode = PcSyncMode.LOCAL_WIFI }
                     )
                     UtilityBarChip(
-                        label = "রিমোট IP / ওয়েবসাইট",
+                        label = "রিমোট / Any Network",
                         icon = Icons.Rounded.Public,
                         selected = selectedMode == PcSyncMode.REMOTE_ACCESS,
                         testTag = "pc_settings_mode_remote",
@@ -1427,15 +1589,16 @@ fun PcSyncSettingsDialog(
                     )
                 }
 
+                // Cloud Relay Room Code
                 OutlinedTextField(
-                    value = customRemoteUrl,
-                    onValueChange = { customRemoteUrl = it },
-                    label = { Text("আপনার ওয়েবসাইট / রিমোট IP URL") },
-                    placeholder = { Text(DEFAULT_REMOTE_WEBSITE_URL) },
+                    value = relayRoomCode,
+                    onValueChange = { relayRoomCode = PcNetworkSyncManager.sanitizeRoomCode(it) },
+                    label = { Text("ক্লাউড-রিলে রুম কোড (যেকোনো নেটওয়ার্ক)") },
+                    placeholder = { Text("bhumi-seba-xxxxxx") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("pc_settings_remote_url_input")
+                        .testTag("pc_settings_room_code_input")
                 )
 
                 Row(
@@ -1443,11 +1606,17 @@ fun PcSyncSettingsDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { customRemoteUrl = DEFAULT_REMOTE_WEBSITE_URL },
+                        onClick = {
+                            val chars = "abcdefghjkmnpqrstuvwxyz23456789"
+                            val suffix = (1..6).map { chars.random() }.joinToString("")
+                            relayRoomCode = "bhumi-seba-$suffix"
+                        },
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("pc_settings_regenerate_room_button")
                     ) {
-                        Text("ডিফল্ট: salam.whf.bz", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("নতুন কোড তৈরি", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     OutlinedButton(
                         onClick = {
@@ -1489,12 +1658,36 @@ fun PcSyncSettingsDialog(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "পাবলিক ক্লাউড-রিলে এন্ডপয়েন্ট ব্যবহার করুন",
+                            text = "রিমোট মোডে অটো পাবলিক HTTPS URL",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "ক্রস-নেটওয়ার্ক API ও খতিয়ান ডাউনলোডের জন্য",
+                            text = "নিজস্ব ওয়েবসাইট ছাড়াই যেকোনো নেটওয়ার্কে লাইভ লিংক দেবে",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = autoStartPublicTunnel,
+                        onCheckedChange = { autoStartPublicTunnel = it },
+                        modifier = Modifier.testTag("pc_settings_auto_tunnel_switch")
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "পাবলিক ক্লাউড-রিলে (ntfy.sh) চালু রাখুন",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "মোবাইল ডাটা থেকে PC Wi-Fi-তে লাইভ খতিয়ান সিঙ্কের জন্য",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1510,7 +1703,7 @@ fun PcSyncSettingsDialog(
                     OutlinedTextField(
                         value = cloudRelayUrl,
                         onValueChange = { cloudRelayUrl = it },
-                        label = { Text("ক্লাউড-রিলে URL") },
+                        label = { Text("ক্লাউড-রিলে সার্ভার URL") },
                         placeholder = { Text(DEFAULT_CLOUD_RELAY_URL) },
                         singleLine = true,
                         modifier = Modifier
@@ -1518,6 +1711,17 @@ fun PcSyncSettingsDialog(
                             .testTag("pc_settings_relay_url_input")
                     )
                 }
+
+                OutlinedTextField(
+                    value = customRemoteUrl,
+                    onValueChange = { customRemoteUrl = it },
+                    label = { Text("ঐচ্ছিক: নিজস্ব ওয়েবসাইট URL (যদি হোস্ট করেন)") },
+                    placeholder = { Text(DEFAULT_REMOTE_WEBSITE_URL) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pc_settings_remote_url_input")
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1547,20 +1751,24 @@ fun PcSyncSettingsDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val normalizedCustom = PcNetworkSyncManager.normalizeEndpointUrl(
-                        customRemoteUrl,
-                        DEFAULT_REMOTE_WEBSITE_URL
-                    )
+                    val normalizedCustom = if (customRemoteUrl.isBlank()) {
+                        ""
+                    } else {
+                        PcNetworkSyncManager.normalizeEndpointUrl(customRemoteUrl, "")
+                    }
                     val normalizedRelay = PcNetworkSyncManager.normalizeEndpointUrl(
                         cloudRelayUrl,
                         DEFAULT_CLOUD_RELAY_URL
                     )
+                    val finalRoom = PcNetworkSyncManager.ensureRelayRoomCode(context, relayRoomCode)
                     onSave(
                         PcSyncSettings(
                             mode = selectedMode,
                             customRemoteUrl = normalizedCustom,
                             cloudRelayUrl = normalizedRelay,
+                            relayRoomCode = finalRoom,
                             useCloudRelay = useCloudRelay,
+                            autoStartPublicTunnel = autoStartPublicTunnel,
                             autoSwitchToRemoteOnCellular = autoSwitchOnCellular
                         )
                     )

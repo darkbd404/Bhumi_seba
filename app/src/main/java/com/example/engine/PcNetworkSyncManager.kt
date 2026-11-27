@@ -23,6 +23,7 @@ import kotlinx.serialization.json.Json
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.random.Random
 
 enum class SyncConnectionStatus {
     IDLE,
@@ -39,9 +40,12 @@ data class PcNetworkSyncState(
     val activeMode: PcSyncMode = PcSyncMode.LOCAL_WIFI,
     val localIp: String? = null,
     val localUrl: String = "",
-    val remoteUrl: String = DEFAULT_REMOTE_WEBSITE_URL,
+    val publicTunnelUrl: String = "",
+    val tunnelStatus: TunnelStatus = TunnelStatus.STOPPED,
+    val remoteUrl: String = "",
     val cloudRelayUrl: String = DEFAULT_CLOUD_RELAY_URL,
-    val useCloudRelay: Boolean = false,
+    val relayRoomCode: String = "",
+    val useCloudRelay: Boolean = true,
     val activeTargetUrl: String = "",
     val syncStatus: SyncConnectionStatus = SyncConnectionStatus.IDLE,
     val statusLabel: String = "নেটওয়ার্ক যাচাই হচ্ছে...",
@@ -62,6 +66,7 @@ data class RemoteProbeResult(
 
 data class RemoteSyncResult(
     val syncedOverHttp: Boolean,
+    val relayTopicUrl: String,
     val shareableSyncUrl: String,
     val statusMessage: String
 )
@@ -76,16 +81,47 @@ data class CrossNetworkSyncPayload(
 
 /**
  * Networking utility class that detects local Wi-Fi vs cellular/remote networks and
- * toggles between local IP communication and public cloud-relay / custom website endpoints
- * (e.g. https://www.salam.whf.bz/) for cross-network Khatian sync and PC downloads.
+ * manages:
+ * 1. Local IP-based HTTP server (same Wi-Fi / Hotspot),
+ * 2. Live Public Internet Reverse Tunnel (lhr.life or pinggy.link) for ANY network,
+ * 3. Public Cloud-Relay Topic Sync (ntfy.sh) for cross-network real-time sync,
+ * 4. Optional custom user website URL (e.g. https://www.salam.whf.bz/ if hosted).
  */
 object PcNetworkSyncManager {
+
+    private const val PREF_FILE = "bhumi_network_relay_prefs"
+    private const val KEY_ROOM_CODE = "relay_room_code"
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val _state = MutableStateFlow(PcNetworkSyncState())
     val state: StateFlow<PcNetworkSyncState> = _state.asStateFlow()
 
-    fun normalizeEndpointUrl(rawUrl: String, fallback: String = DEFAULT_REMOTE_WEBSITE_URL): String {
+    fun ensureRelayRoomCode(context: Context, preferred: String = ""): String {
+        val cleaned = sanitizeRoomCode(preferred)
+        if (cleaned.isNotBlank()) return cleaned
+        return runCatching {
+            val prefs = context.applicationContext.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE)
+            val existing = sanitizeRoomCode(prefs.getString(KEY_ROOM_CODE, "") ?: "")
+            if (existing.isNotBlank()) {
+                existing
+            } else {
+                val chars = "abcdefghjkmnpqrstuvwxyz23456789"
+                val suffix = (1..6).map { chars[Random.nextInt(chars.length)] }.joinToString("")
+                val generated = "bhumi-seba-$suffix"
+                prefs.edit().putString(KEY_ROOM_CODE, generated).apply()
+                generated
+            }
+        }.getOrElse { "bhumi-seba-relay1" }
+    }
+
+    fun sanitizeRoomCode(raw: String): String {
+        return raw.trim()
+            .lowercase()
+            .replace(Regex("[^a-z0-9_-]"), "")
+            .take(40)
+    }
+
+    fun normalizeEndpointUrl(rawUrl: String, fallback: String = DEFAULT_CLOUD_RELAY_URL): String {
         val trimmed = rawUrl.trim()
         if (trimmed.isBlank()) return fallback
         val withScheme = if (trimmed.startsWith("http://", ignoreCase = true) ||
@@ -95,11 +131,13 @@ object PcNetworkSyncManager {
         } else {
             "https://$trimmed"
         }
-        return if (withScheme.endsWith("/") || withScheme.contains("?") || withScheme.contains("#")) {
-            withScheme
-        } else {
-            "$withScheme/"
-        }
+        return withScheme.trimEnd('/')
+    }
+
+    fun buildCloudRelayTopicUrl(relayBaseUrl: String, roomCode: String): String {
+        val base = normalizeEndpointUrl(relayBaseUrl, DEFAULT_CLOUD_RELAY_URL).trimEnd('/')
+        val room = sanitizeRoomCode(roomCode).ifBlank { "bhumi-seba-relay1" }
+        return "$base/$room"
     }
 
     fun detectNetworkType(context: Context): DetectedNetworkType {
@@ -134,13 +172,18 @@ object PcNetworkSyncManager {
     fun refreshState(
         context: Context,
         settings: PcSyncSettings,
-        serverState: PcServerState
+        serverState: PcServerState,
+        tunnelState: PublicTunnelState = PublicPcTunnelManager.state.value
     ): PcNetworkSyncState {
         val detected = detectNetworkType(context)
         val localIp = LocalPcWebServer.findBestLocalIpv4()
-        val remoteUrl = normalizeEndpointUrl(settings.customRemoteUrl, DEFAULT_REMOTE_WEBSITE_URL)
-        val relayUrl = normalizeEndpointUrl(settings.cloudRelayUrl, DEFAULT_CLOUD_RELAY_URL)
-        val effectiveRemote = if (settings.useCloudRelay) relayUrl else remoteUrl
+        val roomCode = ensureRelayRoomCode(context, settings.relayRoomCode)
+        val relayBase = normalizeEndpointUrl(settings.cloudRelayUrl, DEFAULT_CLOUD_RELAY_URL)
+        val customUrl = if (settings.customRemoteUrl.isNotBlank()) {
+            normalizeEndpointUrl(settings.customRemoteUrl, DEFAULT_REMOTE_WEBSITE_URL)
+        } else {
+            ""
+        }
 
         val effectiveMode = if (settings.autoSwitchToRemoteOnCellular && detected == DetectedNetworkType.CELLULAR_REMOTE) {
             PcSyncMode.REMOTE_ACCESS
@@ -148,43 +191,53 @@ object PcNetworkSyncManager {
             settings.mode
         }
 
-        val activeTarget = when (effectiveMode) {
-            PcSyncMode.LOCAL_WIFI -> serverState.lanUrl.ifBlank {
+        val tunnelPublic = tunnelState.publicUrl
+        val activeTarget = when {
+            effectiveMode == PcSyncMode.LOCAL_WIFI -> serverState.lanUrl.ifBlank {
                 if (localIp != null) "http://$localIp:${serverState.port}" else ""
             }
-            PcSyncMode.REMOTE_ACCESS -> effectiveRemote
+            tunnelState.status == TunnelStatus.CONNECTED && tunnelPublic.isNotBlank() -> {
+                "$tunnelPublic/#relay=$roomCode"
+            }
+            customUrl.isNotBlank() -> "$customUrl/#relay=$roomCode"
+            else -> buildCloudRelayTopicUrl(relayBase, roomCode)
         }
 
         val (status, label, subtext) = when {
             effectiveMode == PcSyncMode.REMOTE_ACCESS && detected == DetectedNetworkType.OFFLINE -> Triple(
                 SyncConnectionStatus.ERROR,
                 "অফলাইন — ইন্টারনেট নেই",
-                "রিমোট অ্যাক্সেসের জন্য ফোনে ডাটা বা Wi-Fi চালু করুন"
+                "যেকোনো নেটওয়ার্কের রিমোট অ্যাক্সেসের জন্য ফোনে ডাটা বা Wi-Fi চালু করুন"
             )
-            effectiveMode == PcSyncMode.REMOTE_ACCESS && settings.useCloudRelay -> Triple(
-                SyncConnectionStatus.CLOUD_RELAY_READY,
-                "ক্লাউড-রিলে মোড সক্রিয়",
-                "যেকোনো নেটওয়ার্ক থেকে PC-তে খতিয়ান ও ডাউনলোড চলবে ($relayUrl)"
+            tunnelState.status == TunnelStatus.CONNECTED && tunnelPublic.isNotBlank() -> Triple(
+                SyncConnectionStatus.REMOTE_READY,
+                "পাবলিক ইন্টারনেট URL চালু (${tunnelState.providerName})",
+                "দূরে থাকলেও চলবে — PC ব্রাউজারে $tunnelPublic খুলুন"
+            )
+            tunnelState.status == TunnelStatus.CONNECTING -> Triple(
+                SyncConnectionStatus.CHECKING,
+                "যেকোনো নেটওয়ার্কের জন্য পাবলিক URL তৈরি হচ্ছে...",
+                "কিছুক্ষণ অপেক্ষা করুন — সরাসরি https:// লিংক তৈরি হচ্ছে"
             )
             effectiveMode == PcSyncMode.REMOTE_ACCESS -> Triple(
-                SyncConnectionStatus.REMOTE_READY,
-                "রিমোট ওয়েবসাইট মোড সংযুক্ত",
-                "যেকোনো নেটওয়ার্কে চলবে — PC ব্রাউজারে $remoteUrl খুলুন"
+                SyncConnectionStatus.CLOUD_RELAY_READY,
+                "রিমোট ও ক্লাউড-রিলে মোড প্রস্তুত",
+                "পাবলিক লিংক চালু করুন অথবা ক্লাউড কোড ($roomCode) দিয়ে ভিন্ন নেটওয়ার্কের PC সিঙ্ক করুন"
             )
             detected == DetectedNetworkType.CELLULAR_REMOTE -> Triple(
                 SyncConnectionStatus.NETWORK_MISMATCH_PROMPT,
-                "মোবাইল ডাটা সনাক্ত হয়েছে (ভিন্ন নেটওয়ার্ক)",
-                "ফোনে ডাটা ও PC-তে Wi-Fi থাকলে নিচ থেকে রিমোট অ্যাক্সেসে সুইচ করুন"
+                "ফোনে মোবাইল ডাটা চালু আছে (ভিন্ন নেটওয়ার্ক)",
+                "PC বাসার Wi-Fi-তে থাকলে নিচ থেকে রিমোট/পাবলিক URL চালু করুন"
             )
             serverState.isRunning && serverState.lanUrl.isNotBlank() -> Triple(
                 SyncConnectionStatus.LOCAL_CONNECTED,
                 "লোকাল Wi-Fi সার্ভার সংযুক্ত",
-                "একই Wi-Fi / Hotspot-এ সিঙ্ক সক্রিয় (${serverState.lanUrl})"
+                "একই Wi-Fi / Hotspot-এ চালু: ${serverState.lanUrl}"
             )
             detected == DetectedNetworkType.LOCAL_WIFI -> Triple(
                 SyncConnectionStatus.IDLE,
                 "লোকাল Wi-Fi প্রস্তুত (${localIp ?: "Hotspot"})",
-                "লোকাল সার্ভার চালু করুন অথবা দূরে থাকলে রিমোট অ্যাক্সেস ব্যবহার করুন"
+                "কাছে থাকলে Wi-Fi সার্ভার, আর দূরে থাকলে রিমোট অ্যাক্সেস চালু করুন"
             )
             else -> Triple(
                 SyncConnectionStatus.ERROR,
@@ -198,8 +251,11 @@ object PcNetworkSyncManager {
             activeMode = effectiveMode,
             localIp = localIp,
             localUrl = serverState.lanUrl,
-            remoteUrl = remoteUrl,
-            cloudRelayUrl = relayUrl,
+            publicTunnelUrl = tunnelPublic,
+            tunnelStatus = tunnelState.status,
+            remoteUrl = customUrl,
+            cloudRelayUrl = relayBase,
+            relayRoomCode = roomCode,
             useCloudRelay = settings.useCloudRelay,
             activeTargetUrl = activeTarget,
             syncStatus = status,
@@ -213,9 +269,10 @@ object PcNetworkSyncManager {
     fun buildCrossNetworkSyncUrl(
         baseUrl: String,
         profile: SurveyorProfile,
-        khatians: List<CustomKhatianDocument>
+        khatians: List<CustomKhatianDocument>,
+        relayRoomCode: String = ""
     ): String {
-        val normalized = normalizeEndpointUrl(baseUrl, DEFAULT_REMOTE_WEBSITE_URL)
+        val normalized = normalizeEndpointUrl(baseUrl, DEFAULT_CLOUD_RELAY_URL)
         val trimmedKhatians = khatians.take(15).map { doc ->
             doc.copy(referenceDocPath = null)
         }
@@ -226,42 +283,39 @@ object PcNetworkSyncManager {
         )
         val rawJson = json.encodeToString(payload).toByteArray(Charsets.UTF_8)
         val encoded = Base64.encodeToString(rawJson, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-        val baseWithoutHash = normalized.substringBefore("#")
-        return "$baseWithoutHash#sync=$encoded"
+        val baseWithoutHash = normalized.substringBefore("#").let {
+            if (it.endsWith("/") || it.contains("?")) it else "$it/"
+        }
+        val relaySuffix = sanitizeRoomCode(relayRoomCode).takeIf { it.isNotBlank() }?.let { "&relay=$it" } ?: ""
+        return "${baseWithoutHash}#sync=$encoded$relaySuffix"
     }
 
     suspend fun probeRemoteEndpoint(rawUrl: String): RemoteProbeResult = withContext(Dispatchers.IO) {
-        val target = normalizeEndpointUrl(rawUrl, DEFAULT_REMOTE_WEBSITE_URL)
-        _state.update { it.copy(syncStatus = SyncConnectionStatus.CHECKING, statusLabel = "রিমোট সার্ভার যাচাই হচ্ছে...", lastError = null) }
+        val normalized = normalizeEndpointUrl(rawUrl, DEFAULT_CLOUD_RELAY_URL)
+        val target = if (normalized.equals(DEFAULT_CLOUD_RELAY_URL, ignoreCase = true)) {
+            "$normalized/v1/health"
+        } else {
+            normalized
+        }
+        _state.update { it.copy(syncStatus = SyncConnectionStatus.CHECKING, statusLabel = "সংযোগ যাচাই হচ্ছে...", lastError = null) }
         val start = System.currentTimeMillis()
         runCatching {
             val conn = (URL(target).openConnection() as HttpURLConnection).apply {
-                requestMethod = "HEAD"
-                connectTimeout = 5000
-                readTimeout = 5000
+                requestMethod = "GET"
+                connectTimeout = 6000
+                readTimeout = 6000
                 instanceFollowRedirects = true
                 setRequestProperty("User-Agent", "BhumiSebaDigital/1.0")
             }
-            var code = conn.responseCode
+            val code = conn.responseCode
             conn.disconnect()
-            if (code == 405 || code == 501) {
-                val getConn = (URL(target).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 5000
-                    readTimeout = 5000
-                    instanceFollowRedirects = true
-                    setRequestProperty("User-Agent", "BhumiSebaDigital/1.0")
-                }
-                code = getConn.responseCode
-                getConn.disconnect()
-            }
             val elapsed = (System.currentTimeMillis() - start).coerceAtLeast(1L)
             val ok = code in 200..399
-            val msg = if (ok) "রিমোট সার্ভার অনলাইন (HTTP $code • ${elapsed}ms)"
+            val msg = if (ok) "ক্লাউড/সার্ভার অনলাইন (HTTP $code • ${elapsed}ms)"
             else "সার্ভার সাড়া দিয়েছে: HTTP $code (${elapsed}ms)"
             _state.update {
                 it.copy(
-                    syncStatus = if (ok) SyncConnectionStatus.REMOTE_READY else SyncConnectionStatus.ERROR,
+                    syncStatus = if (ok) SyncConnectionStatus.CLOUD_RELAY_READY else SyncConnectionStatus.ERROR,
                     statusLabel = msg,
                     lastLatencyMs = elapsed,
                     lastError = if (ok) null else msg
@@ -270,7 +324,7 @@ object PcNetworkSyncManager {
             RemoteProbeResult(ok, code, elapsed, target, msg)
         }.getOrElse { err ->
             val elapsed = (System.currentTimeMillis() - start).coerceAtLeast(1L)
-            val errMsg = "রিমোট সংযোগ পাওয়া যায়নি: ${err.localizedMessage ?: "নেটওয়ার্ক ত্রুটি"}"
+            val errMsg = "সংযোগ ব্যর্থ: ${err.localizedMessage ?: "নেটওয়ার্ক ত্রুটি"}"
             _state.update {
                 it.copy(
                     syncStatus = SyncConnectionStatus.ERROR,
@@ -284,61 +338,97 @@ object PcNetworkSyncManager {
     }
 
     suspend fun syncKhatiansToRemoteEndpoint(
-        endpointUrl: String,
+        context: Context,
+        settings: PcSyncSettings,
         profile: SurveyorProfile,
-        khatians: List<CustomKhatianDocument>
+        khatians: List<CustomKhatianDocument>,
+        publicTunnelUrl: String = PublicPcTunnelManager.state.value.publicUrl
     ): RemoteSyncResult = withContext(Dispatchers.IO) {
-        val shareableUrl = buildCrossNetworkSyncUrl(endpointUrl, profile, khatians)
-        val payloadJson = json.encodeToString(
-            CrossNetworkSyncPayload(
-                exportedAtMillis = System.currentTimeMillis(),
-                surveyorProfile = profile.copy(photoUri = null),
-                khatians = khatians.take(15).map { it.copy(referenceDocPath = null) }
-            )
+        val roomCode = ensureRelayRoomCode(context, settings.relayRoomCode)
+        val relayTopicUrl = buildCloudRelayTopicUrl(settings.cloudRelayUrl, roomCode)
+        val payload = CrossNetworkSyncPayload(
+            exportedAtMillis = System.currentTimeMillis(),
+            surveyorProfile = profile.copy(photoUri = null),
+            khatians = khatians.take(15).map { it.copy(referenceDocPath = null) }
         )
+        val payloadJson = json.encodeToString(payload)
 
-        val uploaded = runCatching {
-            val normalized = normalizeEndpointUrl(endpointUrl, DEFAULT_REMOTE_WEBSITE_URL)
-            val postUrl = if (normalized.endsWith("/")) "${normalized}api/sync" else "$normalized/api/sync"
-            val conn = (URL(postUrl).openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                doOutput = true
-                connectTimeout = 4500
-                readTimeout = 4500
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setRequestProperty("User-Agent", "BhumiSebaDigital/1.0")
-            }
-            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
-                writer.write(payloadJson)
-                writer.flush()
-            }
-            val code = conn.responseCode
-            conn.disconnect()
-            code in 200..299
-        }.getOrDefault(false)
+        // Update local server cache as well
+        LocalPcWebServer.updateSyncPayload(payloadJson)
+
+        var relayUploaded = false
+        if (settings.useCloudRelay || publicTunnelUrl.isBlank()) {
+            relayUploaded = runCatching {
+                val conn = (URL(relayTopicUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 6000
+                    readTimeout = 6000
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("X-Title", "BhumiSebaSync")
+                    setRequestProperty("User-Agent", "BhumiSebaDigital/1.0")
+                }
+                OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
+                    writer.write(payloadJson)
+                    writer.flush()
+                }
+                val code = conn.responseCode
+                conn.disconnect()
+                code in 200..299
+            }.getOrDefault(false)
+        }
+
+        val shareableUrl = when {
+            publicTunnelUrl.isNotBlank() -> buildCrossNetworkSyncUrl(
+                baseUrl = publicTunnelUrl,
+                profile = profile,
+                khatians = khatians,
+                relayRoomCode = roomCode
+            )
+            settings.customRemoteUrl.isNotBlank() -> buildCrossNetworkSyncUrl(
+                baseUrl = settings.customRemoteUrl,
+                profile = profile,
+                khatians = khatians,
+                relayRoomCode = roomCode
+            )
+            else -> relayTopicUrl
+        }
 
         val now = System.currentTimeMillis()
         _state.update {
             it.copy(
                 lastSyncedAtMillis = now,
                 lastSyncUrl = shareableUrl,
-                syncStatus = if (uploaded) SyncConnectionStatus.CLOUD_RELAY_READY else SyncConnectionStatus.REMOTE_READY,
-                statusLabel = if (uploaded) {
-                    "ক্লাউড-রিলেতে খতিয়ান সিঙ্ক সম্পন্ন"
+                relayRoomCode = roomCode,
+                syncStatus = if (relayUploaded || publicTunnelUrl.isNotBlank()) {
+                    SyncConnectionStatus.CLOUD_RELAY_READY
+                } else {
+                    SyncConnectionStatus.REMOTE_READY
+                },
+                statusLabel = if (relayUploaded) {
+                    "ক্লাউড-রিলেতে খতিয়ান সিঙ্ক সম্পন্ন ($roomCode)"
                 } else {
                     "ক্রস-নেটওয়ার্ক সিঙ্ক লিংক প্রস্তুত"
                 }
             )
         }
 
+        val msg = when {
+            publicTunnelUrl.isNotBlank() && relayUploaded ->
+                "পাবলিক URL ও ক্লাউড-রিলে ($roomCode) দুটোতেই সিঙ্ক সম্পন্ন হয়েছে!"
+            relayUploaded ->
+                "ক্লাউড-রিলেতে সিঙ্ক হয়েছে! যেকোনো নেটওয়ার্কের PC-তে কোড '$roomCode' দিন।"
+            publicTunnelUrl.isNotBlank() ->
+                "পাবলিক ইন্টারনেট URL প্রস্তুত — যেকোনো নেটওয়ার্কের PC ব্রাউজারে খুলুন।"
+            else ->
+                "সিঙ্ক লিংক তৈরি হয়েছে — ইন্টারনেট চালু করে পুনরায় চেষ্টা করুন।"
+        }
+
         RemoteSyncResult(
-            syncedOverHttp = uploaded,
+            syncedOverHttp = relayUploaded || publicTunnelUrl.isNotBlank(),
+            relayTopicUrl = relayTopicUrl,
             shareableSyncUrl = shareableUrl,
-            statusMessage = if (uploaded) {
-                "ক্লাউড-রিলে সার্ভারে খতিয়ান সিঙ্ক হয়েছে — PC থেকে সরাসরি ডাউনলোড করতে পারবেন"
-            } else {
-                "যেকোনো নেটওয়ার্কের জন্য সিঙ্ক লিংক তৈরি হয়েছে — PC ব্রাউজারে খুলুন"
-            }
+            statusMessage = msg
         )
     }
 }

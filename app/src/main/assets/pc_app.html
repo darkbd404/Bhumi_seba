@@ -201,10 +201,10 @@
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <div id="pcConnBadge" style="display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:99px;background:rgba(15,107,84,0.12);border:1px solid var(--stroke);font-size:11.5px;font-weight:700;color:var(--primary);">
+          <button id="pcConnBadge" onclick="openRelayModal()" title="ক্লাউড-রিলে সিঙ্ক কোড সেট করুন" style="display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:99px;background:rgba(15,107,84,0.12);border:1px solid var(--stroke);font-size:11.5px;font-weight:700;color:var(--primary);cursor:pointer;">
             <span id="pcConnDot" style="width:8px;height:8px;border-radius:50%;background:#0F6B54;display:inline-block;"></span>
             <span id="pcConnText">PC সিস্টেম প্রস্তুত</span>
-          </div>
+          </button>
           <button class="neu-btn-sq" onclick="openProfModal()" title="সার্ভেয়ার প্রোফাইল ও লোগো">
             <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
           </button>
@@ -762,6 +762,22 @@
       <button class="neu-pill" onclick="savedProjectsModal.classList.remove('open')">✕</button>
     </div>
     <div id="savedModalList" style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- Cross-Network Cloud Relay Sync Modal -->
+<div class="modal-backdrop" id="cloudRelayModal">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <strong style="font-size:17px;">যেকোনো নেটওয়ার্ক সিঙ্ক (Cloud Relay)</strong>
+      <button class="neu-pill" onclick="cloudRelayModal.classList.remove('open')">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);">ফোন দূরে (মোবাইল ডাটা) ও PC বাসায় (Wi-Fi) থাকলে অ্যাপ থেকে পাওয়া রিলে কোড এখানে লিখুন — খতিয়ান অটো চলে আসবে।</div>
+    <input id="relayRoomInput" placeholder="যেমন: bhumi-seba-abc123" />
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button class="m3-outlined" onclick="cloudRelayModal.classList.remove('open')">বন্ধ করুন</button>
+      <button class="m3-filled" onclick="saveRelayRoomAndConnect()">সিঙ্ক যুক্ত করুন</button>
+    </div>
   </div>
 </div>
 
@@ -3430,16 +3446,21 @@ function applyCrossNetworkSyncPayload(payload) {
   return incoming.length;
 }
 
+function extractHashOrQueryParam(key) {
+  const hash = (location.hash || "").replace(/^#/, "");
+  const hParams = new URLSearchParams(hash);
+  if (hParams.has(key)) return hParams.get(key) || "";
+  const sParams = new URLSearchParams(location.search || "");
+  return sParams.get(key) || "";
+}
+
 function applyCrossNetworkSyncFromUrl() {
   try {
-    let encoded = "";
-    const hash = location.hash || "";
-    const search = location.search || "";
-    if (hash.includes("sync=")) {
-      encoded = hash.split("sync=")[1].split("&")[0];
-    } else if (search.includes("sync=")) {
-      encoded = new URLSearchParams(search).get("sync") || "";
+    const relayParam = extractHashOrQueryParam("relay").trim();
+    if (relayParam) {
+      localStorage.setItem("bhumi_relay_room", relayParam);
     }
+    const encoded = extractHashOrQueryParam("sync");
     if (!encoded) return 0;
     const jsonText = decodeUrlSafeBase64Utf8(encoded);
     const payload = JSON.parse(jsonText);
@@ -3454,15 +3475,83 @@ function applyCrossNetworkSyncFromUrl() {
   }
 }
 
-function updatePcConnBadge(syncedViaServer = false) {
+let _relayEventSource = null;
+function openRelayModal() {
+  const inp = document.getElementById("relayRoomInput");
+  if (inp) inp.value = localStorage.getItem("bhumi_relay_room") || "";
+  document.getElementById("cloudRelayModal")?.classList.add("open");
+}
+function saveRelayRoomAndConnect() {
+  const room = (document.getElementById("relayRoomInput")?.value || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  if (!room) { toast("রিলে কোড লিখুন"); return; }
+  localStorage.setItem("bhumi_relay_room", room);
+  document.getElementById("cloudRelayModal")?.classList.remove("open");
+  startCloudRelaySync(room, true);
+}
+
+function startCloudRelaySync(roomCode, manual = false) {
+  const room = String(roomCode || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  if (!room) return;
+  const pollUrl = `https://ntfy.sh/${encodeURIComponent(room)}/json?poll=1&since=all`;
+  fetch(pollUrl).then(r => r.ok ? r.text() : "").then(txt => {
+    if (!txt) return;
+    let latestPayload = null;
+    txt.trim().split("\n").forEach(line => {
+      try {
+        const evt = JSON.parse(line);
+        if (evt && evt.event === "message" && evt.message) {
+          const parsed = JSON.parse(evt.message);
+          if (parsed && (parsed.khatians || parsed.surveyorProfile)) latestPayload = parsed;
+        }
+      } catch {}
+    });
+    if (latestPayload) {
+      const cnt = applyCrossNetworkSyncPayload(latestPayload);
+      updatePcConnBadge(true, true);
+      if (cnt > 0 || manual) toast(`ক্লাউড-রিলে (${room}) থেকে ${cnt}টি খতিয়ান সিঙ্ক হয়েছে`);
+    } else if (manual) {
+      toast(`ক্লাউড-রিলে (${room}) যুক্ত হয়েছে — ফোন থেকে সিঙ্ক পাঠালে এখানে আসবে`);
+    }
+  }).catch(() => {
+    if (manual) toast("ক্লাউড-রিলের সাথে সংযোগ করা যায়নি — ইন্টারনেট দেখুন");
+  });
+
+  if (window.EventSource) {
+    try { if (_relayEventSource) _relayEventSource.close(); } catch {}
+    try {
+      _relayEventSource = new EventSource(`https://ntfy.sh/${encodeURIComponent(room)}/sse`);
+      _relayEventSource.onmessage = ev => {
+        try {
+          const wrapper = JSON.parse(ev.data);
+          const payload = JSON.parse(wrapper.message || "{}");
+          if (payload && (payload.khatians || payload.surveyorProfile)) {
+            const cnt = applyCrossNetworkSyncPayload(payload);
+            updatePcConnBadge(true, true);
+            if (cnt > 0) toast(`লাইভ সিঙ্ক: ফোন থেকে ${cnt}টি খতিয়ান এসেছে!`);
+          }
+        } catch {}
+      };
+    } catch {}
+  }
+}
+
+function updatePcConnBadge(syncedViaServer = false, viaRelay = false) {
   const txt = document.getElementById("pcConnText");
   const dot = document.getElementById("pcConnDot");
   const badge = document.getElementById("pcConnBadge");
   if (!txt || !dot || !badge) return;
   const host = (location.hostname || "").toLowerCase();
   const proto = location.protocol || "";
-  if (proto === "file:") {
-    txt.textContent = "অফলাইন PC ফাইল";
+  if (host.endsWith(".lhr.life") || host.endsWith(".lhr.rocks") || host.endsWith(".pinggy.link") || host.endsWith(".pinggy.io") || host.endsWith(".pinggy.online")) {
+    txt.textContent = syncedViaServer ? "পাবলিক টানেল সিঙ্ক সক্রিয়" : "পাবলিক ইন্টারনেট লিংক (Any Network)";
+    dot.style.background = "#1A73E8";
+    badge.style.color = "#1A73E8";
+  } else if (viaRelay) {
+    txt.textContent = "ক্লাউড-রিলে সিঙ্ক সক্রিয়";
+    dot.style.background = "#1A73E8";
+    badge.style.color = "#1A73E8";
+  } else if (proto === "file:") {
+    txt.textContent = "অফলাইন ফাইল (রিলে কোড দিন)";
     dot.style.background = "#D49A17";
     badge.style.color = "#8C6B32";
   } else if (host === "127.0.0.1" || host === "localhost" || /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) {
@@ -3470,7 +3559,7 @@ function updatePcConnBadge(syncedViaServer = false) {
     dot.style.background = "#0F6B54";
     badge.style.color = "#0F6B54";
   } else {
-    txt.textContent = `রিমোট ওয়েবসাইট (${host || "salam.whf.bz"})`;
+    txt.textContent = `রিমোট ওয়েবসাইট (${host || "Cloud"})`;
     dot.style.background = "#1A73E8";
     badge.style.color = "#1A73E8";
   }
@@ -3488,17 +3577,21 @@ function updatePcConnBadge(syncedViaServer = false) {
   renderKhatianSaved();
   renderHomeHistory();
   drawMouza();
-  updatePcConnBadge(false);
+  updatePcConnBadge(false, false);
   if (location.protocol.startsWith("http")) {
     fetch("/api/sync").then(r => r.ok ? r.json() : null).then(payload => {
       if (payload) {
         const count = applyCrossNetworkSyncPayload(payload);
-        updatePcConnBadge(true);
+        updatePcConnBadge(true, false);
         if (count > 0 && !location.hash.includes("sync=")) {
           toast(`সার্ভার থেকে ${count}টি খতিয়ান সিঙ্ক হয়েছে`);
         }
       }
     }).catch(() => {});
+  }
+  const savedRelay = localStorage.getItem("bhumi_relay_room");
+  if (savedRelay) {
+    startCloudRelaySync(savedRelay, false);
   }
 })();
 </script>

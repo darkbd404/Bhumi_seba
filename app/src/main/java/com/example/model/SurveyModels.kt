@@ -270,7 +270,7 @@ data class KhatianRecord(
 
 const val PC_SERVER_DEFAULT_PORT = 8765
 const val DEFAULT_REMOTE_WEBSITE_URL = "https://www.salam.whf.bz/"
-const val DEFAULT_CLOUD_RELAY_URL = "https://www.salam.whf.bz/"
+const val DEFAULT_CLOUD_RELAY_URL = "https://ntfy.sh"
 
 @Serializable
 enum class PcSyncMode {
@@ -288,10 +288,12 @@ enum class DetectedNetworkType {
 @Serializable
 data class PcSyncSettings(
     val mode: PcSyncMode = PcSyncMode.LOCAL_WIFI,
-    val customRemoteUrl: String = DEFAULT_REMOTE_WEBSITE_URL,
+    val customRemoteUrl: String = "",
     val cloudRelayUrl: String = DEFAULT_CLOUD_RELAY_URL,
-    val useCloudRelay: Boolean = false,
-    val autoSwitchToRemoteOnCellular: Boolean = false
+    val relayRoomCode: String = "",
+    val useCloudRelay: Boolean = true,
+    val autoStartPublicTunnel: Boolean = true,
+    val autoSwitchToRemoteOnCellular: Boolean = true
 )
 
 @Serializable
